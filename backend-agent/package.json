@@ -1,0 +1,16 @@
+{
+  "name": "virtual-office-bank-soal-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test ../qa-agent/tests/mvp-smoke.mjs ../qa-agent/tests/mvp-edge.mjs ../qa-agent/tests/phase5.mjs ../qa-agent/tests/participants.mjs ../qa-agent/tests/tryout.mjs ../qa-agent/tests/auth-rbac.mjs ../qa-agent/tests/upload-grading.mjs ../qa-agent/tests/question-management.mjs ../qa-agent/tests/tryout-report.mjs ../qa-agent/tests/mapel-management.mjs ../qa-agent/tests/multiple-answer.mjs ../qa-agent/tests/phase6j.mjs ../qa-agent/tests/phase6l.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^2.5.0",
+    "pg": "^8.13.1"
+  }
+}

@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laporan Kondisi Sistem — Hanyadi Virtual Office &amp; Bank Soal</title>
+<style>
+  :root{
+    --bg:#080e18; --panel:#111b2b; --panel2:#162336; --line:#24354d;
+    --txt:#e8eef7; --muted:#9db0c8; --cyan:#22d3ee; --amber:#fbbf24;
+    --green:#34d399; --red:#f87171; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI",Inter,Roboto,Arial,sans-serif;font-size:16px;line-height:1.45}
+  #progress{position:fixed;top:0;left:0;height:4px;background:linear-gradient(90deg,var(--cyan),var(--violet));z-index:50;transition:width .2s}
+  #deck{height:100%;overflow:hidden}
+  .slide{display:none;height:100%;padding:54px 7vw 78px;overflow:auto;scrollbar-width:thin}
+  .slide.active{display:block}
+  .slide::-webkit-scrollbar{width:8px}.slide::-webkit-scrollbar-thumb{background:#2a3c56;border-radius:8px}
+  h1{font-size:clamp(30px,4.4vw,58px);line-height:1.1;margin:0 0 18px;letter-spacing:-.02em}
+  h2{font-size:clamp(23px,3vw,38px);margin:0 0 6px;letter-spacing:-.01em}
+  h3{font-size:17px;margin:22px 0 8px;color:var(--cyan)}
+  p{margin:8px 0}
+  .kicker{color:var(--cyan);font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px}
+  .sub{color:var(--muted);font-size:clamp(15px,1.6vw,20px);max-width:900px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;color:var(--muted)}
+  .chip b{color:var(--txt)}
+  .grid{display:grid;gap:14px;margin-top:18px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card h4{margin:0 0 6px;font-size:15px;color:var(--cyan)}
+  .card p{margin:4px 0;font-size:14px;color:var(--muted)}
+  .big{font-size:34px;font-weight:800;line-height:1;color:var(--amber);margin-bottom:8px}
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--cyan);font-size:11px;text-transform:uppercase;letter-spacing:.08em;background:rgba(34,211,238,.06)}
+  td:first-child{font-weight:600}
+  tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+  ul,ol{margin:10px 0;padding-left:20px}li{margin:6px 0}
+  .tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700}
+  .ok{background:rgba(52,211,153,.14);color:var(--green)}
+  .warn{background:rgba(251,191,36,.14);color:var(--amber)}
+  .bad{background:rgba(248,113,113,.14);color:var(--red)}
+  .info{background:rgba(167,139,250,.14);color:var(--violet)}
+  code{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-size:.9em;background:rgba(34,211,238,.08);color:#bff5ff;padding:1px 5px;border-radius:4px}
+  pre{background:#0a1422;border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:10px;
+    padding:14px 16px;overflow:auto;max-height:48vh;white-space:pre-wrap;word-break:break-word;
+    font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5}
+  .prompt-label{display:flex;align-items:center;gap:10px;margin:18px 0 4px;color:var(--amber);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.1em}
+  .note{border-left:3px solid var(--amber);background:rgba(251,191,36,.07);padding:10px 14px;border-radius:0 8px 8px 0;color:#f6dfa9;font-size:14px;margin-top:16px}
+  .flow{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin:20px 0}
+  .flow .node{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;flex:1 1 150px;font-size:13px}
+  .flow .node b{display:block;color:var(--cyan);margin-bottom:4px}
+  .flow .arr{align-self:center;color:var(--amber);font-size:20px}
+  .diagram{display:grid;gap:10px;margin-top:20px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel);font-size:13px;text-align:center}
+  .box b{display:block;color:var(--cyan);font-size:14px;margin-bottom:4px}
+  .box.wide{flex:1 1 60%}.box.mid{flex:1 1 30%}.box.sm{flex:1 1 17%}
+  .box.db{background:#13202f;border-color:#3a4d68}.box.db b{color:var(--amber)}
+  .box.file{background:#151a2b}.box.file b{color:var(--violet)}
+  .down{text-align:center;color:var(--muted);font-size:18px;line-height:1}
+  #nav{position:fixed;bottom:0;left:0;right:0;height:50px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 7vw;background:rgba(8,14,24,.92);border-top:1px solid var(--line);backdrop-filter:blur(8px);z-index:40}
+  #nav button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer;font-size:13px}
+  #nav button:hover{border-color:var(--cyan)}
+  #counter{color:var(--muted);font-size:12px;letter-spacing:.08em}
+  .hint{color:var(--muted);font-size:12px;margin-top:24px}
+  @media (max-width:850px){.g4,.g3{grid-template-columns:repeat(2,minmax(0,1fr))}.g2{grid-template-columns:1fr}
+    .slide{padding:36px 5vw 70px}table{font-size:12px}}
+  @media print{
+    html,body{background:#fff;color:#142033;font-size:11pt}
+    #progress,#nav,.hint{display:none!important}
+    #deck{height:auto;overflow:visible}
+    .slide{display:block!important;height:auto;page-break-after:always;padding:16mm 14mm;border:0;overflow:visible}
+    .slide.active{display:block}
+    h1,h2,h3,.big{color:#0f2942}
+    .sub,.card p,td,li,p{color:#2a3a50}
+    .card,pre,.box,th{background:#f3f6fa;border-color:#cbd6e3}
+    pre{color:#16283c;border-left-color:#2563eb;max-height:none;white-space:pre-wrap}
+    code{background:#eef2f7;color:#0b4f6c}
+    .chip,.tag{background:#eef2f7;color:#24344a;border-color:#cbd6e3}
+    tr:nth-child(even) td{background:#f7f9fc}
+  }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<main id="deck">
+
+<section class="slide active">
+  <div class="kicker">Laporan Inventarisasi Sistem · diperbarui 23 November 2026 (Fase 6k)</div>
+  <h1>Kondisi Sistem Hanyadi<br>Virtual Office &amp; Bank Soal</h1>
+  <p class="sub">Inventarisasi menyeluruh mulai dari server, database, peran agen, domain/subdomain, CMS dashboard, hingga halaman pengguna — disusun runtut untuk pengambilan keputusan manajemen.</p>
+  <div class="chips">
+    <span class="chip"><b>1</b> server</span>
+    <span class="chip"><b>24</b> tabel database</span>
+    <span class="chip"><b>5</b> peran agen</span>
+    <span class="chip"><b>5</b> layanan + 2 alias root</span>
+    <span class="chip"><b>118/118</b> test lolos</span>
+  </div>
+  <p class="hint">Navigasi: tombol ← → / spasi · Tekan P untuk cetak · Ctrl+P untuk simpan PDF</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 02</div>
+  <h2>Ringkasan Eksekutif</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Infrastruktur</h4><p>Satu VM Ubuntu 24.04.4 LTS (2 vCPU, 1,9 GiB RAM, 40 GB disk). Hanya port 22/80/443 yang terbuka publik; semua backend terikat di <code>127.0.0.1</code>.</p></div>
+    <div class="card"><h4>Data</h4><p>PostgreSQL 16.15 lokal dengan 3 database aplikasi, 20 tabel dan 1 view di <code>bank_soal_db</code>. Kondisi aktual: 3 soal, 11 opsi, 3 kunci jawaban, 7 baris varian historis (nonaktif sejak Fase 6j), 3 mapel, 1 user admin, 1 peserta tryout, dan 307 sesi login. Referensi produksi 441 soal/565 varian historis belum tersedia dump-nya.</p></div>
+    <div class="card"><h4>Agen &amp; proses</h4><p>5 peran agen operasional (PM, Backend, Frontend, QA, Tryout) + layanan Presentation dan Infra. Alur kerja ber-RELEASE GATE dengan 118/118 test lolos dan 11 gate
+  <span class="tag ok">GO</span> (REL-01…REL-11).</p></div>
+    <div class="card"><h4>Jangkauan publik</h4><p>5 host layanan di balik Cloudflare + Nginx: <code>hanyadi.web.id</code>, <code>api.</code>, <code>cms.</code>, <code>tryout.</code>, <code>n8n.</code>. <code>crm.</code> dan <code>office.</code> kini memakai halaman root yang sama; <code>api.</code> tidak lagi menampilkan dashboard CMS.</p></div>
+  </div>
+  <div class="note"><b>Dua perhatian utama:</b> (1) backup harian tidak aktif dan skripnya masih bergantung pada kontainer Docker yang berhenti; (2) memori tersedia ≈528 MiB dengan 552 MiB swap terpakai setelah deploy Fase 6k, tanpa OOM.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 03</div>
+  <h2>Peta Sistem Keseluruhan</h2>
+  <div class="diagram">
+    <div class="row"><div class="box mid"><b>Pengguna / Manajemen</b>browser &amp; klien API</div><div class="box mid"><b>Cloudflare</b>DNS + Origin CA wildcard</div></div>
+    <div class="down">▼</div>
+    <div class="row"><div class="box wide"><b>Nginx :80 / :443</b>6 vhost aktif + 1 default · HTTP → HTTPS · TLS 1.2/1.3</div></div>
+    <div class="down">▼</div>
+    <div class="row">
+      <div class="box sm"><b>:8082</b>CMS API</div>
+      <div class="box sm"><b>:8083</b>Presentation</div>
+      <div class="box sm"><b>:5678</b>n8n</div>
+      <div class="box sm"><b>:8081</b>API lama</div>
+      <div class="box sm"><b>:8080</b>Office (internal)</div>
+    </div>
+    <div class="down">▼</div>
+    <div class="row">
+      <div class="box db mid"><b>PostgreSQL 16 · 127.0.0.1:5432</b>bank_soal_db · hanyadi_cms · hanyadi_crm</div>
+      <div class="box file mid"><b>File &amp; cadangan</b>React dist · tryout statis · tasks/notes JSON · 9 dump</div>
+    </div>
+  </div>
+  <p class="sub" style="font-size:14px;margin-top:20px">Semua layanan aplikasi berada di satu host; akses database dan admin UI tidak diekspos langsung ke internet.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 04 · Server</div>
+  <h2>Server &amp; Sumber Daya</h2>
+  <table>
+    <tr><th>Aspek</th><th>Kondisi Saat Ini</th><th>Catatan</th></tr>
+    <tr><td>OS &amp; host</td><td>Ubuntu 24.04.4 LTS · <code>VM-0-3-ubuntu</code></td><td>x86_64, uptime ≈1 hari 23 jam</td></tr>
+    <tr><td>CPU</td><td>2 vCPU, AMD EPYC 9754</td><td>Beban rata-rata rendah (0,31 / 0,16 / 0,05)</td></tr>
+    <tr><td>Memori</td><td>1,9 GiB total · ≈129 MiB bebas · 1,4 GiB swap terpakai</td><td><span class="tag warn">Tekanan memori</span></td></tr>
+    <tr><td>Swap</td><td>3,9 GiB total (swap.img + swap2.img)</td><td>Digunakan sebagai penyangga</td></tr>
+    <tr><td>Disk root</td><td>40 GB · 16 GB terpakai · 23 GB bebas (41%)</td><td>/dev/vda2</td></tr>
+    <tr><td>Jaringan</td><td>Privat <code>10.11.0.3/22</code> · publik <code>43.173.8.163</code></td><td>DNS Cloudflare: 104.21.77.243 / 172.67.213.9</td></tr>
+    <tr><td>Firewall</td><td>UFW aktif: deny incoming, allow 22/tcp, 80/tcp, 443/tcp</td><td>Default deny routed</td></tr>
+  </table>
+  <div class="note">Karena RAM terbatas, setiap layanan diberi pagi memori melalui systemd (lihat slide berikut) — ini juga menjadi alasan prompt replikasi dipecah per fase.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 05 · Layanan</div>
+  <h2>Layanan, Port &amp; Status</h2>
+  <table>
+    <tr><th>Port</th><th>Layanan</th><th>Status</th><th>Batas Sumber Daya</th></tr>
+    <tr><td>80 / 443</td><td>Nginx — reverse proxy publik</td><td><span class="tag ok">active</span></td><td>worker_connections 768</td></tr>
+    <tr><td>5432</td><td>PostgreSQL 16 cluster <code>16/main</code></td><td><span class="tag ok">active</span></td><td>local only</td></tr>
+    <tr><td>5678 / 5679</td><td>n8n 2.16.0 + task runner</td><td><span class="tag ok">active</span></td><td>tanpa MemoryMax eksplisit</td></tr>
+    <tr><td>8080</td><td>Office dashboard (Python, <code>app.py</code>)</td><td><span class="tag ok">active</span></td><td>dijalankan <code>start.sh</code> (nohup), bukan systemd</td></tr>
+    <tr><td>8081</td><td><code>hanyadi-api</code> — CMS/CRM Inventory (Python)</td><td><span class="tag ok">active</span></td><td>MemoryMax 96M · CPUQuota 25%</td></tr>
+    <tr><td>8082</td><td><code>bank-soal-api</code> — CMS API (Node/Express)</td><td><span class="tag ok">active</span></td><td>MemoryMax 192M · CPU 50% · heap 128M</td></tr>
+    <tr><td>8083</td><td><code>bank-soal-presentation</code> (Node/Express)</td><td><span class="tag ok">active</span></td><td>MemoryMax 128M · CPU 20% · heap 96M</td></tr>
+    <tr><td>22</td><td>SSH</td><td><span class="tag ok">active</span></td><td>UFW allow</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">Docker aktif tetapi <b>0 kontainer berjalan</b>; hanya image <code>postgres:16-alpine</code> (420 MB) dan jaringan <code>hanyadi_internal</code> yang tersisa.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 06 · Database</div>
+  <h2>Database PostgreSQL 16.15</h2>
+  <table>
+    <tr><th>Database</th><th>Ukuran</th><th>Tabel</th><th>Role akses</th><th>Keterangan</th></tr>
+    <tr><td>bank_soal_db</td><td>9,9 MB</td><td>20 + 1 view</td><td>bank_soal_user</td><td>Sumber kebenaran CMS Bank Soal; tabel <code>tryout_sessions</code>, <code>tryout_submissions</code>, dan relasi soal/peserta TO</td></tr>
+    <tr><td>hanyadi_cms</td><td>7,9 MB</td><td>3</td><td>hanyadi_cms</td><td>Item, mutasi stok, api_clients</td></tr>
+    <tr><td>hanyadi_crm</td><td>7,6 MB</td><td>1</td><td>hanyadi_crm</td><td>Log webhook</td></tr>
+    <tr><td>postgres</td><td>7,5 MB</td><td>0</td><td>postgres (superuser)</td><td>Default cluster</td></tr>
+    <tr><td>hanyadi_office</td><td>—</td><td>0</td><td>—</td><td><span class="tag warn">Tidak ada di cluster</span> hanya di template/init Docker</td></tr>
+  </table>
+  <p style="font-size:13.5px;color:var(--muted)">Cluster <code>16/main</code> online di <code>127.0.0.1:5432</code>. Login role: <code>postgres</code>, <code>bank_soal_user</code>, <code>hanyadi_cms</code>, <code>hanyadi_crm</code>. Kredensial disimpan terpisah (mode 600), tidak dicantumkan di laporan ini.</p>
+  <div class="note">Tersedia 3 dump <code>bank_soal_db</code> di <code>/opt/hanyadi-vo/backups</code>: sebelum penghapusan user/peserta, sebelum rename mapel, dan sebelum CRUD mapel. Backup lama 9 dump masih mencakup hanyadi_cms/crm/office.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 07 · Database Bank Soal</div>
+  <h2>Isi &amp; Skema bank_soal_db</h2>
+  <div class="grid g4">
+    <div class="card"><div class="big">3</div><p>soal approved saat ini</p></div>
+    <div class="card"><div class="big">11</div><p>opsi jawaban</p></div>
+    <div class="card"><div class="big">7</div><p>varian historis (nonaktif)</p></div>
+    <div class="card"><div class="big">307</div><p>sesi login</p></div>
+  </div>
+  <table>
+    <tr><th>Objek</th><th>Jumlah</th><th>Detail</th></tr>
+    <tr><td>Tabel</td><td>20</td><td>questions, question_options, answer_keys, question_presentation_variants, question_version_readiness, mapels, source_types, presentation_versions, contributors, question_sources, roles, permissions, role_permissions, user_roles, auth_sessions, tryout_participants, tryout_submissions, tryout_sessions, tryout_session_questions, tryout_session_participants</td></tr>
+    <tr><td>View</td><td>1</td><td><code>v_question_catalog</code></td></tr>
+    <tr><td>Mapel</td><td>3</td><td>matematika, bahasa_indonesia, ipas</td></tr>
+    <tr><td>User CMS</td><td>1</td><td>admin; user non-admin dihapus</td></tr>
+    <tr><td>Peserta tryout</td><td>0</td><td><code>tryout_participants</code> dikosongkan beserta sesi, submission, dan relasi TO turunannya</td></tr>
+    <tr><td>Role</td><td>5</td><td>admin, editor, validator, viewer (aktif di CMS) + peserta (nonaktif; identitas peserta memakai tabel <code>tryout_participants</code>)</td></tr>
+    <tr><td>Permission</td><td>14</td><td>31 pemetaan role-permission; <code>reports.read</code>, <code>tryout_reports.read</code>, <code>tryouts.manage</code>, dan <code>mapels.manage</code> default hanya admin</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">Data QA dan akun non-admin dihapus setelah pengujian; tiga soal manual dipertahankan. <code>tryout_submissions</code> dan relasi TO peserta kosong, <code>tryout_sessions</code> berisi satu sesi default, satu peserta manual tersisa, dan pengguna CMS hanya <code>admin</code>. Angka 441 soal/565 varian historis adalah referensi produksi eksternal, bukan isi database lokal saat ini.</p>
+  <p style="font-size:13px;color:var(--muted)">Keamanan: password <code>scrypt</code>, JWT HS256 15 menit, refresh token 7 hari berputar, cookie HttpOnly/Secure/SameSite=Lax di domain <code>.hanyadi.web.id</code>.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 08 · Database Legacy</div>
+  <h2>Isi hanyadi_cms, hanyadi_crm &amp; hanyadi_office</h2>
+  <table>
+    <tr><th>Objek</th><th>Jumlah</th><th>Catatan</th></tr>
+    <tr><td>hanyadi_cms.items</td><td>5</td><td>ITM-0001 … ITM-0005; ITM-0004 (Spidol Hitam) stok 8 &lt; minimum 12</td></tr>
+    <tr><td>hanyadi_cms.stock_movements</td><td>10</td><td>5 IN + 5 OUT, referensi INV-IN-1001…1005 / REQ-OUT-2001…2005</td></tr>
+    <tr><td>hanyadi_cms.api_clients</td><td>3</td><td>client <code>cms</code>, <code>crm</code>, <code>n8n</code>, semuanya aktif (SHA-256 key)</td></tr>
+    <tr><td>hanyadi_crm.webhook_events</td><td>0</td><td>Log pengiriman webhook belum terisi</td></tr>
+    <tr><td>hanyadi_office</td><td>0 tabel</td><td>DB tidak hadir di cluster; data operasional office tersimpan di <code>tasks.json</code> (9 tugas) dan <code>notes.json</code> (4 catatan)</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">API 8081 menyediakan 14 endpoint: items, transactions, stock, reports period/CSV export, dan webhook low-stock. Semua endpoint kecuali <code>/health</code> memerlukan <code>X-API-Key</code>.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 09 · Agen</div>
+  <h2>Jumlah Agen &amp; Perannya</h2>
+  <div class="grid g3">
+    <div class="card"><h4>1 · PM Agent</h4><p>Breakdown tugas, prioritas, dependency, papan status, handoff, ADR, dan release gate.</p></div>
+    <div class="card"><h4>2 · Backend Agent</h4><p>REST API Express + PostgreSQL, kontrak OpenAPI lebih dulu, validasi, import, kunci jawaban, auth/RBAC.</p></div>
+    <div class="card"><h4>3 · Frontend Agent</h4><p>CMS React: login, dashboard, input soal, manajemen user &amp; role, filter dan pagination 20 (tanpa virtual scroll); stem non-bold.</p></div>
+    <div class="card"><h4>4 · QA Agent</h4><p>Checklist, test case, pengujian API/UI/data, severity bug, laporan &amp; release gate.</p></div>
+    <div class="card"><h4>5 · Tryout Agent</h4><p>UI peserta: login gate, tanpa pilihan versi, daftar soal <code>approved</code> dengan pagination, menjawab, submit tanpa feedback; rekap nilai ada di CMS.</p></div>
+    <div class="card"><h4>Pendukung · Presentation &amp; Infra</h4><p>Renderer soal dari tabel inti (PRES-02/ADR-004; varian historis tidak dipakai) dan owner infrastruktur/Deploy (INF-01…03) bukan direktori agen.</p></div>
+  </div>
+  <div class="note"><b>Catatan:</b> dokumentasi lama menyebut 4 agen; kondisi aktual di repository dan handoff Fase 6 memuat 5 peran. OpenCode 1.19.6 terpasang dengan agen bawaan <code>build</code> dan <code>explore</code> (konfigurasi masih default). n8n 2.16.0 terpasang tetapi <b>0 workflow</b>.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 10 · Proses Kerja</div>
+  <h2>Alur Kerja Agen &amp; Mutu Rilis</h2>
+  <div class="flow">
+    <div class="node"><b>PM</b>ID tugas, prioritas, acceptance criteria</div><span class="arr">→</span>
+    <div class="node"><b>Backend</b>OpenAPI → endpoint + test</div><span class="arr">→</span>
+    <div class="node"><b>Frontend</b>UI konsumsi kontrak</div><span class="arr">→</span>
+    <div class="node"><b>QA</b>API/UI/data → BUG-xxx</div><span class="arr">→</span>
+    <div class="node"><b>PM Gate</b>GO bila 0 P0/P1</div>
+  </div>
+  <table>
+    <tr><th>Status tugas</th><th>backlog · ready · in_progress · review · done · blocked</th></tr>
+    <tr><th>Status soal</th><td><code>approved</code> otomatis · <code>rejected</code> · <code>archived</code>; <code>draft</code>/<code>review</code> dihapus (ADR-004)</td></tr>
+    <tr><th>Perkembangan test</th><td>19/19 → 34/34 → 46/46 → 52/52 → 65/65 → 67/67 → 68/68 → 70/70 → 71/71 → 72/72 → 73/73 → 82/82 → 89/89 → 91/91 → 99/99 → 106/106 → 108/108 → <b>118/118</b></td></tr>
+    <tr><th>Hasil terakhir</th><td><span class="tag ok">118 lolos · 0 gagal · 0 P0/P1</span> · gate REL-01 sampai REL-11 semuanya <span class="tag ok">GO</span></td></tr>
+    <tr><th>Kelompok test</th><td>19 smoke + 15 edge + 14 Fase 5 + 8 peserta + 8 tryout + 17 auth + 9 upload/grading + 3 manajemen soal + 6 laporan &amp; manajemen tryout + 6 mapel + 2 multi-jawaban + 10 skenario Fase 6j</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 11 · Domain</div>
+  <h2>Domain &amp; Subdomain</h2>
+  <table>
+    <tr><th>Host</th><th>Status</th><th>Yang Dilayani</th></tr>
+    <tr><td>hanyadi.web.id / www</td><td><span class="tag ok">aktif</span></td><td>Halaman statis “coming soon” dari <code>/var/www/html</code>. Catatan: <code>www</code> tercantum di vhost tetapi belum punya A record.</td></tr>
+    <tr><td>api.hanyadi.web.id</td><td><span class="tag ok">aktif</span></td><td><code>/health</code> → 8082; <code>/api/v1/*</code> → 8082; <code>/api/v1/presentation/</code> &amp; <code>/presentation-health</code> → 8083. <code>/</code> kini 404 JSON, bukan dashboard CMS.</td></tr>
+    <tr><td>cms.hanyadi.web.id</td><td><span class="tag ok">aktif</span></td><td>SPA React CMS dari <code>frontend-agent/dist</code>; <code>/api/</code> &amp; <code>/health</code> → 8082.</td></tr>
+    <tr><td>tryout.hanyadi.web.id</td><td><span class="tag ok">aktif</span></td><td>UI peserta statis; <code>/api/</code> → 8082 dan <code>/api/v1/presentation/</code> → 8083.</td></tr>
+    <tr><td>n8n.hanyadi.web.id</td><td><span class="tag ok">aktif</span></td><td>Editor &amp; webhook n8n → 127.0.0.1:5678 (websocket diaktifkan).</td></tr>
+    <tr><td>crm.hanyadi.web.id</td><td><span class="tag info">alias root</span></td><td>Tanpa aplikasi/vhost khusus; HTTP dan HTTPS memakai halaman “coming soon” dari <code>/var/www/html</code>.</td></tr>
+    <tr><td>office.hanyadi.web.id</td><td><span class="tag info">alias root</span></td><td>Alih-alih vhost template ke 8080, host ini kini mengikuti halaman root yang sama dengan <code>crm.</code>.</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">Semua host memakai satu Cloudflare Origin CA wildcard (<code>*.hanyadi.web.id</code>, berlaku sampai 2041) di balik proxy Cloudflare.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 12 · CMS Dashboard</div>
+  <h2>Sistem CMS (Dashboard)</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Layar / rute</h4><p><b>Login</b> · menu <b>Manajemen Soal</b>: <code>#/questions</code> Daftar Soal dan <code>#/questions/new</code> Input Soal · menu <b>Manajemen Tryout</b>: <code>#/tryouts</code> Buat/Daftar Tryout, <code>#/tryouts/peserta</code> Kelola Peserta (keduanya <code>tryouts.manage</code>), dan <code>#/reports/tryout</code> Laporan Tryout (<code>tryout_reports.read</code>) · menu <b>Setting</b>: <code>#/mapels</code> Kelola Mapel (<code>mapels.manage</code>), <code>#/roles</code> Kelola Role, dan <code>#/reports/system</code> Laporan Sistem (<code>reports.read</code>) · <code>#/users/new</code> Buat User.</p></div>
+    <div class="card"><h4>Daftar Soal</h4><p>Filter <code>mapel</code>, <code>status</code> (<code>approved</code>/<code>archived</code>), <code>search</code>; pagination 20 baris dengan Prev/Next dan keterangan "halaman x dari y". Stem tidak ditebalkan. Klik baris membuka modal detail berisi stem lengkap, gambar, opsi, kunci, pembahasan, dan metadata; tombol Hapus tidak ikut memicu modal.</p></div>
+    <div class="card"><h4>Kelola konten</h4><p>Input soal baru dan <b>Edit soal</b> dari modal memakai editor teks/gambar PNG/JPEG/WebP/GIF maks 5 MB, mapel, tipe, kesulitan, opsi + kunci, jawaban teks, dan pembahasan. <code>PUT /questions/{id}</code> menyimpan perubahan secara transaksional; soal baru otomatis <code>approved</code> (tanpa <code>draft</code>/<code>review</code>, versi, atau readiness).</p></div>
+    <div class="card"><h4>Manajemen Tryout</h4><p>Admin membuat TO lewat satu form: nama, tanggal pelaksanaan, mapel, daftar soal pada mapel tersebut, dan peserta dari tabel <code>tryout_participants</code>. Opsi “Jadikan sesi aktif” menonaktifkan sesi lain; daftar TO menampilkan jumlah soal, peserta, dan submission.</p></div>
+    <div class="card"><h4>Kelola Peserta</h4><p>Menu <code>#/tryouts/peserta</code> membuat, mengubah nama/email, menonaktifkan, dan mereset password peserta. Password saat pendaftaran otomatis terisi <code>nama depan@mmyy</code> dan bisa diganti. Peserta login memakai email; admin bisa mencabut sesi saat reset password. Role <code>peserta</code> tidak tersedia lagi di Buat User.</p></div>
+    <div class="card"><h4>Kelola akses</h4><p>Buat user, ubah password, assign/revoke role, centang 14 permission dengan tombol pilih semua/kosongkan/simpan.</p></div>
+  </div>
+  <h3>Grup API (OpenAPI 0.3.0)</h3>
+  <p style="font-size:13.5px;color:var(--muted)"><code>/api/v1/auth/*</code> · roles/permissions/users · participants (CRUD + reset password) · mapels (CRUD + include_inactive)/questions (detail + PUT konten lengkap)/import/sources · <code>uploads/{filename}</code> · tryouts (create/list/detail/delete) · tryout/questions · tryout-sessions · reports/tryout · presentation/questions/{id} (tabel inti; <code>/variants</code> deprecated/404), <code>/submit</code>, <code>attempts/summary</code>. Submit dan summary peserta tidak mengirim kunci (<code>correct_key</code>/<code>correct_keys</code>), status benar/salah, atau skor. Middleware server-side: tanpa sesi → 401, tanpa izin → 403; admin terakhir tidak bisa kehilangan role admin.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 13 · Halaman User</div>
+  <h2>Halaman yang Dihadapi Pengguna</h2>
+  <div class="grid g3">
+    <div class="card"><h4>Peserta — tryout</h4><p>1) Login · 2) daftar soal <code>approved</code> dengan pagination (tanpa pilihan versi/load more) · 3) baca soal bergambar dengan stem non-bold, jawab (radio/checkbox/textarea) &amp; navigasi · 4) submit → penilaian server, skor dari database, pembahasan langsung.</p></div>
+    <div class="card"><h4>Pengunjung — website</h4><p><code>hanyadi.web.id</code>, <code>crm.</code>, dan <code>office.</code>: halaman “Sedang Dalam Pengembangan / SEGERA HADIR”, tema gelap responsif, tanpa form atau tautan. <code>api.</code> sengaja menampilkan 404 JSON pada <code>/</code>.</p></div>
+    <div class="card"><h4>Internal — office</h4><p>Dashboard 8080: status 5 layanan, 9 tugas (toggle), 4 catatan harian, auto-refresh 30 detik. <span class="tag warn">Tanpa autentikasi</span>.</p></div>
+  </div>
+  <div class="note"><b>Perbaikan terkini:</b> penilaian dipindah ke <code>POST /api/v1/presentation/questions/{id}/submit</code>. Endpoint penyajian tidak lagi mengirim <code>correct_key</code>, <code>correct_keys</code>, <code>answer_text</code>, atau <code>is_correct</code>; skor diambil dari <code>tryout_submissions</code> melalui <code>/presentation/attempts/summary</code>.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 14 · Integrasi</div>
+  <h2>Integrasi, Otomasi &amp; Backup</h2>
+  <table>
+    <tr><th>Komponen</th><th>Kondisi</th><th>Dampak</th></tr>
+    <tr><td>Webhook stok menipis</td><td>API 8081 mengirim POST bertanda tangan HMAC-SHA256 ke <code>n8n.hanyadi.web.id/webhook/hanyadi-stock</code>; timeout 3 detik; setiap percobaan dicatat di <code>webhook_events</code>.</td><td><span class="tag warn">Belum aktif end-to-end</span>: n8n punya 0 workflow dan tabel log 0 baris.</td></tr>
+    <tr><td>Backup database</td><td>12 dump <code>pg_dump -Fc</code> (20–22 Nov, termasuk 3 dump <code>bank_soal_db</code>) di <code>/opt/hanyadi-vo/backups</code>, retensi 14 hari.</td><td><span class="tag bad">Timer harian disabled</span>; skrip memanggil kontainer Docker yang tidak berjalan.</td></tr>
+    <tr><td>n8n</td><td>v2.16.0, aktif, SQLite di <code>/home/n8n/.n8n/database.sqlite</code>, 0 workflow.</td><td>Platform siap, otomasi belum dibangun.</td></tr>
+    <tr><td>Office dashboard</td><td>Dijalankan lewat <code>scripts/start.sh</code> (nohup + PID file).</td><td>Unit <code>office-hanyadi.service</code> tersedia sebagai template, belum dipasang.</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 15 · Risiko</div>
+  <h2>Temuan &amp; Rekomendasi Singkat</h2>
+  <table>
+    <tr><th>Prioritas</th><th>Temuan</th><th>Tindakan</th></tr>
+    <tr><td><span class="tag bad">Tinggi</span></td><td>Backup terjadwal nonaktif + skrip bergantung pada Docker yang stopped.</td><td>Ubah skrip ke <code>pg_dump</code> cluster sistem, aktifkan timer, uji restore.</td></tr>
+    <tr><td><span class="tag bad">Tinggi</span></td><td>Memori bebas ≈129 MiB, swap 1,4 GiB terpakai; n8n pernah memuncak 683 MB.</td><td>Tambah RAM atau batasi konkurensi; pertahankan MemoryMax/heap.</td></tr>
+    <tr><td><span class="tag warn">Sedang</span></td><td>Database &amp; vhost <code>office.hanyadi.web.id</code> belum aktif; label status dashboard sudah usang.</td><td>Selaraskan status board dan dokumentasi sebelum diaktifkan.</td></tr>
+    <tr><td><span class="tag warn">Sedang</span></td><td>Rute lama API 8081 tidak lagi dipetakan di vhost aktif;</td><td>Dokumentasikan sebagai internal-only atau beri rute khusus.</td></tr>
+    <tr><td><span class="tag warn">Sedang</span></td><td>Otomasi stok belum berjalan (0 workflow di n8n).</td><td>Buat workflow webhook + notifikasi lalu uji dengan endpoint manual.</td></tr>
+    <tr><td><span class="tag info">Rendah</span></td><td>Kunci API tidak punya rotasi; TLSv1/1.1 masih di konfigurasi global Nginx; endpoint office tanpa auth.</td><td>Rotasi berkala, seragamkan TLS 1.2/1.3, tambahkan auth bila diekspos.</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 16 · Replikasi</div>
+  <h2>Prinsip Anti-OOM untuk Replikasi</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Pemisahan sesi</h4><p>Satu sesi OpenCode baru per fase. Satu fokus per prompt. Selesaikan satu fase sebelum membuka fase berikutnya.</p></div>
+    <div class="card"><h4>Ruang lingkup sempit</h4><p>Minta agen membaca <b>satu direktori</b> per langkah. Jangan minta ringkasan seluruh repository, <code>node_modules</code>, atau dump besar sekaligus.</p></div>
+    <div class="card"><h4>Output dibatasi</h4><p>Minta ringkasan maksimal 100 baris dan simpan ke <code>docs/replikasi/fase-XX.md</code>. Jangan mencetak isi <code>.env</code>, kunci, atau sertifikat privat.</p></div>
+    <div class="card"><h4>Satu proses berat pada satu waktu</h4><p><code>npm ci</code> → <code>npm run build</code> → restart service, berurutan. Tetapkan <code>NODE_OPTIONS</code> dan <code>MemoryMax</code> persis seperti produksi.</p></div>
+  </div>
+  <div class="note">Landasan: server hanya 1,9 GiB RAM. Menjalankan dua build Node atau dump database bersamaan sangat mudah memicu OOM.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 17 · Replikasi</div>
+  <h2>Peta Fase Replikasi</h2>
+  <table>
+    <tr><th>Fase</th><th>Fokus Tunggal</th><th>Hasil Akhir</th></tr>
+    <tr><td>F0</td><td>Inventarisasi read-only</td><td>Daftar fakta &amp; deviasi, tanpa perubahan</td></tr>
+    <tr><td>F1</td><td>Fondasi server &amp; jaringan</td><td>UFW, Nginx, timezone, swap, template unit</td></tr>
+    <tr><td>F2</td><td>PostgreSQL &amp; skema</td><td>3 DB aplikasi, 24 tabel, seed dasar + migrasi 002…015 (015 = Fase 6j)</td></tr>
+    <tr><td>F3</td><td>Backend CMS API</td><td>Service 8082 sehat + OpenAPI</td></tr>
+    <tr><td>F4</td><td>Presentation service</td><td>Service 8083 sehat + soal dari tabel inti (varian historis nonaktif)</td></tr>
+    <tr><td>F5</td><td>CMS frontend</td><td>10 layar di <code>cms.*</code>, dengan menu grup Manajemen Soal, Manajemen Tryout (termasuk Kelola Peserta), dan Setting</td></tr>
+    <tr><td>F6</td><td>Tryout, domain, n8n</td><td><code>tryout.*</code>, <code>api.*</code>, landing, n8n aktif</td></tr>
+    <tr><td>F7</td><td>Modul lama &amp; backup</td><td>8080/8081, template office, dump &amp; timer</td></tr>
+    <tr><td>F8</td><td>QA &amp; dokumentasi</td><td>118/118 test (9 skenario peserta, 6 skenario mapel, 2 skenario multi-jawaban, 10 skenario Fase 6j), 11 gate GO, laporan deviasi</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--muted)">Salin prompt di slide berikutnya ke sesi OpenCode baru, satu fase setiap kali. Gunakan <code>/clear</code> atau sesi baru antar fase agar konteks tidak menumpuk.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 18 · Fase 0</div>
+  <h2>F0 — Inventarisasi (Read-Only)</h2>
+  <h3>Langkah</h3>
+  <ol><li>Buka sesi OpenCode baru di direktori kerja.</li><li>Periksa satu direktori per langkah: <code>/opt/hanyadi-vo</code> → <code>/opt/virtual-office-bank-soal</code> → <code>/etc/nginx</code> → <code>/etc/systemd/system</code>.</li><li>Simpan hasil ringkas per direktori, tunggu konfirmasi sebelum lanjut.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Konteks: server Ubuntu 24.04.4 dengan RAM 1,9 GiB. Kita akan mereplikasi kondisi sistem Hanyadi.
+Tugas Fase 0 — INVENTARISASI, READ-ONLY:
+1. Periksa SATU direktori per langkah, urut: /opt/hanyadi-vo, lalu /opt/virtual-office-bank-soal, lalu /etc/nginx, lalu /etc/systemd/system.
+2. Untuk setiap direktori, keluarkan ringkasan MAKSIMAL 100 baris: file penting, stack, port, database, domain, peran/agen, dan status layanan.
+3. Jangan membaca atau mencetak isi .env, kunci, token, atau private key. Tulis "RAHASIA" jika menemukannya.
+4. Jangan mengubah file, jangan menginstal paket, jangan restart layanan.
+5. Simpan ringkasan ke docs/replikasi/fase-0-inventaris.md.
+Mulai hanya dari /opt/hanyadi-vo. Tunggu konfirmasi saya sebelum direktori berikutnya.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 19 · Fase 1</div>
+  <h2>F1 — Fondasi Server &amp; Jaringan</h2>
+  <h3>Langkah</h3>
+  <ol><li>Set timezone Asia/Jakarta dan pastikan swap aktif ≥2 GiB.</li><li>Konfigurasi UFW: deny incoming, allow 22/tcp, 80/tcp, 443/tcp.</li><li>Pasang Nginx, uji <code>nginx -t</code>.</li><li>Siapkan direktori sertifikat dengan placeholder; unggah Origin CA secara manual.</li><li>Buat template unit systemd dengan batas memori/CPU.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 1 — FONDASI SERVER. Jangan menyentuh kode aplikasi atau database.
+Lakukan satu perubahan pada satu waktu, lalu verifikasi:
+1. Pastikan timezone Asia/Jakarta dan swap aktif minimal 2 GiB.
+2. UFW: default deny incoming, allow 22/tcp, 80/tcp, 443/tcp. Tampilkan status akhir.
+3. Pasang nginx, jalankan nginx -t, pastikan service active.
+4. Buat direktori /etc/ssl/cloudflare dan file placeholder hanyadi.web.id.pem serta .key dengan mode 600. JANGAN mengisi nilai kunci; saya yang mengunggah Cloudflare Origin CA.
+5. Siapkan template unit systemd dengan batas: hanyadi-api 96M/25%, bank-soal-api 192M/50%, presentation 128M/20%.
+Jangan restart layanan selain nginx. Simpan hasil ke docs/replikasi/fase-1-fondasi.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 20 · Fase 2</div>
+  <h2>F2 — PostgreSQL, Skema &amp; Seed</h2>
+  <h3>Langkah</h3>
+  <ol><li>Pasang PostgreSQL 16, pastikan cluster <code>16/main</code> online dan lokal.</li><li>Buat 3 role login + 3 database aplikasi</li><li>Terapkan skema &amp; migrasi dari repository.</li><li>Seed data dasar; ekspor data produksi dari sumber jika tersedia.</li><li>Verifikasi jumlah tabel dan baris.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 2 — POSTGRESQL SAJA. Fokus ini selesai sebelum fase backend dimulai.
+1. Pasang postgresql-16; cluster 16/main harus online dan hanya bind 127.0.0.1:5432.
+2. Buat role login bank_soal_user, hanyadi_cms, hanyadi_crm. Password ambil dari variabel lingkungan yang saya sediakan; JANGAN dicetak.
+3. Buat database bank_soal_db, hanyadi_cms, hanyadi_crm. Jangan buat hanyadi_office — di kondisi saat ini database itu tidak ada.
+4. Terapkan db/schema.sql dan db/migrations/002..012 untuk bank_soal_db; hanyadi_cms/migrations/001,002; hanyadi_crm/migrations/001. Untuk kontrak Fase 6j, lanjutkan 013/014 lalu terapkan 015_simplify_question_status.sql sebelum restart service.
+5. Seed minimum: 3 mapel, 3 source_types, 3 presentation_versions (historis, nonaktif), 5 role, 14 permission, 5 item CMS, 10 mutasi stok, 3 api_clients.
+6. Verifikasi: bank_soal_db punya 20 tabel + 1 view; cms 3 tabel; crm 1 tabel. Data produksi 441 soal/565 varian historis tidak punya dump di server — tandakan sebagai perlu diekspor dari sumber, jangan mengarang data. Setelah QA, data lokal sengaja dibersihkan menjadi 3 soal, 1 user admin, dan 1 peserta tryout manual.
+Jalankan pernyataan SQL satu berkas per langkah. Simpan ke docs/replikasi/fase-2-database.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 21 · Fase 3</div>
+  <h2>F3 — Backend Bank Soal (8082)</h2>
+  <h3>Langkah</h3>
+  <ol><li><code>npm ci</code> dengan Node 22 (sendiri, tidak paralel).</li><li>Isi <code>.env</code> dari secret store yang disediakan.</li><li>Jalankan <code>seed-admin.mjs</code> sekali.</li><li>Pasang unit systemd dengan batas 192M / CPU 50% / heap 128M.</li><li>Verifikasi <code>/health</code> dan kontrak OpenAPI.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 3 — BACKEND SAJA, hanya direktori /opt/virtual-office-bank-soal/backend-agent.
+1. Gunakan Node 22. Jalankan npm ci sekali. Jangan install dependency proyek lain di sesi ini.
+2. Buat .env dari variabel lingkungan yang saya berikan: DB_*, AUTH_JWT_SECRET minimal 32 karakter, AUTH_COOKIE_DOMAIN=.hanyadi.web.id, AUTH_COOKIE_SECURE=true, BOOTSTRAP_ADMIN_*, PRESENTATION_WRITE_KEY. Jangan tampilkan nilainya.
+3. Jalankan scripts/seed-admin.mjs tepat satu kali.
+4. Pasang /etc/systemd/system/bank-soal-api.service: ExecStart=node src/server.js, cwd backend-agent, HOST=127.0.0.1, PORT=8082, NODE_OPTIONS=--max-old-space-size=128, MemoryMax=192M, CPUQuota=50%, Restart=always, After/Wants postgresql@16-main.
+5. Verifikasi curl http://127.0.0.1:8082/health mengembalikan 200 dan berkas openapi/openapi.yaml terbaca.
+Jangan build frontend, jangan ubah nginx. Simpan ke docs/replikasi/fase-3-backend.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 22 · Fase 4</div>
+  <h2>F4 — Presentation Service (8083)</h2>
+  <h3>Langkah</h3>
+  <ol><li><code>npm ci</code> hanya di direktori <code>presentation-service</code>.</li><li>Gunakan file kredensial bersama yang sudah disiapkan.</li><li>Pasang unit systemd 128M / CPU 20% / heap 96M.</li><li>Uji health, penyajian dari tabel inti (bukan varian), dan penolakan tulis tanpa kunci.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 4 — PRESENTATION SERVICE SAJA, hanya /opt/virtual-office-bank-soal/presentation-service.
+1. npm ci sekali dengan Node 22. Jangan menjalankan build frontend.
+2. Gunakan EnvironmentFile=/etc/postgresql/bank_soal_db.credentials yang saya siapkan; jangan cetak isinya.
+3. Pasang /etc/systemd/system/bank-soal-presentation.service: HOST=127.0.0.1, PORT=8083, NODE_OPTIONS=--max-old-space-size=96, MemoryMax=128M, CPUQuota=20%, Restart=always, After=postgresql@16-main dan bank-soal-api.
+4. Verifikasi /health → 200, GET /api/v1/presentation/questions/{id} → 200 dari tabel inti dengan sesi tryout (tanpa correct_key/answer_text/is_correct), POST /submit menilai di server, /attempts/summary membaca skor dari DB, dan tulis tanpa X-Presentation-Key → 401 UNAUTHORIZED.
+5. Catatan Fase 6j (ADR-004): endpoint /variants, versi, dan readiness deprecated/404; gunakan tabel inti dan terapkan migrasi 015_simplify_question_status.sql sebelum restart service.
+Jangan menyentuh backend atau nginx. Simpan ke docs/replikasi/fase-4-presentation.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 23 · Fase 5</div>
+  <h2>F5 — CMS Frontend &amp; Domain cms.*</h2>
+  <h3>Langkah</h3>
+  <ol><li><code>npm ci</code> lalu <code>npm run build</code> satu kali dengan heap dibatasi.</li><li>Pastikan hasil build di <code>frontend-agent/dist</code>.</li><li>Pasang vhost <code>cms.hanyadi.web.id</code> dengan proxy API.</li><li>Verifikasi 10 layar dan header keamanan.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 5 — CMS FRONTEND SAJA, hanya /opt/virtual-office-bank-soal/frontend-agent.
+1. npm ci, lalu npm run build SATU KALI dengan NODE_OPTIONS=--max-old-space-size=256. Jalankan sendiri, jangan paralel dengan proses berat lain.
+2. Pastikan hasil build berada di frontend-agent/dist. Bersihkan cache sementara bila memori menipis.
+3. Pasang /etc/nginx/sites-available/cms.hanyadi.web.id: root ke dist, /api/ dan /health ke http://127.0.0.1:8082, /assets/ cache 1y immutable, index.html no-cache, header nosniff/SAMEORIGIN/referrer same-origin, TLS 1.2/1.3 memakai /etc/ssl/cloudflare/hanyadi.web.id.pem.
+4. nginx -t lalu reload. Verifikasi layar: Login, Daftar Soal, Input Soal, Buat/Daftar Tryout, Kelola Peserta, Buat User, Kelola Role, Laporan Sistem, Laporan Tryout; grup Manajemen Soal berisi Daftar Soal + Input Soal, grup Manajemen Tryout berisi Buat/Daftar Tryout + Kelola Peserta + Laporan Tryout, grup Setting berisi Kelola Role + Laporan Sistem.
+Jangan mengubah backend. Simpan ke docs/replikasi/fase-5-cms.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 24 · Fase 6</div>
+  <h2>F6 — Tryout, Domain Tambahan &amp; n8n</h2>
+  <h3>Langkah</h3>
+  <ol><li>Pasang vhost <code>tryout.*</code> dan <code>api.*</code>, satu per satu.</li><li>Pasang vhost landing <code>hanyadi.web.id</code>.</li><li>Pasang n8n 2.16.0 dengan systemd dan vhost websocket.</li><li>Biarkan workflow kosong agar sesuai kondisi saat ini.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 6 — HALAMAN PESERTA, ROUTING, DAN n8n. Satu vhost per langkah; nginx -t sebelum reload.
+1. tryout.hanyadi.web.id: root statis /opt/virtual-office-bank-soal/tryout-agent, /api/ ke 8082, /api/v1/presentation/ ke 8083.
+2. api.hanyadi.web.id: / dan /health ke 8082; /api/v1/presentation/ dan /presentation-health ke 8083. Gunakan berkas /opt/hanyadi-vo/config/nginx-api.hanyadi.conf sebagai referensi.
+3. hanyadi.web.id: root /var/www/html untuk halaman "coming soon".
+4. Instal n8n 2.16.0 sebagai user n8n; unit systemd dengan N8N_HOST=n8n.hanyadi.web.id, N8N_PORT=5678, WEBHOOK_URL=https://n8n.hanyadi.web.id/, listen 127.0.0.1, timezone Asia/Jakarta, EnvironmentFile=/etc/n8n.env.
+5. Pasang vhost n8n.* dengan proxy 127.0.0.1:5678 dan websocket upgrade.
+6. Biarkan jumlah workflow = 0 agar sama dengan kondisi saat ini; dokumentasikan webhook /webhook/hanyadi-stock sebagai rencana, jangan dibuat workflow baru.
+Simpan ke docs/replikasi/fase-6-domain-dan-n8n.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 25 · Fase 7</div>
+  <h2>F7 — Modul Lama &amp; Backup</h2>
+  <h3>Langkah</h3>
+  <ol><li>Jalankan dashboard office 8080 lewat <code>scripts/start.sh</code>.</li><li>Pasang <code>hanyadi-api.service</code> untuk port 8081.</li><li>Siapkan vhost office sebagai template, jangan aktifkan.</li><li>Pulihkan 9 dump bila dibutuhkan; pertahankan timer dalam keadaan disabled.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 7 — MODUL HANYADI LAMA DAN BACKUP. Jangan mengaktifkan automation tanpa persetujuan.
+1. Jalankan /opt/hanyadi-vo/scripts/start.sh untuk dashboard 127.0.0.1:8080; verifikasi /health dan /api/status. Pakai PYTHONUNBUFFERED=1.
+2. Pasang /etc/systemd/system/hanyadi-api.service: python3 /opt/hanyadi-vo/apps/api/server.py, cwd /opt/hanyadi-vo/apps/api, MemoryMax=96M, CPUQuota=25%, Restart=on-failure. Isi .env dari secret store; jangan tampilkan nilainya. Verifikasi /health → 200 dan /api/v1/items tanpa X-API-Key → 401.
+3. Salin /opt/hanyadi-vo/config/nginx-office.hanyadi.conf ke sites-available SAJA. Jangan symlink ke sites-enabled.
+4. Salin 9 file dump ke /opt/hanyadi-vo/backups bila tersedia. Siapkan skrip backup, tetapi biarkan hanyadi-postgres-backup.timer dalam kondisi disabled sesuai kondisi saat ini dan catat sebagai temuan.
+Simpan ke docs/replikasi/fase-7-legacy.md.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 26 · Fase 8</div>
+  <h2>F8 — Verifikasi, QA &amp; Serah Terima</h2>
+  <h3>Langkah</h3>
+  <ol><li>Jalankan test berurutan: 19 smoke + 15 edge + 14 Fase 5 + 9 peserta + 8 tryout + 17 auth + 9 upload/grading + 3 manajemen soal + 6 laporan &amp; manajemen tryout + 6 manajemen mapel + 2 multi-jawaban + 10 Fase 6j.</li><li>Cek 11 gate rilis dan status seluruh service.</li><li>Tulis deviasi, lalu hapus data soal hasil QA setelah test selesai.</li></ol>
+  <div class="prompt-label">Prompt OpenCode</div>
+  <pre>Fase 8 — VERIFIKASI SAJA. Jangan mengubah kode; cukup uji dan laporkan.
+1. Jalankan 118 test secara berurutan, bukan paralel: 19 smoke, 15 edge, 14 Fase 5, 9 peserta, 8 tryout, 17 auth, 9 upload/grading, 3 manajemen soal, 6 laporan &amp; manajemen tryout, 6 manajemen mapel, 2 multi-jawaban, 10 skenario Fase 6j. Target 118/118 lolos, 0 P0/P1; hapus data soal uji setelahnya.
+2. Periksa gate REL-01 sampai REL-11 dan pastikan semuanya GO.
+3. Verifikasi systemctl is-active untuk nginx, postgresql@16-main, bank-soal-api, bank-soal-presentation, n8n, hanyadi-api; jalankan nginx -t; curl /health pada 8082 dan 8083.
+4. Tulis docs/replikasi/fase-8-verifikasi.md yang berisi hasil test, status layanan, dan deviasi terhadap kondisi produksi: referensi 441 soal/565 varian historis/133 sesi, kondisi lokal setelah cleanup 3 soal/7 varian historis/307 sesi login/1 user admin/1 peserta tryout manual/1 sesi tryout tanpa relasi peserta dan submission, 12 dump, 0 workflow n8n, timer backup disabled, vhost 8080 untuk office belum aktif (host publik mengikuti root).
+Jika ada yang gagal, laporkan sebagai BUG-xxx dengan severity; jangan langsung memperbaiki di sesi ini.</pre>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 28 · Perubahan Terbaru</div>
+  <h2>Detail/Edit Soal, Subdomain &amp; Privasi Penilaian</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Editor pertanyaan</h4><p>Field Pertanyaan memuat teks dan unggah gambar PNG/JPEG/WebP/GIF maks 5 MB dengan pratinjau. Teks boleh kosong bila gambar diunggah; backend memakai penanda <code>[Gambar soal]</code> agar tetap memenuhi constraint database. Tipe multi-jawaban memakai checkbox dengan minimal satu kunci benar yang disimpan di <code>correct_keys</code>.</p></div>
+    <div class="card"><h4>Hapus soal</h4><p>Tombol Hapus di halaman Daftar Soal tersedia untuk <code>questions.write</code> (admin/editor) dengan konfirmasi. <code>DELETE /questions/{id}</code> mengarsipkan soal; daftar aktif menyembunyikannya dan filter <code>status=archived</code> menampilkannya kembali.</p></div>
+    <div class="card"><h4>Detail &amp; edit soal</h4><p>Klik baris di Daftar Soal membuka modal detail dari <code>GET /questions/{id}</code>. Tombol <b>Edit soal</b> mengubah stem, gambar, mapel, tipe, kesulitan, opsi, kunci, jawaban teks, dan pembahasan. <code>PUT /questions/{id}</code> menerima JSON atau multipart dan memperbarui tabel inti, opsi, serta kunci dalam satu transaksi.</p></div>
+    <div class="card"><h4>Subdomain</h4><p><code>crm.</code> dan <code>office.</code> tidak menjalankan aplikasi; keduanya mengikuti vhost root di HTTP dan HTTPS. Static CMS dihapus dari layanan 8082, sehingga <code>api.</code> tidak menduplikasi dashboard <code>cms.</code>; health dan proxy presentation tetap berfungsi.</p></div>
+    <div class="card"><h4>Penyimpanan gambar</h4><p>POST dan PUT <code>/questions</code> menerima JSON atau multipart <code>payload</code> + <code>image</code>. File disimpan di <code>UPLOAD_DIR</code> dan dilayani publik sebagai <code>/api/v1/uploads/&lt;filename&gt;</code>; gambar lama dihapus saat diganti.</p></div>
+    <div class="card"><h4>Model data</h4><p>Migrasi <code>007</code>–<code>009</code> menambah gambar soal, sesi/relasi TO, dan <code>tryouts.manage</code>. Migrasi <code>010</code> menambah <code>tryout_participants</code>, memindahkan submission/sesi/junction ke <code>participant_id</code>, serta menonaktifkan role <code>peserta</code>. Migrasi <code>011</code> menambah <code>kelas</code> (int) dan <code>sekolah</code> pada peserta. Migrasi <code>012</code> mengganti tabel <code>categories</code> menjadi <code>mapels</code>, kolom <code>category_id</code> menjadi <code>mapel_id</code>, serta alias view menjadi <code>mapel_code</code>/<code>mapel_name</code>. Migrasi <code>013</code> melonggarkan kode mapel menjadi format unik 2–32 karakter dan menambah permission <code>mapels.manage</code>. Migrasi <code>014</code> menambah kolom <code>correct_keys</code> pada varian, mengisi dari <code>correct_key</code> lama, dan memperluas CHECK tipe soal dengan <code>multiple_answer</code>. Migrasi <code>015</code> menyederhanakan status menjadi <code>approved</code> (tanpa <code>draft</code>/<code>review</code>) sesuai ADR-004.</p></div>
+    <div class="card"><h4>Privasi peserta</h4><p><code>/presentation/questions/{id}</code> (tabel inti), <code>/submit</code>, dan <code>attempts/summary</code> tidak mengirim kunci (<code>correct_key</code>/<code>correct_keys</code>), status benar/salah, atau skor. Endpoint <code>/variants</code> deprecated/404 sejak Fase 6j. Penilaian tetap dihitung di server untuk kebutuhan laporan admin.</p></div>
+    <div class="card"><h4>Laporan tryout</h4><p>Menu <code>#/reports/tryout</code> mengelompokkan hasil per sesi (nama + tanggal), peserta (nama, kelas, sekolah), dan mapel; menampilkan jumlah benar, salah, dan skor. Detail perbandingan jawaban tidak ditampilkan di UI.</p></div>
+    <div class="card"><h4>Alur Manajemen Tryout</h4><p>Admin mengisi nama dan tanggal, memilih mapel, mencentang soal pada mapel itu, lalu memilih peserta dari tabel <code>tryout_participants</code> yang kini menampilkan nama, email, kelas, dan sekolah. Server memvalidasi mapel, soal, dan peserta dalam satu transaksi; daftar soal peserta serta submit mengikuti daftar TO aktif bila relasi sudah diisi.</p></div>
+    <div class="card"><h4>Sesi &amp; akses</h4><p>Hanya satu sesi aktif; submission baru otomatis memakainya. <code>tryout_reports.read</code> default hanya admin dan mengontrol daftar/aktivasi sesi serta akses laporan.</p></div>
+    <div class="card"><h4>Verifikasi &amp; cleanup</h4><p>10 skenario Fase 6j menaikkan total menjadi <b>118/118 lolos</b>. Regresi Fase 6k memakai soal dan sesi sementara yang dihapus setelahnya. Kondisi akhir: 3 soal, 11 opsi, 7 varian historis, 1 user admin, 1 peserta manual, 307 sesi; submission dan relasi TO peserta kosong.</p></div>
+  </div>
+  <div class="note">Dampak: admin kini bisa membaca dan mengedit soal langsung dari daftar, soal gambar tetap didukung, subdomain tak terpakai tidak menimbulkan duplikasi tampilan, dan peserta tetap hanya melihat status terkirim dengan penilaian di server.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 29 · Peserta Tryout</div>
+  <h2>Identitas Peserta Terpisah dari User CMS</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Tabel baru</h4><p><code>tryout_participants</code> menyimpan <code>nama</code>, <code>email</code> unik, <code>kelas</code> (int 1–100), <code>sekolah</code>, <code>password_hash</code> scrypt, status aktif, dan statistik login gagal. Email dipakai sebagai identitas login; contributor tidak lagi dibuat untuk peserta.</p></div>
+    <div class="card"><h4>Halaman CRUD</h4><p><code>#/tryouts/peserta</code> di grup Manajemen Tryout: tambah dengan password default <code>nama depan@mmyy</code> yang bisa diganti, ubah nama/email/kelas/sekolah, nonaktifkan, dan reset password inline. Semua aksi memakai <code>tryouts.manage</code>.</p></div>
+    <div class="card"><h4>Kelola mapel</h4><p><code>#/mapels</code> di grup Setting: tambah, ubah kode/nama/deskripsi, nonaktifkan, dan hapus mapel yang belum dipakai soal atau tryout. Kode unik 2–32 karakter memakai permission <code>mapels.manage</code> (default admin), sehingga total permission menjadi 14.</p></div>
+    <div class="card"><h4>Alur auth</h4><p>JWT participant memuat <code>account_type=participant</code>, role <code>peserta</code>, dan permission <code>tryout.access</code> + <code>presentation.read</code>. Reset password/nonaktif mencabut semua sesi peserta tersebut.</p></div>
+    <div class="card"><h4>Pemisahan data</h4><p><code>auth_sessions</code>, <code>tryout_submissions</code>, dan <code>tryout_session_participants</code> sekarang memakai <code>participant_id</code> untuk peserta, dengan constraint tepat satu pemilik (<code>user_id</code> atau <code>participant_id</code>). Laporan tryout menggabungkan kedua sumber nama.</p></div>
+    <div class="card"><h4>Buat User</h4><p>Role <code>peserta</code> disembunyikan dan ditolak backend saat membuat/assign user. Role lama tetap ada sebagai histori dengan <code>is_active=false</code>; peserta baru hanya bisa dibuat lewat Kelola Peserta.</p></div>
+    <div class="card"><h4>UI Tryout</h4><p>Login peserta memakai label Email peserta. Daftar peserta di form TO dan Laporan Tryout menampilkan kelas serta sekolah. CMS dan presentation-service menerima participant ID, sehingga validasi daftar soal, submission, dan ringkasan konsisten untuk akun participant maupun user.</p></div>
+  </div>
+  <div class="note">Dampak: tidak ada lagi duplikasi akun peserta di tabel <code>contributors</code>; admin mengelola satu daftar peserta lengkap dengan kelas dan sekolah yang dipakai langsung oleh sesi, submission, dan laporan tryout.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Slide 30 · Penutup</div>
+  <h2>Sumber Data &amp; Batasan Laporan</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Sumber utama</h4><p><code>/opt/hanyadi-vo</code> (dashboard, API, migrasi, backup, docs) · <code>/opt/virtual-office-bank-soal</code> (agen, backend, frontend, tryout, QA) · <code>/etc/nginx</code> · <code>/etc/systemd/system</code> · PostgreSQL cluster 16/main · <code>/home/n8n</code>.</p></div>
+    <div class="card"><h4>Batasan</h4><p>Semua nilai rahasia sengaja tidak ditampilkan. Data dibaca langsung dari server pada 23 Nov 2026 setelah Fase 6k; DOC-06J/06K menyelaraskan kontrak soal, subdomain, detail, dan edit dengan kondisi produksi. Tidak ada dump <code>bank_soal_db</code> yang ditemukan, sehingga replikasi data penuh memerlukan ekspor dari sumber.</p></div>
+    <div class="card"><h4>Perbedaan dokumentasi</h4><p>Dokumen lama menyebut 4 agen, arsitektur sampai Fase 4, <code>office.</code> sebagai template, dan dashboard di <code>api.</code>. Kondisi aktual: 5 agen, Fase 6j/6k + ADR-004, REL-11, status soal <code>approved</code> otomatis, tanpa versi/readiness, serta detail/edit soal tersedia dari Daftar Soal.</p></div>
+    <div class="card"><h4>Langkah berikutnya</h4><p>Prioritaskan perbaikan backup &amp; memori, aktifkan workflow n8n bila diperlukan, dan simpan prompt replikasi ini sebagai runbook tim. Status board dan laporan ini sudah diselaraskan.</p></div>
+  </div>
+  <p class="hint">Akhir presentasi — tekan Home untuk kembali ke awal.</p>
+</section>
+
+</main>
+
+<nav id="nav">
+  <button id="prev">← Sebelumnya</button>
+  <span id="counter">1 / 29</span>
+  <button id="next">Berikutnya →</button>
+</nav>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('counter').textContent=(i+1)+' / '+slides.length;
+    document.getElementById('progress').style.width=((i+1)/slides.length*100)+'%';
+    slides[i].scrollTop=0;
+  }
+  document.getElementById('prev').onclick=()=>show(i-1);
+  document.getElementById('next').onclick=()=>show(i+1);
+  document.addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1);}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(i-1);}
+    else if(e.key==='Home'){e.preventDefault();show(0);}
+    else if(e.key==='End'){e.preventDefault();show(slides.length-1);}
+    else if(e.key.toLowerCase()==='p'){window.print();}
+  });
+  show(0);
+</script>
+</body>
+</html>

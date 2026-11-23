@@ -1,0 +1,660 @@
+openapi: 3.0.3
+info:
+  title: Bank Soal CMS API
+  version: 0.3.0
+  description: Fase 6 — manajemen role & autentikasi — Virtual Office Software House
+security:
+  - cookieAuth: []
+servers:
+  - url: http://127.0.0.1:8082
+    description: API utama CMS
+  - url: http://127.0.0.1:8083
+    description: Presentation renderer
+paths:
+  /health:
+    get:
+      security: []
+      summary: Kesehatan layanan dan koneksi database
+      responses:
+        '200':
+          description: Sehat
+        '503':
+          description: Database tidak terhubung
+  /api/v1/auth/login:
+    post:
+      security: []
+      summary: Login pengguna (cookie access_token + refresh_token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Login berhasil }
+        '401': { description: Kredensial tidak valid }
+        '429': { description: Akun dikunci sementara }
+  /api/v1/auth/refresh:
+    post:
+      security: []
+      summary: Rotasi refresh token dan terbitkan access token baru
+      responses:
+        '200': { description: Sesi diperbarui }
+        '401': { description: Refresh token tidak valid }
+  /api/v1/auth/logout:
+    post:
+      security: []
+      summary: Cabut sesi dan hapus cookie
+      responses:
+        '200': { description: Logout berhasil }
+  /api/v1/auth/me:
+    get:
+      summary: Data pengguna, role, dan permission aktif
+      responses:
+        '200': { description: Profil sesi }
+        '401': { description: Sesi tidak valid }
+  /api/v1/roles:
+    get:
+      summary: Daftar role (roles.manage)
+      responses:
+        '200': { description: Daftar role }
+    post:
+      summary: Buat atau perbarui role (roles.manage)
+      responses:
+        '201': { description: Role tersimpan }
+        '400': { description: Validasi gagal }
+  /api/v1/roles/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah nama/deskripsi/status role (roles.manage)
+      responses:
+        '200': { description: Role diperbarui }
+    delete:
+      summary: Nonaktifkan role non-sistem (roles.manage)
+      responses:
+        '200': { description: Role dinonaktifkan }
+        '409': { description: Role sistem tidak bisa dihapus }
+  /api/v1/roles/{id}/permissions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ganti seluruh permission role (roles.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissions]
+              properties:
+                permissions:
+                  type: array
+                  items: { type: string }
+                  example: [questions.read, presentation.read]
+      responses:
+        '200': { description: Permission role diperbarui }
+        '400': { description: Kode permission tidak valid }
+        '404': { description: Role tidak ditemukan }
+        '409': { description: Role admin tetap harus memiliki roles.manage }
+  /api/v1/permissions:
+    get:
+      summary: Daftar seluruh permission untuk checkbox RBAC (roles.manage)
+      responses:
+        '200': { description: Daftar permission }
+  /api/v1/users:
+    get:
+      summary: Daftar pengguna beserta role (roles.manage)
+      responses:
+        '200': { description: Daftar pengguna }
+    post:
+      summary: Buat pengguna CMS beserta role (roles.manage); role peserta ditolak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, display_name, password, roles]
+              properties:
+                username: { type: string, pattern: '^[a-z0-9_.-]{3,32}$' }
+                display_name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 12 }
+                roles: { type: array, items: { type: string }, minItems: 1 }
+      responses:
+        '201': { description: Pengguna dibuat }
+        '400': { description: Validasi gagal }
+        '409': { description: Username atau email sudah dipakai }
+  /api/v1/users/{id}/password:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah password pengguna (users.password.write)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password, minLength: 12 }
+                confirm_password: { type: string, format: password }
+      responses:
+        '200': { description: Password diperbarui; sesi lama dicabut }
+        '400': { description: Validasi gagal }
+        '404': { description: Pengguna tidak ditemukan atau tidak aktif }
+  /api/v1/users/{id}/roles:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Role yang dimiliki pengguna (roles.manage)
+      responses:
+        '200': { description: Daftar role pengguna }
+    post:
+      summary: Berikan role kepada pengguna (roles.manage)
+      responses:
+        '201': { description: Role diberikan }
+  /api/v1/users/{id}/roles/{roleId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: roleId, in: path, required: true, schema: { type: integer } }
+    delete:
+      summary: Cabut role pengguna (roles.manage, guard admin terakhir)
+      responses:
+        '200': { description: Role dicabut }
+        '409': { description: Admin terakhir tidak boleh dicabut }
+  /api/v1/participants:
+    get:
+      summary: Daftar peserta tryout beserta jumlah submission (tryouts.manage)
+      responses:
+        '200': { description: Daftar peserta }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+    post:
+      summary: Buat peserta tryout baru (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nama, email, kelas, sekolah]
+              properties:
+                nama: { type: string, maxLength: 128 }
+                email: { type: string, format: email }
+                kelas: { type: integer, minimum: 1, maximum: 100 }
+                sekolah: { type: string, maxLength: 255 }
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+      responses:
+        '201': { description: Peserta dibuat }
+        '400': { description: Validasi gagal }
+        '409': { description: Email sudah digunakan }
+  /api/v1/participants/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah nama, email, kelas, sekolah, atau status peserta (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nama, email, kelas, sekolah]
+              properties:
+                nama: { type: string, maxLength: 128 }
+                email: { type: string, format: email }
+                kelas: { type: integer, minimum: 1, maximum: 100 }
+                sekolah: { type: string, maxLength: 255 }
+                is_active: { type: boolean, default: true }
+      responses:
+        '200': { description: Peserta diperbarui }
+        '404': { description: Peserta tidak ditemukan }
+        '409': { description: Email sudah digunakan }
+    delete:
+      summary: Nonaktifkan peserta dan cabut sesinya (tryouts.manage)
+      responses:
+        '200': { description: Peserta dinonaktifkan }
+        '404': { description: Peserta tidak ditemukan }
+  /api/v1/participants/{id}/password:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah password peserta dan cabut sesinya (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password, minLength: 6 }
+                confirm_password: { type: string, format: password }
+      responses:
+        '200': { description: Password diperbarui; sesi lama dicabut }
+        '400': { description: Validasi gagal }
+        '404': { description: Peserta tidak ditemukan atau tidak aktif }
+  /api/v1/tryouts:
+    get:
+      summary: Daftar Tryout beserta mapel, jumlah soal, peserta, dan submission (tryouts.manage)
+      responses:
+        '200': { description: Daftar tryout }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+    post:
+      summary: Buat Tryout baru dengan soal dan peserta terpilih (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, session_date, mapel_code, question_ids, participant_ids]
+              properties:
+                name: { type: string, maxLength: 128 }
+                session_date: { type: string, format: date }
+                mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Kode mapel aktif dari /api/v1/mapels' }
+                question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
+                participant_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID dari /api/v1/participants' }
+                is_active: { type: boolean, default: false }
+      responses:
+        '201': { description: Tryout dibuat beserta relasi soal dan peserta }
+        '400': { description: Validasi mapel, soal, atau peserta gagal }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+  /api/v1/tryouts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail Tryout termasuk daftar question_ids dan participant_ids (tryouts.manage)
+      responses:
+        '200': { description: Detail tryout }
+        '404': { description: Tryout tidak ditemukan }
+    delete:
+      summary: Hapus Tryout dan relasinya (tryouts.manage); submission lama kehilangan session_id
+      responses:
+        '200': { description: Tryout dihapus }
+        '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryout-sessions:
+    get:
+      summary: Daftar sesi tryout beserta jumlah submission (tryout_reports.read)
+      responses:
+        '200': { description: Daftar sesi }
+    post:
+      summary: Buat sesi tryout dengan nama dan tanggal; dapat langsung diaktifkan (tryout_reports.read)
+      responses:
+        '201': { description: Sesi dibuat }
+        '400': { description: Validasi gagal }
+  /api/v1/tryout-sessions/{id}/activate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      summary: Jadikan satu sesi sebagai sesi aktif (tryout_reports.read)
+      responses:
+        '200': { description: Sesi diaktifkan }
+        '404': { description: Sesi tidak ditemukan }
+  /api/v1/reports/tryout:
+    get:
+      summary: Laporan tryout dikelompokkan per sesi, peserta, dan mapel (tryout_reports.read)
+      parameters:
+        - { name: session_id, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: sessions, summary benar/salah/skor, details perbandingan jawaban }
+        '403': { description: Tidak memiliki permission tryout_reports.read }
+  /api/v1/tryout/questions:
+    get:
+      summary: Daftar soal approved untuk peserta; dibatasi pada soal Tryout aktif bila dikonfigurasi (tryout.access)
+      parameters:
+        - { name: mapel, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200': { description: Daftar soal tanpa kunci jawaban }
+        '401': { description: Sesi tidak aktif }
+        '403': { description: Role tidak memiliki akses tryout }
+  /api/v1/question-sheets/generate-code:
+    get:
+      summary: Usulkan kode lembar soal berdasarkan mapel (question_sheets.manage)
+      parameters:
+        - { name: mapel, in: query, required: true, description: 'kode mapel 4 karakter dari GET /api/v1/mapels', schema: { type: string, pattern: '^[A-Z0-9]{4}$' } }
+      responses:
+        '200': { description: 'Kode usulan LS-<KODE_MAPEL>-mmyy dari mapels.code' }
+        '400': { description: Mapel wajib diisi atau tidak ditemukan }
+        '403': { description: Tidak memiliki permission question_sheets.manage }
+  /api/v1/question-sheets/question-picker:
+    get:
+      summary: Pilih soal approved untuk lembar soal (question_sheets.manage)
+      parameters:
+        - { name: mapel, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: question_type, in: query, schema: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200': { description: Daftar soal beserta pagination }
+        '400': { description: Tipe soal tidak valid }
+        '403': { description: Tidak memiliki permission question_sheets.manage }
+  /api/v1/question-sheets:
+    get:
+      summary: Daftar lembar soal aktif atau arsip (question_sheets.manage)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, archived], default: active } }
+        - { name: mapel, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200': { description: Daftar lembar soal beserta pagination }
+        '403': { description: Tidak memiliki permission question_sheets.manage }
+    post:
+      summary: Buat lembar soal beserta pilihan soal satu mapel (question_sheets.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionSheetWrite'
+      responses:
+        '201': { description: Lembar soal dibuat }
+        '400': { description: Validasi gagal }
+        '409': { description: Kode sudah digunakan }
+        '403': { description: Tidak memiliki permission question_sheets.manage }
+  /api/v1/question-sheets/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail lembar soal beserta daftar question_ids (question_sheets.manage)
+      responses:
+        '200': { description: Detail lembar soal }
+        '404': { description: Lembar soal tidak ditemukan }
+    put:
+      summary: Ubah lembar soal dan daftar soalnya secara transaksional (question_sheets.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionSheetWrite'
+      responses:
+        '200': { description: Lembar soal diperbarui }
+        '400': { description: Validasi gagal }
+        '409': { description: Kode bentrok atau sudah dipakai tryout }
+        '404': { description: Lembar soal tidak ditemukan }
+    delete:
+      summary: Arsipkan lembar soal tanpa menghapus relasi (question_sheets.manage)
+      responses:
+        '200': { description: Lembar soal diarsipkan }
+        '404': { description: Lembar soal tidak ditemukan }
+  /api/v1/mapels:
+    get:
+      summary: Daftar mapel aktif (questions.read atau mapels.manage)
+      parameters:
+        - { name: include_inactive, in: query, schema: { type: boolean, default: false }, description: 'Hanya untuk mapels.manage' }
+      responses:
+        '200': { description: Daftar mapel beserta jumlah soal dan tryout }
+        '403': { description: Tidak memiliki permission questions.read atau mapels.manage }
+    post:
+      summary: Buat mapel baru dengan kode unik (mapels.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, pattern: '^[A-Z0-9]{4}$' }
+                name: { type: string, maxLength: 64 }
+                description: { type: string, maxLength: 1000, nullable: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '201': { description: Mapel dibuat }
+        '400': { description: Validasi gagal }
+        '403': { description: Tidak memiliki permission mapels.manage }
+        '409': { description: Kode mapel sudah digunakan }
+  /api/v1/mapels/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah kode, nama, deskripsi, atau status mapel (mapels.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, pattern: '^[A-Z0-9]{4}$' }
+                name: { type: string, maxLength: 64 }
+                description: { type: string, maxLength: 1000, nullable: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '200': { description: Mapel diperbarui }
+        '400': { description: Validasi gagal }
+        '404': { description: Mapel tidak ditemukan }
+        '409': { description: Kode mapel sudah digunakan }
+    delete:
+      summary: Hapus mapel yang belum dipakai soal atau tryout (mapels.manage)
+      responses:
+        '200': { description: Mapel dihapus }
+        '404': { description: Mapel tidak ditemukan }
+        '409': { description: Mapel masih dipakai soal atau tryout }
+  /api/v1/questions:
+    get:
+      summary: Daftar soal dengan filter; field sheets berisi kode lembar aktif yang memakai soal (soal archived tersembunyi kecuali status=archived)
+      parameters:
+        - { name: mapel, in: query, schema: { type: string } }
+        - name: status
+          in: query
+          description: "Gunakan archived untuk melihat soal yang dihapus"
+          schema:
+            $ref: '#/components/schemas/QuestionStatus'
+        - { name: search, in: query, schema: { type: string } }
+        - { name: question_type, in: query, schema: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Daftar soal + pagination
+        '400':
+          description: Status atau tipe soal tidak valid
+    post:
+      summary: Buat soal manual dengan status approved otomatis (JSON atau multipart dengan payload + image PNG/JPEG/WebP/GIF; stem boleh kosong bila ada image)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mapel, question_type]
+              properties:
+                stem: { type: string, nullable: true }
+                mapel: { type: string, pattern: '^[A-Z0-9]{4}$' }
+                question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
+                difficulty: { type: string, enum: [easy, medium, hard], default: medium }
+                options:
+                  type: array
+                  maxItems: 6
+                  items:
+                    type: object
+                    required: [key, content]
+                    properties:
+                      key: { type: string, pattern: '^[A-F]$' }
+                      content: { type: string }
+                      is_correct: { type: boolean, default: false }
+                correct_keys:
+                  type: array
+                  minItems: 1
+                  items: { type: string, pattern: '^[A-F]$' }
+                  description: 'Semua kunci benar; wajib minimal 1 untuk multiple_answer'
+                correct_key: { type: string, pattern: '^[A-F]$', deprecated: true, description: 'Kompatibilitas lama; diisi otomatis dari correct_keys[0]' }
+                answer_text: { type: string, nullable: true }
+                explanation: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Soal dibuat
+        '400':
+          description: Validasi gagal
+  /api/v1/questions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail soal, opsi, dan kunci jawaban
+      responses:
+        '200':
+          description: Detail soal
+        '404':
+          description: Tidak ditemukan
+    put:
+      summary: Update soal (stem, mapel, tipe, kesulitan, opsi, kunci, pembahasan, gambar)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stem: { type: string }
+                mapel: { type: string }
+                question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
+                difficulty: { type: string, enum: [easy, medium, hard] }
+                options:
+                  type: array
+                  items:
+                    type: object
+                    required: [key, content]
+                    properties:
+                      key: { type: string }
+                      content: { type: string }
+                      is_correct: { type: boolean }
+                correct_keys: { type: array, items: { type: string } }
+                answer_text: { type: string, nullable: true }
+                explanation: { type: string, nullable: true }
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                payload: { type: string, description: JSON string dari skema application/json }
+                image: { type: string, format: binary }
+      responses:
+        '200':
+          description: Berhasil
+    delete:
+      summary: Hapus soal dari daftar aktif dengan mengarsipkannya (questions.write)
+      responses:
+        '200':
+          description: Berhasil, status menjadi archived
+  /api/v1/questions/{id}/answer-key:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Upsert kunci jawaban (correct_keys untuk multi-jawaban; correct_key untuk kompatibilitas lama)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                correct_keys: { type: array, items: { type: string, pattern: '^[A-F]$' } }
+                correct_key: { type: string, pattern: '^[A-F]$', deprecated: true }
+                answer_text: { type: string, nullable: true }
+                explanation: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Berhasil
+  /api/v1/uploads/{filename}:
+    parameters:
+      - { name: filename, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Sajikan gambar soal yang diunggah
+      responses:
+        '200': { description: Gambar }
+        '404': { description: Tidak ditemukan }
+  /api/v1/import:
+    post:
+      summary: Impor soal JSON/CSV/TXT atau payload sumber
+      responses:
+        '201':
+          description: Soal berhasil diimpor
+        '400':
+          description: Format/validasi gagal
+        '413':
+          description: File terlalu besar
+  /api/v1/sources:
+    get:
+      summary: Daftar sumber soal
+      responses:
+        '200':
+          description: Daftar sumber
+  /api/v1/presentation/questions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Penyajian soal approved dari tabel inti tanpa kunci jawaban
+      responses:
+        '200':
+          description: Konten soal siap disajikan
+        '401': { description: Sesi tidak aktif }
+        '403': { description: Soal tidak termasuk daftar tryout aktif }
+        '404': { description: Soal approved tidak ditemukan }
+  /api/v1/presentation/questions/{id}/submit:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: Kirim jawaban untuk disimpan dan dinilai di server tanpa feedback ke peserta
+      responses:
+        '200': { description: Konfirmasi penyimpanan tanpa is_correct, correct, atau explanation }
+        '401': { description: Sesi tidak aktif }
+        '403': { description: Akses tryout ditolak }
+        '404': { description: Soal approved tidak ditemukan }
+  /api/v1/presentation/attempts/summary:
+    get:
+      summary: Ringkasan jumlah jawaban terkirim dari database
+      responses:
+        '200': { description: attempted tanpa correct atau score }
+        '401': { description: Sesi tidak aktif }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: JWT HS256 TTL 15 menit; refresh_token menggantikan cookie ini.
+  schemas:
+    QuestionStatus:
+      type: string
+      enum: [approved, rejected, archived]
+      description: approved adalah status publish; draft dan review tidak digunakan
+    QuestionSheetWrite:
+      type: object
+      required: [name, mapel_code, duration_minutes, question_ids]
+      properties:
+        name: { type: string, maxLength: 128 }
+        mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'kode mapel 4 karakter dari GET /api/v1/mapels; harus sama dengan mapel seluruh soal' }
+        code: { type: string, pattern: '^[A-Z0-9-]{12}$', description: 'Opsional saat create; generator berdasarkan mapel dipakai bila kosong' }
+        description: { type: string, maxLength: 1000, nullable: true }
+        duration_minutes: { type: integer, minimum: 1, description: 'Angka bebas dalam menit, bukan preset' }
+        question_ids:
+          type: array
+          minItems: 1
+          items: { type: integer }
+          description: 'Semua soal harus dari satu mapel yang sama'
+    Error:
+      type: object
+      properties:
+        ok: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            status: { type: integer }

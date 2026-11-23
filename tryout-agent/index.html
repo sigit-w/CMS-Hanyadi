@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tryout Bank Soal</title>
+  <link rel="stylesheet" href="/styles.css?v=10">
+</head>
+<body>
+  <div id="loginGate" class="login-gate">
+    <div class="login-shell">
+      <div class="login-brand">
+        <div class="brand-mark">BS</div>
+        <h1>Tryout Bank Soal</h1>
+        <p class="muted">Masuk untuk mengerjakan soal yang telah disiapkan.</p>
+      </div>
+      <form id="loginForm" class="login-card">
+        <h2>Login Peserta</h2>
+        <p class="muted">Gunakan akun peserta yang diberikan administrator.</p>
+        <p id="loginError" class="alert error" hidden></p>
+        <label>
+          Email peserta
+          <input id="loginUsername" required type="email" autocomplete="username" placeholder="nama@domain.id">
+        </label>
+        <label>
+          Password
+          <input id="loginPassword" required type="password" autocomplete="current-password">
+        </label>
+        <button type="submit" id="loginButton">Masuk</button>
+      </form>
+    </div>
+  </div>
+
+  <header id="appHeader" class="topbar" hidden>
+    <div class="brand">
+      <div class="brand-mark">BS</div>
+      <div>
+        <h1>Tryout Bank Soal</h1>
+        <p>Pilih soal di daftar, lalu kerjakan soal yang sudah disiapkan.</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="userLabel" class="badge"></span>
+      <button id="logoutButton" type="button" class="small">Keluar</button>
+    </div>
+  </header>
+
+  <main id="appMain" class="layout" hidden>
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Daftar Soal</h2>
+        <p id="listStatus" class="muted">Memuat daftar soal…</p>
+      </div>
+      <div class="panel-body">
+        <ul id="questionList" class="question-list"></ul>
+        <button id="loadMore" type="button" hidden>Muat lebih banyak</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Soal</h2>
+      </div>
+      <div class="panel-body">
+        <div id="questionBody" class="question-body empty">Pilih soal di sebelah kiri untuk mulai.</div>
+        <div id="nav" class="nav"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/app.js?v=11" defer></script>
+</body>
+</html>

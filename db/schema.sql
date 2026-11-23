@@ -1,0 +1,279 @@
+CREATE TABLE IF NOT EXISTS contributors (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(64) NOT NULL UNIQUE,
+    display_name VARCHAR(128) NOT NULL,
+    role VARCHAR(32) NOT NULL DEFAULT 'editor'
+        CHECK (role IN ('admin', 'editor', 'reviewer', 'qa')),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mapels (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(4) NOT NULL UNIQUE
+        CHECK (code ~ '^[A-Z0-9]{4}$'),
+    name VARCHAR(64) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS source_types (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(32) NOT NULL UNIQUE
+        CHECK (code IN ('manual', 'file_upload', 'external_collection')),
+    name VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS question_sources (
+    id BIGSERIAL PRIMARY KEY,
+    type_id BIGINT NOT NULL REFERENCES source_types(id) ON DELETE RESTRICT,
+    label VARCHAR(128) NOT NULL,
+    original_filename VARCHAR(255),
+    storage_path TEXT,
+    mime_type VARCHAR(128),
+    external_ref VARCHAR(255),
+    collected_from VARCHAR(255),
+    collected_at TIMESTAMPTZ,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    uploaded_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+    id BIGSERIAL PRIMARY KEY,
+    mapel_id BIGINT NOT NULL REFERENCES mapels(id) ON DELETE RESTRICT,
+    source_id BIGINT REFERENCES question_sources(id) ON DELETE SET NULL,
+    stem TEXT NOT NULL,
+    image_url TEXT,
+    question_type VARCHAR(24) NOT NULL DEFAULT 'multiple_choice'
+        CHECK (question_type IN ('multiple_choice', 'true_false', 'short_answer', 'essay')),
+    difficulty VARCHAR(12) NOT NULL DEFAULT 'medium'
+        CHECK (difficulty IN ('easy', 'medium', 'hard')),
+    status VARCHAR(16) NOT NULL DEFAULT 'approved'
+        CHECK (status IN ('approved', 'rejected', 'archived')),
+    is_multi_version_ready BOOLEAN NOT NULL DEFAULT false,
+    created_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT questions_stem_not_blank CHECK (length(btrim(stem)) > 0)
+);
+
+CREATE TABLE IF NOT EXISTS question_options (
+    id BIGSERIAL PRIMARY KEY,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    option_key VARCHAR(4) NOT NULL,
+    content TEXT NOT NULL,
+    is_correct BOOLEAN NOT NULL DEFAULT false,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (question_id, option_key),
+    CONSTRAINT question_options_content_not_blank CHECK (length(btrim(content)) > 0)
+);
+
+CREATE TABLE IF NOT EXISTS answer_keys (
+    id BIGSERIAL PRIMARY KEY,
+    question_id BIGINT NOT NULL UNIQUE REFERENCES questions(id) ON DELETE CASCADE,
+    correct_option_id BIGINT REFERENCES question_options(id) ON DELETE SET NULL,
+    answer_text TEXT,
+    explanation TEXT,
+    updated_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT answer_key_has_value CHECK (
+        correct_option_id IS NOT NULL OR length(btrim(coalesce(answer_text, ''))) > 0
+    )
+);
+
+CREATE TABLE IF NOT EXISTS tryout_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    session_date DATE NOT NULL,
+    mapel_id BIGINT REFERENCES mapels(id) ON DELETE SET NULL,
+    is_active BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tryout_sessions_active
+    ON tryout_sessions ((is_active)) WHERE is_active;
+
+CREATE TABLE IF NOT EXISTS tryout_session_questions (
+    session_id BIGINT NOT NULL REFERENCES tryout_sessions(id) ON DELETE CASCADE,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tryout_session_questions_question
+    ON tryout_session_questions (question_id);
+
+CREATE TABLE IF NOT EXISTS tryout_session_participants (
+    session_id BIGINT NOT NULL REFERENCES tryout_sessions(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
+    PRIMARY KEY (session_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tryout_session_participants_user
+    ON tryout_session_participants (user_id);
+
+CREATE TABLE IF NOT EXISTS tryout_submissions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    session_id BIGINT REFERENCES tryout_sessions(id) ON DELETE SET NULL,
+    version VARCHAR(16) NOT NULL,
+    answer TEXT,
+    is_correct BOOLEAN NOT NULL,
+    explanation TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, question_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tryout_submissions_user_version
+    ON tryout_submissions (user_id, version);
+CREATE INDEX IF NOT EXISTS idx_tryout_submissions_question
+    ON tryout_submissions (question_id);
+CREATE INDEX IF NOT EXISTS idx_tryout_submissions_session_user
+    ON tryout_submissions (session_id, user_id);
+
+CREATE TABLE IF NOT EXISTS question_sheets (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    code VARCHAR(12) NOT NULL UNIQUE,
+    description TEXT,
+    duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+    mapel_id BIGINT NOT NULL REFERENCES mapels(id) ON DELETE RESTRICT,
+    archived BOOLEAN NOT NULL DEFAULT false,
+    archived_at TIMESTAMPTZ,
+    created_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT question_sheets_code_format CHECK (length(code) = 12 AND code ~ '^[A-Z0-9-]{12}$'),
+    CONSTRAINT question_sheets_name_not_blank CHECK (length(btrim(name)) > 0)
+);
+
+CREATE TABLE IF NOT EXISTS question_sheet_questions (
+    sheet_id BIGINT NOT NULL REFERENCES question_sheets(id) ON DELETE CASCADE,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE RESTRICT,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (sheet_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_question_sheet_questions_question
+    ON question_sheet_questions (question_id);
+CREATE INDEX IF NOT EXISTS idx_question_sheets_mapel_archived
+    ON question_sheets (mapel_id, archived);
+
+CREATE TABLE IF NOT EXISTS presentation_versions (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(16) NOT NULL UNIQUE,
+    name VARCHAR(64) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS question_version_readiness (
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    version_id BIGINT NOT NULL REFERENCES presentation_versions(id) ON DELETE RESTRICT,
+    is_ready BOOLEAN NOT NULL DEFAULT false,
+    validated_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
+    validated_at TIMESTAMPTZ,
+    notes TEXT,
+    PRIMARY KEY (question_id, version_id)
+);
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_questions_updated_at ON questions;
+CREATE TRIGGER trg_questions_updated_at
+BEFORE UPDATE ON questions
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_answer_keys_updated_at ON answer_keys;
+CREATE TRIGGER trg_answer_keys_updated_at
+BEFORE UPDATE ON answer_keys
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tryout_submissions_updated_at ON tryout_submissions;
+CREATE TRIGGER trg_tryout_submissions_updated_at
+BEFORE UPDATE ON tryout_submissions
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_question_sheets_updated_at ON question_sheets;
+CREATE TRIGGER trg_question_sheets_updated_at
+BEFORE UPDATE ON question_sheets
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_questions_mapel_status
+    ON questions (mapel_id, status);
+CREATE INDEX IF NOT EXISTS idx_questions_source
+    ON questions (source_id);
+CREATE INDEX IF NOT EXISTS idx_questions_status
+    ON questions (status);
+CREATE INDEX IF NOT EXISTS idx_options_question
+    ON question_options (question_id);
+CREATE INDEX IF NOT EXISTS idx_answer_keys_option
+    ON answer_keys (correct_option_id);
+CREATE INDEX IF NOT EXISTS idx_sources_type
+    ON question_sources (type_id);
+CREATE INDEX IF NOT EXISTS idx_sources_created
+    ON question_sources (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_readiness_version
+    ON question_version_readiness (version_id) WHERE is_ready;
+
+CREATE OR REPLACE VIEW v_question_catalog AS
+SELECT
+    q.id,
+    q.stem,
+    q.image_url,
+    q.question_type,
+    q.difficulty,
+    q.status,
+    m.code AS mapel_code,
+    m.name AS mapel_name,
+    st.code AS source_type,
+    qs.label AS source_label,
+    (ak.id IS NOT NULL) AS has_answer_key,
+    (SELECT count(*) FROM question_options o WHERE o.question_id = q.id) AS option_count,
+    (SELECT count(*) FROM question_version_readiness r
+      WHERE r.question_id = q.id AND r.is_ready) AS ready_version_count,
+    q.is_multi_version_ready,
+    q.created_at,
+    q.updated_at
+FROM questions q
+JOIN mapels m ON m.id = q.mapel_id
+LEFT JOIN question_sources qs ON qs.id = q.source_id
+LEFT JOIN source_types st ON st.id = qs.type_id
+LEFT JOIN answer_keys ak ON ak.question_id = q.id;
+
+INSERT INTO mapels (code, name, description) VALUES
+    ('MTKA', 'Matematika', 'Soal-soal matematika'),
+    ('BIND', 'Bahasa Indonesia', 'Soal-soal Bahasa Indonesia'),
+    ('IPAS', 'IPAS', 'Ilmu Pengetahuan Alam dan Sosial')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO source_types (code, name) VALUES
+    ('manual', 'Input Manual'),
+    ('file_upload', 'Upload File'),
+    ('external_collection', 'Pengumpulan Eksternal')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO presentation_versions (code, name) VALUES
+    ('v1', 'Versi 1'),
+    ('v2', 'Versi 2'),
+    ('v3', 'Versi 3')
+ON CONFLICT (code) DO NOTHING;
