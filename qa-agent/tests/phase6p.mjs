@@ -143,7 +143,8 @@ test('PR-01 migrasi dan kontrak Fase 6p terpasang', async () => {
 
 test('PR-02 siswa tidak tampil default di daftar peserta tryout', () => {
   const source = readFileSync(TRYOUT_PAGE, 'utf8');
-  assert.ok(source.includes('Data siswa tidak ditampilkan sampai dipilih melalui A. Peserta Didik.'));
+  assert.ok(!source.includes('Data siswa tidak ditampilkan sampai dipilih melalui A. Peserta Didik.'),
+    'Helper text lama masih ada di TryoutManagement');
   assert.ok(source.includes('draftParticipantRows'));
   assert.ok(source.includes('openPesertaSiswa'));
   assert.ok(!source.includes('checked={selectedParticipants.includes(id)}'),

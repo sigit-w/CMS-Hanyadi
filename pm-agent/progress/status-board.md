@@ -293,3 +293,16 @@ Permintaan pemilik: siswa tidak tampil default di Buat Tryout; tombol tambah pes
 | TRY-13 | Tryout | P1 | done | BE-33 (kontrak) | Tanpa perubahan kode; login Umum & Siswa lolos |
 | QA-30 | QA | P0 | done | BE-33, FE-30, TRY-13 | PR-01..PR-08 lolos; regresi 150/150; `phase6p-report.md` |
 | REL-18 | PM | P0 | done | QA-30 | **GO** 2026-11-24; health/aset produksi terverifikasi |
+
+## Fase 6q — Kelola Peserta dari Daftar Tryout — 2026-11-24
+
+Permintaan pemilik: hapus helper text `Data siswa tidak ditampilkan sampai dipilih melalui A. Peserta Didik.` dari Buat Tryout; popup `Kelola Peserta` pada Daftar Tryout juga menampilkan daftar peserta dan dua tombol `A. Peserta Didik` / `B. Peserta Umum` dengan alur yang sama seperti form Buat Tryout; perbarui laporan sistem sebelum commit/push. Keputusan lengkap di `pm-agent/decisions/ADR-009-kelola-peserta-tryout.md`; requirement dan AC di `pm-agent/tasks/phase6q-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-19 | PM | P0 | done | - | ADR-009 accepted; backlog + handoff BE-34/FE-31/QA-31 diterbitkan |
+| BE-34 | Backend | P0 | done | ADR-009 | `POST /tryouts/{id}/participants` idempoten; OpenAPI/backend README; health 8082 `200` |
+| FE-31 | Frontend | P0 | done | BE-34 (kontrak) | Helper text hilang; popup Kelola Peserta A/B; target `draft`/`manage`; bundle `index-D0au7v9d.js` |
+| QA-31 | QA | P0 | done | BE-34, FE-31 | QP-01..QP-05 lolos; regresi 155/155; laporan & gate `REL-19 GO` |
+| DOC-06Q | PM/Docs | P1 | done | FE-31, QA-31 | `laporan-sistem/index.html` diperbarui ke Fase 6q, 155/155, REL-19 |
+| REL-19 | PM | P0 | review | QA-31, DOC-06Q | Deploy & verifikasi produksi selesai; commit/push menyusul |

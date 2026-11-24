@@ -178,6 +178,41 @@ tryoutRouter.delete('/tryouts/:id/participants/:participantId', adminOnly, async
   res.json({ ok: true, data: result, meta: nowMeta() });
 }));
 
+tryoutRouter.post('/tryouts/:id/participants', adminOnly, asyncHandler(async (req, res) => {
+  const tryoutId = parseId(req.params.id);
+  const participantIds = requireIds(req.body?.participant_ids, 'participant_ids');
+
+  const result = await withTransaction(async (client) => {
+    const foundTryout = await client.query('SELECT id FROM tryout_sessions WHERE id = $1', [tryoutId]);
+    if (!foundTryout.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+
+    const participants = await client.query(
+      `SELECT id FROM tryout_participants
+       WHERE id = ANY($1::bigint[]) AND is_active = true AND prospek = false`,
+      [participantIds]
+    );
+    if (participants.rows.length !== participantIds.length) {
+      throw new ApiError('VALIDATION_ERROR', 'Sebagian peserta tidak ditemukan, tidak aktif, atau berstatus prospek');
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO tryout_session_participants (session_id, participant_id)
+       SELECT $1, item FROM unnest($2::bigint[]) AS t(item)
+       ON CONFLICT (session_id, participant_id) DO NOTHING
+       RETURNING participant_id`,
+      [tryoutId, participantIds]
+    );
+    const tryout = await loadTryout(client, tryoutId);
+    return {
+      tryout,
+      added_ids: inserted.rows.map((row) => Number(row.participant_id)),
+      participant_ids: tryout.participant_ids.map(Number)
+    };
+  });
+
+  res.json({ ok: true, data: result, meta: nowMeta() });
+}));
+
 tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const name = requireName(req.body?.name);
   const mapelCode = requireMapelCode(req.body?.mapel_code ?? req.body?.mapel);

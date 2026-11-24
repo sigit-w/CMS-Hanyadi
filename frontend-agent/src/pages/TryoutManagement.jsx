@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  addTryoutParticipants,
   createParticipant,
   createTryout,
   deleteTryout,
@@ -127,6 +128,7 @@ export default function TryoutManagement() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pesertaDialog, setPesertaDialog] = useState(null);
+  const [participantTarget, setParticipantTarget] = useState('draft');
   const [umumForm, setUmumForm] = useState(emptyUmum);
   const [umumError, setUmumError] = useState('');
   const [savingPeserta, setSavingPeserta] = useState(false);
@@ -204,18 +206,37 @@ export default function TryoutManagement() {
       : [...current, value]);
   }
 
-  function openPesertaUmum() {
+  function openPesertaUmum(target = 'draft') {
     setUmumForm(emptyUmum());
     setUmumError('');
+    setParticipantTarget(target);
     setPesertaDialog('umum');
   }
 
-  function openPesertaSiswa() {
+  function openPesertaSiswa(target = 'draft') {
     setSiswaSearch('');
+    setParticipantTarget(target);
     setPesertaDialog('siswa');
   }
 
-  function handlePickSiswa(participant) {
+  async function handlePickSiswa(participant) {
+    setError('');
+    setNotice('');
+    if (participantTarget === 'manage') {
+      try {
+        setSavingPeserta(true);
+        await addTryoutParticipants(managedTryoutId, [participant.id]);
+        await loadManagedParticipants(managedTryoutId);
+        await refreshTryouts();
+        setNotice(`Siswa "${participant.nama}" ditambahkan ke tryout ini.`);
+        setPesertaDialog('manage');
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSavingPeserta(false);
+      }
+      return;
+    }
     setSelectedParticipants((current) => (
       current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
     ));
@@ -242,16 +263,30 @@ export default function TryoutManagement() {
     }
   }
 
+  async function loadManagedParticipants(tryoutId) {
+    const [detail, participantData] = await Promise.all([getTryout(tryoutId), getParticipants()]);
+    const ids = detail.tryout.participant_ids.map(String);
+    setManagedTryoutId(detail.tryout.id);
+    setManagedParticipants(
+      participantData.participants.filter((participant) => ids.includes(String(participant.id)))
+    );
+  }
+
+  function isAlreadySelected(participant) {
+    const source = participantTarget === 'manage' ? managedParticipants : selectedParticipants;
+    return source.some((item) => String(item.id ?? item) === String(participant.id));
+  }
+
+  function closePesertaFlow() {
+    setPesertaDialog(participantTarget === 'manage' ? 'manage' : null);
+  }
+
   async function openManageParticipants(tryout) {
     setError('');
     setNotice('');
     try {
-      const [detail, participantData] = await Promise.all([getTryout(tryout.id), getParticipants()]);
-      const ids = detail.tryout.participant_ids.map(String);
-      setManagedTryoutId(detail.tryout.id);
-      setManagedParticipants(
-        participantData.participants.filter((participant) => ids.includes(String(participant.id)))
-      );
+      await loadManagedParticipants(tryout.id);
+      setParticipantTarget('manage');
       setPesertaDialog('manage');
     } catch (err) {
       setError(err.message);
@@ -297,10 +332,17 @@ export default function TryoutManagement() {
       });
       const participant = created.participant;
       setParticipants((current) => [participant, ...current.filter((item) => item.id !== participant.id)]);
-      setSelectedParticipants((current) => (
-        current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
-      ));
-      setPesertaDialog(null);
+      if (participantTarget === 'manage') {
+        await addTryoutParticipants(managedTryoutId, [participant.id]);
+        await loadManagedParticipants(managedTryoutId);
+        await refreshTryouts();
+        setPesertaDialog('manage');
+      } else {
+        setSelectedParticipants((current) => (
+          current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
+        ));
+        setPesertaDialog(null);
+      }
       setNotice(`Peserta Umum "${participant.nama}" ditambahkan. PIN: ${umumForm.pin}`);
     } catch (err) {
       setUmumError(err.message);
@@ -431,9 +473,6 @@ export default function TryoutManagement() {
 
             <fieldset className="rounded-lg border p-4">
               <legend className="px-1 text-sm font-semibold">Peserta Tryout ({selectedParticipants.length} dipilih, opsional)</legend>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Data siswa tidak ditampilkan sampai dipilih melalui A. Peserta Didik.
-              </p>
               <ParticipantRows
                 rows={draftParticipantRows}
                 onDetail={setDetailParticipant}
@@ -477,7 +516,7 @@ export default function TryoutManagement() {
         </div>
       </Dialog>
 
-      <Dialog open={pesertaDialog === 'siswa'} onClose={() => setPesertaDialog(null)} title="A. Peserta Didik">
+      <Dialog open={pesertaDialog === 'siswa'} onClose={closePesertaFlow} title="A. Peserta Didik">
         <p className="mb-3 text-sm text-muted-foreground">Pilih siswa dari data Kelola Siswa untuk dilampirkan ke tryout ini.</p>
         <Input
           value={siswaSearch}
@@ -496,20 +535,20 @@ export default function TryoutManagement() {
               <Button
                 type="button"
                 size="sm"
-                disabled={selectedParticipants.some((id) => String(id) === String(participant.id))}
+                disabled={savingPeserta || isAlreadySelected(participant)}
                 onClick={() => handlePickSiswa(participant)}
               >
-                {selectedParticipants.some((id) => String(id) === String(participant.id)) ? 'Dipilih' : 'Pilih'}
+                {isAlreadySelected(participant) ? 'Dipilih' : savingPeserta ? 'Menambahkan…' : 'Pilih'}
               </Button>
             </div>
           ))}
         </div>
         <div className="mt-4 flex justify-end">
-          <Button type="button" variant="ghost" onClick={() => setPesertaDialog(null)}>Selesai</Button>
+          <Button type="button" variant="ghost" onClick={closePesertaFlow}>Selesai</Button>
         </div>
       </Dialog>
 
-      <Dialog open={pesertaDialog === 'umum'} onClose={() => setPesertaDialog(null)} title="Tambah Peserta Umum">
+      <Dialog open={pesertaDialog === 'umum'} onClose={closePesertaFlow} title="Tambah Peserta Umum">
         {umumError && <Alert variant="destructive">{umumError}</Alert>}
         <form className="mt-3 space-y-4" onSubmit={handleCreateUmum}>
           <div className="space-y-1.5">
@@ -538,7 +577,7 @@ export default function TryoutManagement() {
               onChange={(event) => setUmumForm({ ...umumForm, wa_orang_tua: event.target.value })} />
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setPesertaDialog(null)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={closePesertaFlow}>Batal</Button>
             <Button type="submit" disabled={savingPeserta}>
               {savingPeserta ? 'Menyimpan…' : 'Simpan Peserta'}
             </Button>
@@ -575,6 +614,18 @@ export default function TryoutManagement() {
           onRemove={handleRemoveManagedParticipant}
           emptyText="Tidak ada peserta pada tryout ini."
         />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left"
+            onClick={() => openPesertaSiswa('manage')}>
+            <span className="font-semibold">A. Peserta Didik</span>
+            <span className="text-xs text-muted-foreground">Pilih siswa untuk ditambahkan ke tryout ini</span>
+          </Button>
+          <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left"
+            onClick={() => openPesertaUmum('manage')}>
+            <span className="font-semibold">B. Peserta Umum</span>
+            <span className="text-xs text-muted-foreground">Isi data peserta dan PIN login</span>
+          </Button>
+        </div>
       </Dialog>
 
       <Card>

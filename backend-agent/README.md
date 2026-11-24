@@ -30,6 +30,8 @@ Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, d
 
 Fase 6p (ADR-008) menambahkan `DELETE /api/v1/tryouts/{id}/participants/{participantId}` untuk mengeluarkan peserta dari sebuah tryout. Peserta Siswa hanya kehilangan relasi `tryout_session_participants`; data siswa tidak diubah. Peserta Umum yang dikeluarkan mengalami hal yang sama dan ditandai `prospek=true`, `prospek_at` terisi, `is_active=false`, serta sesinya dicabut. Data tersebut muncul di `GET /api/v1/prospektus`. Untuk daftar peserta pada form tryout yang belum disimpan, `POST /api/v1/participants/{id}/prospek` melakukan hal yang sama tanpa memerlukan ID tryout; Siswa ditolak dengan `400`. Endpoint lama `DELETE /participants/{id}` tetap berarti nonaktifkan peserta secara global dan tidak dipakai untuk aksi tryout.
 
+Fase 6q (ADR-009) menambahkan `POST /api/v1/tryouts/{id}/participants` dengan payload `{ "participant_ids": [1, 2] }` untuk melampirkan peserta yang sudah ada ke tryout tersimpan dari popup **Kelola Peserta**. Endpoint memakai `tryouts.manage`, menolak peserta nonaktif/prospek, dan melewati relasi yang sudah ada sehingga aman dipanggil ulang. Respons memuat `added_ids` serta daftar `participant_ids` terbaru. Tidak ada perubahan skema pada Fase 6q.
+
 ## Jenis Soal
 
 `question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/TXT juga menerima `Jawaban: B,D`.

@@ -198,11 +198,11 @@ paths:
                     jenis: { type: string, enum: [umum] }
                     nama: { type: string, maxLength: 128 }
                     sekolah: { type: string, maxLength: 255 }
-                     pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
-                     wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
-                     prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
-                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
-                 - type: object
+                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
+                    wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
+                    prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
+                    prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
+                - type: object
                   required: [nama, email, kelas, sekolah]
                   properties:
                     jenis: { type: string, enum: [siswa], default: siswa }
@@ -212,13 +212,13 @@ paths:
                     sekolah: { type: string, maxLength: 255 }
                     program_belajar_id: { type: integer, nullable: true }
                     wa_orang_tua: { type: string, maxLength: 20, nullable: true }
-                     password:
-                       type: string
-                       format: password
-                       minLength: 6
-                       description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
-                     prospek: { type: boolean, readOnly: true, description: 'False untuk Siswa.' }
-                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
+                    password:
+                      type: string
+                      format: password
+                      minLength: 6
+                      description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+                    prospek: { type: boolean, readOnly: true, description: 'False untuk Siswa.' }
+                    prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
       responses:
         '201': { description: Peserta dibuat }
         '400': { description: Validasi gagal }
@@ -333,6 +333,26 @@ paths:
       summary: Hapus Tryout dan relasinya (tryouts.manage); submission lama kehilangan session_id
       responses:
         '200': { description: Tryout dihapus }
+        '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryouts/{id}/participants:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: Lampirkan peserta existing ke tryout tersimpan (tryouts.manage)
+      description: 'Dipakai popup Kelola Peserta. Relasi yang sudah ada dilewati; peserta nonaktif atau prospek ditolak.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participant_ids]
+              properties:
+                participant_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID dari /api/v1/participants.' }
+      responses:
+        '200': { description: 'Relasi tersimpan; added_ids berisi ID yang baru dilampirkan' }
+        '400': { description: 'Validasi peserta gagal' }
+        '403': { description: Tidak memiliki permission tryouts.manage }
         '404': { description: Tryout tidak ditemukan }
   /api/v1/tryouts/{id}/participants/{participantId}:
     parameters:

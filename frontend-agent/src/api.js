@@ -130,6 +130,11 @@ export const getTryout = (id) => request(`/tryouts/${id}`);
 export const createTryout = (payload) =>
   request('/tryouts', { method: 'POST', body: JSON.stringify(payload) });
 export const deleteTryout = (id) => request(`/tryouts/${id}`, { method: 'DELETE' });
+export const addTryoutParticipants = (tryoutId, participantIds) =>
+  request(`/tryouts/${tryoutId}/participants`, {
+    method: 'POST',
+    body: JSON.stringify({ participant_ids: participantIds })
+  });
 export const removeTryoutParticipant = (tryoutId, participantId) =>
   request(`/tryouts/${tryoutId}/participants/${participantId}`, { method: 'DELETE' });
 export const getTryoutSessions = () => request('/tryout-sessions');
