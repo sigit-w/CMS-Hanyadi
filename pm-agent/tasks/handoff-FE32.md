@@ -7,7 +7,7 @@
 | Agent pengirim | PM |
 | Agent penerima | Frontend |
 | Tanggal | 2026-11-24 |
-| Status | review |
+| Status | done |
 
 ## Artifact yang Diserahkan
 

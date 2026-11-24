@@ -31,36 +31,36 @@ Gate: `REL-20`
 ## Acceptance Criteria
 
 ### BE-35
-- [ ] Migrasi `024_siswa_prospektus_kredensial.sql` idempoten dan terpasang; backup DB dibuat lebih dulu.
-- [ ] `public.siswa` dan `public.prospektus` punya struktur kolom sama; `prospektus` punya `bergabung`/`bergabung_at`.
-- [ ] POST peserta `jenis='umum'` menulis ke `prospektus`; `jenis='siswa'` ke `siswa`.
-- [ ] `GET /prospektus` mengembalikan seluruh prospek dengan `bergabung` dan kredensial hanya lewat detail.
-- [ ] `GET /participants/{id}/detail` dan `GET /prospektus/{id}` mengembalikan `password_plain`/`pin_plain`.
-- [ ] `POST /prospektus/{id}/daftar` membuat siswa, menandai `bergabung=true`, dan menolak prospek yang sudah bergabung.
-- [ ] Login Umum (Nama + PIN) dan Siswa (Email + Password) lolos; password CMS tetap scrypt.
-- [ ] Trigger integritas menolak `participant_id` yang tidak ada di kedua tabel.
-- [ ] OpenAPI dan `db/README.md` sesuai implementasi.
+- [x] Migrasi `024_siswa_prospektus_kredensial.sql` idempoten dan terpasang; backup DB dibuat lebih dulu.
+- [x] `public.siswa` dan `public.prospektus` punya struktur kolom sama; `prospektus` punya `bergabung`/`bergabung_at`.
+- [x] POST peserta `jenis='umum'` menulis ke `prospektus`; `jenis='siswa'` ke `siswa`.
+- [x] `GET /prospektus` mengembalikan seluruh prospek dengan `bergabung` dan kredensial hanya lewat detail.
+- [x] `GET /participants/{id}/detail` dan `GET /prospektus/{id}` mengembalikan `password_plain`/`pin_plain`.
+- [x] `POST /prospektus/{id}/daftar` membuat siswa, menandai `bergabung=true`, dan menolak prospek yang sudah bergabung.
+- [x] Login Umum (Nama + PIN) dan Siswa (Email + Password) lolos; password CMS tetap scrypt.
+- [x] Trigger integritas menolak `participant_id` yang tidak ada di kedua tabel.
+- [x] OpenAPI dan `db/README.md` sesuai implementasi.
 
 ### FE-32
-- [ ] Detail peserta di Buat Tryout/Kelola Peserta menampilkan PIN/Password dari endpoint detail.
-- [ ] Kelola Siswa memiliki aksi detail yang menampilkan password siswa.
-- [ ] Baris Prospektus diklik membuka detail dengan tombol `Daftarkan sebagai Siswa`.
-- [ ] Form daftar berisi email, kelas, program belajar, dan password opsional; validasi sesuai backend.
-- [ ] Prospek yang sudah didaftarkan menampilkan badge `Bergabung`.
-- [ ] Build produksi sukses dan aset terdeploy.
+- [x] Detail peserta di Buat Tryout/Kelola Peserta menampilkan PIN/Password dari endpoint detail.
+- [x] Kelola Siswa memiliki aksi detail yang menampilkan password siswa.
+- [x] Baris Prospektus diklik membuka detail dengan tombol `Daftarkan sebagai Siswa`.
+- [x] Form daftar berisi email, kelas, program belajar, dan password opsional; validasi sesuai backend.
+- [x] Prospek yang sudah didaftarkan menampilkan badge `Bergabung`.
+- [x] Build produksi sukses dan aset terdeploy.
 
 ### TRY-14
-- [ ] Tidak ada perubahan source `tryout-agent`.
-- [ ] Login Nama + PIN untuk Umum dan Email + Password untuk Siswa masih berfungsi.
+- [x] Tidak ada perubahan source `tryout-agent`.
+- [x] Login Nama + PIN untuk Umum dan Email + Password untuk Siswa masih berfungsi.
 
 ### QA-32
-- [ ] `PS-01..PS-07` lolos.
-- [ ] Regresi penuh `npm test` lolos tanpa OOM.
-- [ ] `qa-agent/reports/phase6r-report.md` dan `phase6r-release-gate.md` tersedia dengan `REL-20 GO`.
+- [x] `PS-01..PS-07` lolos.
+- [x] Regresi penuh `npm test` lolos tanpa OOM.
+- [x] `qa-agent/reports/phase6r-report.md` dan `phase6r-release-gate.md` tersedia dengan `REL-20 GO`.
 
 ### REL-20
-- [ ] Health API 200, aset CMS/tryout terverifikasi.
-- [ ] Commit dibuat dan `origin/main` terverifikasi setelah push.
+- [x] Health API 200, aset CMS/tryout terverifikasi.
+- [x] Commit dibuat dan `origin/main` terverifikasi setelah push.
 
 ## Catatan Eksekusi
 
