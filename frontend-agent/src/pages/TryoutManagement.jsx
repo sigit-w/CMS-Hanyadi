@@ -12,7 +12,8 @@ import {
   getTryoutParticipants,
   getTryouts,
   markParticipantProspek,
-  removeTryoutParticipant
+  removeTryoutParticipant,
+  updateTryoutCbt
 } from '../api.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,7 +48,22 @@ const emptyForm = () => ({
   start_at: jakartaInputDate(),
   end_at: jakartaInputDate(2),
   mapel_code: '',
-  is_active: true
+  is_active: true,
+  cbt_enabled: false,
+  cbt_duration_minutes: 90,
+  cbt_shuffle_questions: false,
+  cbt_shuffle_options: false,
+  cbt_require_fullscreen: true,
+  cbt_max_violations: 3
+});
+
+const cbtFormFromTryout = (tryout) => ({
+  cbt_enabled: Boolean(tryout.cbt_enabled),
+  cbt_duration_minutes: tryout.cbt_duration_minutes ?? 90,
+  cbt_shuffle_questions: Boolean(tryout.cbt_shuffle_questions),
+  cbt_shuffle_options: Boolean(tryout.cbt_shuffle_options),
+  cbt_require_fullscreen: Boolean(tryout.cbt_require_fullscreen),
+  cbt_max_violations: tryout.cbt_max_violations ?? 3
 });
 
 const emptyUmum = () => ({
@@ -141,6 +157,10 @@ export default function TryoutManagement() {
   const [umumError, setUmumError] = useState('');
   const [savingPeserta, setSavingPeserta] = useState(false);
   const [siswaSearch, setSiswaSearch] = useState('');
+  const [cbtTarget, setCbtTarget] = useState(null);
+  const [cbtForm, setCbtForm] = useState(cbtFormFromTryout({}));
+  const [savingCbt, setSavingCbt] = useState(false);
+  const [cbtError, setCbtError] = useState('');
 
   const draftParticipantRows = selectedParticipants
     .map((id) => draftParticipants.find((participant) => String(participant.id) === String(id)))
@@ -387,6 +407,11 @@ export default function TryoutManagement() {
       setError('Tanggal & jam selesai harus setelah tanggal & jam mulai.');
       return;
     }
+    if (form.cbt_enabled && (!Number.isInteger(Number(form.cbt_duration_minutes))
+      || Number(form.cbt_duration_minutes) < 1 || Number(form.cbt_duration_minutes) > 600)) {
+      setError('Durasi CBT harus antara 1 dan 600 menit.');
+      return;
+    }
     setSaving(true);
     try {
       const created = await createTryout({
@@ -396,7 +421,13 @@ export default function TryoutManagement() {
         mapel_code: form.mapel_code,
         sheet_ids: selectedSheets.map(Number),
         participant_ids: selectedParticipants.map(Number),
-        is_active: form.is_active
+        is_active: form.is_active,
+        cbt_enabled: form.cbt_enabled,
+        cbt_duration_minutes: form.cbt_enabled ? Number(form.cbt_duration_minutes) : null,
+        cbt_shuffle_questions: form.cbt_shuffle_questions,
+        cbt_shuffle_options: form.cbt_shuffle_options,
+        cbt_require_fullscreen: form.cbt_require_fullscreen,
+        cbt_max_violations: Number(form.cbt_max_violations)
       });
       setNotice(`Tryout "${created.tryout.name}" berhasil dibuat. URL peserta: ${tryoutUrl(created.tryout.slug)}`);
       setForm(emptyForm());
@@ -421,6 +452,40 @@ export default function TryoutManagement() {
       await refreshTryouts();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  function openCbtSettings(tryout) {
+    setCbtError('');
+    setCbtTarget(tryout);
+    setCbtForm(cbtFormFromTryout(tryout));
+  }
+
+  async function handleSaveCbt() {
+    if (!cbtTarget) return;
+    setCbtError('');
+    if (cbtForm.cbt_enabled && (!Number.isInteger(Number(cbtForm.cbt_duration_minutes))
+      || Number(cbtForm.cbt_duration_minutes) < 1 || Number(cbtForm.cbt_duration_minutes) > 600)) {
+      setCbtError('Durasi CBT harus antara 1 dan 600 menit.');
+      return;
+    }
+    setSavingCbt(true);
+    try {
+      const updated = await updateTryoutCbt(cbtTarget.id, {
+        cbt_enabled: cbtForm.cbt_enabled,
+        cbt_duration_minutes: cbtForm.cbt_enabled ? Number(cbtForm.cbt_duration_minutes) : null,
+        cbt_shuffle_questions: cbtForm.cbt_shuffle_questions,
+        cbt_shuffle_options: cbtForm.cbt_shuffle_options,
+        cbt_require_fullscreen: cbtForm.cbt_require_fullscreen,
+        cbt_max_violations: Number(cbtForm.cbt_max_violations)
+      });
+      setNotice(`Pengaturan CBT "${updated.tryout.name}" tersimpan.`);
+      setCbtTarget(null);
+      await refreshTryouts();
+    } catch (err) {
+      setCbtError(err.message);
+    } finally {
+      setSavingCbt(false);
     }
   }
 
@@ -518,6 +583,49 @@ export default function TryoutManagement() {
                 <Button type="button" variant="outline" size="sm" onClick={() => setPesertaDialog('choice')}>
                   Tambah Peserta Tryout
                 </Button>
+              </div>
+            </fieldset>
+
+            <fieldset className="rounded-lg border p-4">
+              <legend className="px-1 text-sm font-semibold">Mode CBT</legend>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={form.cbt_enabled}
+                    onChange={(event) => setForm({ ...form, cbt_enabled: event.target.checked })} />
+                  Aktifkan CBT (timer, submit akhir, autosave, pengawasan)
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Durasi (menit)</Label>
+                    <Input type="number" min={1} max={600} disabled={!form.cbt_enabled}
+                      value={form.cbt_duration_minutes}
+                      onChange={(event) => setForm({ ...form, cbt_duration_minutes: event.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Batas Pelanggaran</Label>
+                    <Input type="number" min={0} max={100}
+                      value={form.cbt_max_violations}
+                      onChange={(event) => setForm({ ...form, cbt_max_violations: event.target.value })} />
+                    <p className="text-xs text-muted-foreground">0 = tanpa batas; pelanggaran ke-N+1 mengumpulkan jawaban otomatis.</p>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={form.cbt_shuffle_questions}
+                      onChange={(event) => setForm({ ...form, cbt_shuffle_questions: event.target.checked })} />
+                    Acak urutan soal
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={form.cbt_shuffle_options}
+                      onChange={(event) => setForm({ ...form, cbt_shuffle_options: event.target.checked })} />
+                    Acak opsi/pernyataan
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={form.cbt_require_fullscreen}
+                      onChange={(event) => setForm({ ...form, cbt_require_fullscreen: event.target.checked })} />
+                    Wajib fullscreen
+                  </label>
+                </div>
               </div>
             </fieldset>
 
@@ -663,6 +771,54 @@ export default function TryoutManagement() {
         </div>
       </Dialog>
 
+      <Dialog open={Boolean(cbtTarget)} onClose={() => setCbtTarget(null)} title="Pengaturan CBT Tryout">
+        {cbtError && <Alert variant="destructive">{cbtError}</Alert>}
+        <div className="mt-3 space-y-4">
+          <p className="text-sm text-muted-foreground">{cbtTarget?.name}</p>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={cbtForm.cbt_enabled}
+              onChange={(event) => setCbtForm({ ...cbtForm, cbt_enabled: event.target.checked })} />
+            Aktifkan mode CBT
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Durasi (menit)</Label>
+              <Input type="number" min={1} max={600} disabled={!cbtForm.cbt_enabled}
+                value={cbtForm.cbt_duration_minutes}
+                onChange={(event) => setCbtForm({ ...cbtForm, cbt_duration_minutes: event.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Batas Pelanggaran</Label>
+              <Input type="number" min={0} max={100} value={cbtForm.cbt_max_violations}
+                onChange={(event) => setCbtForm({ ...cbtForm, cbt_max_violations: event.target.value })} />
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={cbtForm.cbt_shuffle_questions}
+                onChange={(event) => setCbtForm({ ...cbtForm, cbt_shuffle_questions: event.target.checked })} />
+              Acak soal
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={cbtForm.cbt_shuffle_options}
+                onChange={(event) => setCbtForm({ ...cbtForm, cbt_shuffle_options: event.target.checked })} />
+              Acak opsi
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={cbtForm.cbt_require_fullscreen}
+                onChange={(event) => setCbtForm({ ...cbtForm, cbt_require_fullscreen: event.target.checked })} />
+              Wajib fullscreen
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setCbtTarget(null)}>Batal</Button>
+            <Button type="button" onClick={handleSaveCbt} disabled={savingCbt}>
+              {savingCbt ? 'Menyimpan…' : 'Simpan Pengaturan'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">
           <CardTitle className="text-base">Daftar Tryout</CardTitle>
@@ -684,6 +840,7 @@ export default function TryoutManagement() {
                   <TableHead>Soal</TableHead>
                   <TableHead>Peserta</TableHead>
                   <TableHead>Submission</TableHead>
+                  <TableHead>Mode</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
@@ -708,6 +865,11 @@ export default function TryoutManagement() {
                     <TableCell>{tryout.participant_count}</TableCell>
                     <TableCell>{tryout.submission_count}</TableCell>
                     <TableCell>
+                      <Badge variant={tryout.cbt_enabled ? 'default' : 'secondary'}>
+                        {tryout.cbt_enabled ? `CBT ${tryout.cbt_duration_minutes}m` : 'Tryout'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={tryout.is_active ? 'default' : 'secondary'}>
                         {tryout.is_active ? 'Aktif' : 'Nonaktif'}
                       </Badge>
@@ -716,6 +878,9 @@ export default function TryoutManagement() {
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => openManageParticipants(tryout)}>
                           Kelola Peserta
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => openCbtSettings(tryout)}>
+                          Atur CBT
                         </Button>
                         <Button type="button" variant="destructive" size="sm" onClick={() => handleDelete(tryout)}>
                           Hapus

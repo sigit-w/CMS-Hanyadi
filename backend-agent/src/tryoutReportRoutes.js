@@ -163,15 +163,40 @@ tryoutReportRouter.get('/reports/tryout', authorize('tryout_reports.read'), asyn
     LIMIT 500
   `;
 
-  const [sessions, summary, details] = await Promise.all([
+  const attemptsQuery = `
+    SELECT * FROM v_cbt_attempt_report
+    WHERE ($1::bigint IS NULL OR session_id = $1)
+    ORDER BY session_id DESC, participant, attempt_id
+  `;
+  const violationsQuery = `
+    SELECT v.id, v.attempt_id, v.violation_type, v.detail, v.created_at,
+           a.session_id, a.participant_id,
+           tp.nama AS participant
+    FROM tryout_cbt_violations v
+    JOIN tryout_attempts a ON a.id = v.attempt_id
+    LEFT JOIN tryout_participants tp ON tp.id = a.participant_id
+    WHERE ($1::bigint IS NULL OR a.session_id = $1)
+    ORDER BY v.created_at DESC, v.id DESC
+    LIMIT 500
+  `;
+
+  const [sessions, summary, details, attempts, violations] = await Promise.all([
     query(sessionsQuery),
     query(summaryQuery, [sessionId]),
-    query(detailsQuery, [sessionId])
+    query(detailsQuery, [sessionId]),
+    query(attemptsQuery, [sessionId]),
+    query(violationsQuery, [sessionId])
   ]);
 
   res.json({
     ok: true,
-    data: { sessions: sessions.rows, summary: summary.rows, details: details.rows },
+    data: {
+      sessions: sessions.rows,
+      summary: summary.rows,
+      details: details.rows,
+      attempts: attempts.rows,
+      violations: violations.rows
+    },
     meta: nowMeta()
   });
 }));

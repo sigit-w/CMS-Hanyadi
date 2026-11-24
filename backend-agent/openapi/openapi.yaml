@@ -376,7 +376,13 @@ paths:
                 question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'Kompatibilitas payload lama.' }
                 participant_ids: { type: array, items: { type: integer }, minItems: 0, maxItems: 200, description: 'Opsional; ID dari /api/v1/participants.' }
                 is_active: { type: boolean, default: false }
-      responses:
+                cbt_enabled: { type: boolean, default: false }
+                cbt_duration_minutes: { type: integer, minimum: 1, maximum: 600, description: 'Wajib bila cbt_enabled=true.' }
+                cbt_shuffle_questions: { type: boolean, default: false }
+                cbt_shuffle_options: { type: boolean, default: false }
+                cbt_require_fullscreen: { type: boolean, default: false }
+                cbt_max_violations: { type: integer, minimum: 0, maximum: 100, default: 0, description: '0 = tanpa batas.' }
+       responses:
         '201': { description: Tryout dibuat beserta relasi lembar/soal dan peserta }
         '400': { description: Validasi jadwal, mapel, lembar, soal, atau peserta gagal }
         '403': { description: Tidak memiliki permission tryouts.manage }
@@ -392,6 +398,29 @@ paths:
       summary: Hapus Tryout dan relasinya (tryouts.manage); submission lama kehilangan session_id
       responses:
         '200': { description: Tryout dihapus }
+        '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryouts/{id}/cbt:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      summary: Perbarui pengaturan CBT sebuah tryout (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cbt_enabled: { type: boolean }
+                cbt_duration_minutes: { type: integer, minimum: 1, maximum: 600, nullable: true }
+                cbt_shuffle_questions: { type: boolean }
+                cbt_shuffle_options: { type: boolean }
+                cbt_require_fullscreen: { type: boolean }
+                cbt_max_violations: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        '200': { description: Pengaturan CBT tersimpan; data tryout terbaru dikembalikan }
+        '400': { description: Validasi pengaturan gagal }
+        '403': { description: Tidak memiliki permission tryouts.manage }
         '404': { description: Tryout tidak ditemukan }
   /api/v1/tryouts/{id}/participants:
     parameters:
@@ -454,7 +483,7 @@ paths:
       parameters:
         - { name: session_id, in: query, schema: { type: integer } }
       responses:
-        '200': { description: sessions, summary benar/salah/skor, details perbandingan jawaban }
+        '200': { description: sessions, summary benar/salah/skor, details perbandingan jawaban, attempts CBT, dan violations }
         '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/tryout/questions:
     get:
@@ -775,6 +804,53 @@ paths:
         '401': { description: Sesi tidak aktif }
         '403': { description: Akses tryout ditolak }
         '404': { description: Soal approved tidak ditemukan }
+  /api/v1/presentation/cbt/attempt/start:
+    post:
+      summary: Mulai atau lanjutkan attempt CBT peserta (presentation.read)
+      responses:
+        '200': { description: State attempt, daftar soal terpersonalisasi, draft, flag, dan deadline; tanpa skor/kunci }
+        '403': { description: Peserta tidak terdaftar atau tryout bukan mode CBT }
+        '409': { description: Mode CBT tidak aktif }
+        '410': { description: Waktu habis }
+  /api/v1/presentation/cbt/attempt:
+    get:
+      summary: Ambil state attempt CBT berjalan
+      responses:
+        '200': { description: State attempt tanpa skor/kunci }
+        '404': { description: Attempt belum dimulai }
+  /api/v1/presentation/cbt/attempt/autosave:
+    post:
+      summary: Simpan draft jawaban satu soal tanpa penilaian yang dikembalikan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question_id]
+              properties:
+                question_id: { type: integer }
+                answer: { oneOf: [{ type: string }, { type: array, items: { type: string } }] }
+                answer_text: { type: string }
+                answers: { type: array, items: { type: object } }
+      responses:
+        '200': { description: Draft tersimpan; hanya question_id dan saved_at }
+        '400': { description: Format jawaban tidak valid }
+  /api/v1/presentation/cbt/attempt/flag:
+    post:
+      summary: Tandai atau hapus tanda ragu-ragu pada satu soal
+      responses:
+        '200': { description: Status flag tersimpan }
+  /api/v1/presentation/cbt/attempt/violation:
+    post:
+      summary: Catat pelanggaran fullscreen/tab; auto-submit saat batas terlampaui
+      responses:
+        '200': { description: violation_count dan status attempt terbaru }
+  /api/v1/presentation/cbt/attempt/finalize:
+    post:
+      summary: Kumpulkan seluruh draft menjadi submission final tanpa mengembalikan skor
+      responses:
+        '200': { description: status submitted dan submitted_at }
   /api/v1/presentation/attempts/summary:
     get:
       summary: Ringkasan jumlah jawaban terkirim dari database

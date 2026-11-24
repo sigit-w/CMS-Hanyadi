@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tryout Bank Soal</title>
-  <link rel="stylesheet" href="/styles.css?v=13">
+  <link rel="stylesheet" href="/styles.css?v=14">
 </head>
 <body>
   <div id="loginGate" class="login-gate">
@@ -42,7 +42,11 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <span id="timerDisplay" class="timer" hidden>00:00:00</span>
+      <span id="cbtStatus" class="badge cbt-status" hidden>CBT</span>
       <span id="userLabel" class="badge"></span>
+      <button id="fullscreenButton" type="button" class="small" hidden>Fullscreen</button>
+      <button id="finalizeButton" type="button" class="small finalize" hidden>Selesai &amp; Kumpulkan</button>
       <button id="logoutButton" type="button" class="small">Keluar</button>
     </div>
   </header>
@@ -71,6 +75,6 @@
   </main>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app.js?v=14" defer></script>
+  <script src="/app.js?v=15" defer></script>
 </body>
 </html>

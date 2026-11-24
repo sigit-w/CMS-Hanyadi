@@ -110,7 +110,15 @@ CREATE TABLE IF NOT EXISTS tryout_sessions (
     session_date DATE NOT NULL,
     mapel_id BIGINT REFERENCES mapels(id) ON DELETE SET NULL,
     is_active BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    cbt_enabled BOOLEAN NOT NULL DEFAULT false,
+    cbt_duration_minutes INTEGER CHECK (cbt_duration_minutes IS NULL OR cbt_duration_minutes BETWEEN 1 AND 600),
+    cbt_shuffle_questions BOOLEAN NOT NULL DEFAULT false,
+    cbt_shuffle_options BOOLEAN NOT NULL DEFAULT false,
+    cbt_require_fullscreen BOOLEAN NOT NULL DEFAULT false,
+    cbt_max_violations INTEGER NOT NULL DEFAULT 0 CHECK (cbt_max_violations BETWEEN 0 AND 100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_tryout_sessions_cbt_enabled_duration
+        CHECK (NOT cbt_enabled OR cbt_duration_minutes IS NOT NULL)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tryout_sessions_active
@@ -168,6 +176,54 @@ CREATE TABLE IF NOT EXISTS submission_statement_answers (
 
 CREATE INDEX IF NOT EXISTS idx_submission_statement_answers_submission
     ON submission_statement_answers (submission_id);
+
+CREATE TABLE IF NOT EXISTS tryout_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES tryout_sessions(id) ON DELETE CASCADE,
+    participant_id BIGINT NOT NULL,
+    seed VARCHAR(64) NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deadline_at TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ,
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress'
+        CHECK (status IN ('in_progress', 'submitted', 'expired')),
+    violation_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (session_id, participant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tryout_attempts_session_status
+    ON tryout_attempts (session_id, status);
+CREATE INDEX IF NOT EXISTS idx_tryout_attempts_participant
+    ON tryout_attempts (participant_id);
+
+CREATE TABLE IF NOT EXISTS tryout_cbt_drafts (
+    attempt_id BIGINT NOT NULL REFERENCES tryout_attempts(id) ON DELETE CASCADE,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    answer JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (attempt_id, question_id)
+);
+
+CREATE TABLE IF NOT EXISTS tryout_cbt_flags (
+    attempt_id BIGINT NOT NULL REFERENCES tryout_attempts(id) ON DELETE CASCADE,
+    question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    flagged BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (attempt_id, question_id)
+);
+
+CREATE TABLE IF NOT EXISTS tryout_cbt_violations (
+    id BIGSERIAL PRIMARY KEY,
+    attempt_id BIGINT NOT NULL REFERENCES tryout_attempts(id) ON DELETE CASCADE,
+    violation_type VARCHAR(40) NOT NULL,
+    detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tryout_cbt_violations_attempt
+    ON tryout_cbt_violations (attempt_id, created_at);
 
 CREATE TABLE IF NOT EXISTS question_sheets (
     id BIGSERIAL PRIMARY KEY,

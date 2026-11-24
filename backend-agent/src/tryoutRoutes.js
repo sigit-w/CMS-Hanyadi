@@ -11,6 +11,38 @@ export const tryoutRouter = Router();
 const nowMeta = () => ({ ts: new Date().toISOString() });
 const adminOnly = authorize('tryouts.manage');
 
+function toBool(value) {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+function normalizeCbtSettings(body = {}) {
+  const enabled = toBool(body.cbt_enabled);
+  const rawDuration = body.cbt_duration_minutes;
+  let duration = null;
+  if (rawDuration !== undefined && rawDuration !== null && rawDuration !== '') {
+    duration = Number(rawDuration);
+    if (!Number.isInteger(duration) || duration < 1 || duration > 600) {
+      throw new ApiError('VALIDATION_ERROR', 'cbt_duration_minutes harus antara 1 dan 600');
+    }
+  }
+  if (enabled && duration === null) {
+    throw new ApiError('VALIDATION_ERROR', 'Mode CBT aktif memerlukan cbt_duration_minutes');
+  }
+  const rawViolations = body.cbt_max_violations ?? 0;
+  const maxViolations = Number(rawViolations);
+  if (!Number.isInteger(maxViolations) || maxViolations < 0 || maxViolations > 100) {
+    throw new ApiError('VALIDATION_ERROR', 'cbt_max_violations harus antara 0 dan 100');
+  }
+  return {
+    enabled,
+    duration,
+    shuffleQuestions: toBool(body.cbt_shuffle_questions),
+    shuffleOptions: toBool(body.cbt_shuffle_options),
+    requireFullscreen: toBool(body.cbt_require_fullscreen),
+    maxViolations
+  };
+}
+
 function temporarySlug() {
   return `tmp-${crypto.randomBytes(12).toString('hex')}`;
 }
@@ -93,7 +125,9 @@ async function loadTryout(client, id) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
     `SELECT s.id, s.name, s.slug, s.session_date, s.start_at, s.end_at, s.is_active,
-            m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
+             s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
+             s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
+             m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
             (SELECT coalesce(array_agg(tq.question_id ORDER BY tq.position, tq.question_id), '{}'::bigint[])
              FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_ids,
             (SELECT coalesce(array_agg(tss.sheet_id ORDER BY tss.sheet_id), '{}'::bigint[])
@@ -112,8 +146,10 @@ async function loadTryout(client, id) {
 tryoutRouter.get('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const { rows } = await query(
     `SELECT s.id, s.name, s.slug, s.session_date, s.start_at, s.end_at, s.is_active,
-            m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
-            (SELECT count(*)::int FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_count,
+             s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
+             s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
+             m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
+             (SELECT count(*)::int FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_count,
             (SELECT count(*)::int FROM tryout_session_sheets tss WHERE tss.session_id = s.id) AS sheet_count,
             (SELECT count(*)::int FROM tryout_session_participants tp WHERE tp.session_id = s.id) AS participant_count,
             (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.session_id = s.id) AS submission_count
@@ -129,6 +165,23 @@ tryoutRouter.get('/tryouts/:id', adminOnly, asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
   const tryout = await loadTryout(null, id);
   if (!tryout) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+  res.json({ ok: true, data: { tryout }, meta: nowMeta() });
+}));
+
+tryoutRouter.patch('/tryouts/:id/cbt', adminOnly, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const settings = normalizeCbtSettings(req.body);
+  const existing = await query('SELECT id FROM tryout_sessions WHERE id = $1', [id]);
+  if (!existing.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+  await query(
+    `UPDATE tryout_sessions
+        SET cbt_enabled = $2, cbt_duration_minutes = $3, cbt_shuffle_questions = $4,
+            cbt_shuffle_options = $5, cbt_require_fullscreen = $6, cbt_max_violations = $7
+      WHERE id = $1`,
+    [id, settings.enabled, settings.duration, settings.shuffleQuestions,
+      settings.shuffleOptions, settings.requireFullscreen, settings.maxViolations]
+  );
+  const tryout = await loadTryout(null, id);
   res.json({ ok: true, data: { tryout }, meta: nowMeta() });
 }));
 
@@ -275,6 +328,7 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const questionIds = hasSheets ? [] : requireIds(req.body?.question_ids, 'question_ids');
   const participantIds = optionalIds(req.body?.participant_ids, 'participant_ids');
   const activate = Boolean(req.body?.is_active);
+  const cbt = normalizeCbtSettings(req.body);
 
   const tryout = await withTransaction(async (client) => {
     const mapel = await client.query(
@@ -335,10 +389,15 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       await client.query('UPDATE tryout_sessions SET is_active = false WHERE is_active');
     }
     const inserted = await client.query(
-      `INSERT INTO tryout_sessions (name, slug, session_date, start_at, end_at, mapel_id, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO tryout_sessions
+         (name, slug, session_date, start_at, end_at, mapel_id, is_active,
+          cbt_enabled, cbt_duration_minutes, cbt_shuffle_questions,
+          cbt_shuffle_options, cbt_require_fullscreen, cbt_max_violations)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
-      [name, temporarySlug(), sessionDate, startAt, endAt, mapelId, activate]
+      [name, temporarySlug(), sessionDate, startAt, endAt, mapelId, activate,
+        cbt.enabled, cbt.duration, cbt.shuffleQuestions, cbt.shuffleOptions,
+        cbt.requireFullscreen, cbt.maxViolations]
     );
     const tryoutId = inserted.rows[0].id;
     const resolvedSlug = requestedSlug ?? generateTryoutSlug(name, tryoutId);

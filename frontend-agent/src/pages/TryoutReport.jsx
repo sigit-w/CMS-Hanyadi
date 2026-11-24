@@ -26,10 +26,17 @@ function displayDate(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text || '-';
 }
 
+function displayDateTime(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short'
+  });
+}
+
 export default function TryoutReport() {
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState('');
-  const [report, setReport] = useState({ summary: [] });
+  const [report, setReport] = useState({ summary: [], attempts: [], violations: [] });
   const [form, setForm] = useState(emptySession);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -41,7 +48,11 @@ export default function TryoutReport() {
       getTryoutReport(sessionId || null)
     ]);
     setSessions(sessionData.sessions);
-    setReport({ summary: reportData.summary });
+    setReport({
+      summary: reportData.summary,
+      attempts: reportData.attempts ?? [],
+      violations: reportData.violations ?? []
+    });
   }, [sessionId]);
 
   useEffect(() => {
@@ -88,8 +99,10 @@ export default function TryoutReport() {
 
   const groupedSessions = sessions.map((session) => ({
     ...session,
-    rows: report.summary.filter((row) => row.session_id === session.id)
-  })).filter((session) => session.rows.length || session.is_active);
+    rows: report.summary.filter((row) => row.session_id === session.id),
+    attempts: report.attempts.filter((row) => row.session_id === session.id),
+    violations: report.violations.filter((row) => row.session_id === session.id)
+  })).filter((session) => session.rows.length || session.attempts.length || session.is_active);
 
   return (
     <>
@@ -178,35 +191,99 @@ export default function TryoutReport() {
             <Badge variant="secondary">{displayDate(session.session_date)}</Badge>
           </CardHeader>
           <CardContent>
-            {session.rows.length === 0 ? (
+            {session.rows.length === 0 && session.attempts.length === 0 ? (
               <p className="text-sm text-muted-foreground">Belum ada jawaban pada sesi ini.</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Siswa</TableHead>
-                    <TableHead>Kelas</TableHead>
-                    <TableHead>Sekolah</TableHead>
-                    <TableHead>Mapel</TableHead>
-                    <TableHead>Benar</TableHead>
-                    <TableHead>Salah</TableHead>
-                    <TableHead>Skor/Nilai</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {session.rows.map((row) => (
-                    <TableRow key={`${row.user_id}-${row.mapel_id}`}>
-                      <TableCell>{row.participant}</TableCell>
-                      <TableCell>{row.kelas || '—'}</TableCell>
-                      <TableCell>{row.sekolah || '—'}</TableCell>
-                      <TableCell>{row.mapel}</TableCell>
-                      <TableCell>{row.correct}</TableCell>
-                      <TableCell>{row.wrong}</TableCell>
-                      <TableCell><strong>{Number(row.score ?? 0).toFixed(1)}</strong></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-5">
+                {session.rows.length > 0 && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nama Siswa</TableHead>
+                        <TableHead>Kelas</TableHead>
+                        <TableHead>Sekolah</TableHead>
+                        <TableHead>Mapel</TableHead>
+                        <TableHead>Benar</TableHead>
+                        <TableHead>Salah</TableHead>
+                        <TableHead>Skor/Nilai</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {session.rows.map((row) => (
+                        <TableRow key={`${row.user_id}-${row.mapel_id}`}>
+                          <TableCell>{row.participant}</TableCell>
+                          <TableCell>{row.kelas || '—'}</TableCell>
+                          <TableCell>{row.sekolah || '—'}</TableCell>
+                          <TableCell>{row.mapel}</TableCell>
+                          <TableCell>{row.correct}</TableCell>
+                          <TableCell>{row.wrong}</TableCell>
+                          <TableCell><strong>{Number(row.score ?? 0).toFixed(1)}</strong></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                {session.attempts.length > 0 && (
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold">Attempt CBT</h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Peserta</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Mulai</TableHead>
+                          <TableHead>Deadline</TableHead>
+                          <TableHead>Selesai</TableHead>
+                          <TableHead>Benar</TableHead>
+                          <TableHead>Skor</TableHead>
+                          <TableHead>Pelanggaran</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {session.attempts.map((row) => (
+                          <TableRow key={row.attempt_id}>
+                            <TableCell>{row.participant ?? `#${row.participant_id}`}</TableCell>
+                            <TableCell>
+                              <Badge variant={row.status === 'submitted' ? 'default' : 'secondary'}>{row.status}</Badge>
+                            </TableCell>
+                            <TableCell>{displayDateTime(row.started_at)}</TableCell>
+                            <TableCell>{displayDateTime(row.deadline_at)}</TableCell>
+                            <TableCell>{displayDateTime(row.submitted_at)}</TableCell>
+                            <TableCell>{row.correct_count}/{row.question_count}</TableCell>
+                            <TableCell><strong>{Number(row.score ?? 0).toFixed(1)}</strong></TableCell>
+                            <TableCell>{row.violation_count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                {session.violations.length > 0 && (
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold">Log Pelanggaran</h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Waktu</TableHead>
+                          <TableHead>Peserta</TableHead>
+                          <TableHead>Jenis</TableHead>
+                          <TableHead>Detail</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {session.violations.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell>{displayDateTime(row.created_at)}</TableCell>
+                            <TableCell>{row.participant ?? `#${row.participant_id}`}</TableCell>
+                            <TableCell>{row.violation_type}</TableCell>
+                            <TableCell>{JSON.stringify(row.detail ?? {})}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

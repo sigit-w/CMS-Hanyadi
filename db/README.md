@@ -202,6 +202,14 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -f /opt/virtual-office-bank-soal/db/migrations/026_true_false_statements.sql
 ```
 
+Mode CBT lengkap per tryout (ADR-013; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/027_cbt_exam_mode.sql
+```
+
 Kredensial tersimpan di
 
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
@@ -251,6 +259,9 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - `program_belajar` menyimpan nama program, kelas 1–12, deskripsi, dan biaya; `program_belajar_schedules` menyimpan satu atau lebih jadwal per program (hari, jam mulai, jam selesai) dengan jam selesai wajib setelah jam mulai. Permission `program_belajar.manage` mengontrol CRUD halaman Kelola Program Belajar.
 - `siswa.program_belajar_id` dan `prospektus.program_belajar_id` menghubungkan peserta ke program belajar (`ON DELETE SET NULL`). `wa_orang_tua` maksimal 20 karakter dengan format opsional `+`, angka, spasi, atau tanda hubung; baris lama boleh NULL sampai diubah lewat UI.
 - View `v_question_catalog` dipakai frontend untuk daftar soal dan QA untuk audit cepat; sejak `026` menyertakan `statement_count` dan `correct_statement_count`.
+- Semua sesi `tryout_sessions` kini memiliki pengaturan CBT: `cbt_enabled`, `cbt_duration_minutes` (1–600 saat aktif), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0 = tanpa batas, maksimal 100). Sesi lama tetap `cbt_enabled=false` dan memakai alur tryout sebelumnya.
+- `tryout_attempts` menyimpan satu attempt per `(session_id, participant_id)` dengan `seed` deterministik, `started_at`, `deadline_at`, `status` (`in_progress`/`submitted`/`expired`), dan `violation_count`. `tryout_cbt_drafts` menyimpan autosave jawaban, `tryout_cbt_flags` menyimpan tanda ragu-ragu, dan `tryout_cbt_violations` menyimpan log pelanggaran fullscreen/tab.
+- Acak soal dan opsi memakai `seed` attempt. Opsi tetap menyimpan `key` asli di database dan dikirim bersama `label` tampilan yang sudah diacak; peserta mengirim `key` asli sehingga penilaian tidak berubah. Skor tidak pernah dikembalikan ke peserta; `v_cbt_attempt_report` dipakai laporan admin.
 
 ## Perubahan Schema
 

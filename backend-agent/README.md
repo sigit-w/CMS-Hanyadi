@@ -42,6 +42,8 @@ Fase 6s (ADR-011): `POST /api/v1/auth/login` untuk Siswa/Peserta Umum wajib meng
 
 Untuk `true_false`, kirim `statements: [{ "text": "...", "is_correct": true|false, "explanation": "..." }]` dengan 1–5 pernyataan; `stem`/`image_url` adalah cerita bersama. Tidak pakai `options`/`correct_keys`. Semua pernyataan benar membuat soal bernilai benar. Endpoint peserta tidak mengirim `is_correct`; submit memakai `answers: [{ "statement_id": 123, "value": true|false }]`. Laporan tryout menyertakan `statement_details` per submission.
 
+Mode CBT (ADR-013) diaktifkan per tryout lewat `POST /api/v1/tryouts` atau `PATCH /api/v1/tryouts/{id}/cbt` dengan `cbt_enabled`, `cbt_duration_minutes` (1–600, wajib saat aktif), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0–100). `GET /api/v1/tryouts` dan `GET /api/v1/tryouts/{id}` mengembalikan pengaturan tersebut. `GET /api/v1/reports/tryout` kini juga mengembalikan `attempts` (dari `v_cbt_attempt_report`) dan `violations`; keduanya hanya untuk admin. Endpoint penyajian peserta tidak pernah mengembalikan skor atau kunci.
+
 ## Aturan Implementasi
 
 - Kontrak API ditulis di `openapi/` sebelum endpoint diimplementasikan.

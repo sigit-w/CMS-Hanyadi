@@ -134,6 +134,8 @@ export const getTryouts = () => request('/tryouts');
 export const getTryout = (id) => request(`/tryouts/${id}`);
 export const createTryout = (payload) =>
   request('/tryouts', { method: 'POST', body: JSON.stringify(payload) });
+export const updateTryoutCbt = (id, payload) =>
+  request(`/tryouts/${id}/cbt`, { method: 'PATCH', body: JSON.stringify(payload) });
 export const deleteTryout = (id) => request(`/tryouts/${id}`, { method: 'DELETE' });
 export const getTryoutParticipants = (tryoutId) => request(`/tryouts/${tryoutId}/participants`);
 export const addTryoutParticipants = (tryoutId, participantIds) =>
