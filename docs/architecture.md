@@ -110,7 +110,8 @@ Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `que
 | GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail induk dengan `event_id`, `name`, `slug`, `starts_at`, `ends_at`, `status`, `sessions[]`, kompatibilitas `mapels[]`/`mapel_code`, dan `submission_count` (API only) |
 | GET | `/api/v1/tryouts/:id/sessions` | Daftar sesi dari satu induk; `:id` boleh `event_id` atau `session_id` lama |
 | GET | `/api/v1/participants?search=` / `/api/v1/prospektus?search=` | Picker peserta: cari nama, email, kelas, dan sekolah |
-| GET | `/api/v1/reports/tryout/export.xlsx?session_id=` | Ekspor XLSX roster peserta/siswa (permission `tryout_reports.read`); tanpa kunci jawaban |
+| GET | `/api/v1/tryout-sessions?search=&limit=` | Daftar sesi untuk filter laporan; `search` ILIKE partial pada induk/sesi/mapel, `limit` default 100 maks 200 (permission `tryout_reports.read`) |
+| GET | `/api/v1/reports/tryout/export.xlsx?session_id=&tryout_name=` | Ekspor XLSX roster peserta/siswa (permission `tryout_reports.read`); format `Laporan Tryout` Fase 6v; tanpa kunci jawaban |
 | GET | `/api/v1/presentation/sessions` | Daftar sesi yang tersedia untuk peserta (presentation-service `:8083`) |
 | POST | `/api/v1/presentation/attempts/submit-all` | Submit seluruh jawaban non-CBT dalam satu transaksi per sesi; tanpa skor ke peserta |
 | POST | `/api/v1/presentation/cbt/attempt/violation` | Catat pelanggaran; response menyertakan `type`, `violation_count`, `max_violations` |
@@ -169,6 +170,14 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - **Alur tryout-agent per sesi.** Peserta login memakai slug induk, lalu `GET /api/v1/presentation/sessions` memberi daftar sesi yang terdaftar untuknya. Agen menampilkan tab sesi dan hanya memuat soal sesi yang dipilih (`session_id` dikirim ke `/tryout/questions`, `/presentation/questions`, dan endpoint CBT/submit-all). Setelah sesi selesai muncul `Lanjut sesi berikutnya` dan `Keluar`; peserta boleh login ulang dan melanjutkan sesi lain selama `now() <= ends_at` induk. Aset dimuat sebagai `app.js?v=19`.
 - **UI CMS.** Tidak ada opsi `jadikan sesi aktif`, tidak ada kolom `Lembar`, dan tidak ada kolom `Submission` pada tabel daftar tryout. Fieldset pemilih lembar soal di form tetap ada karena dipakai menyusun soal sesi; `submission_count` tetap dikembalikan API untuk laporan/internal saja.
 
+## 8c. Fase 6v — Filter Laporan dan Format XLSX (ADR-018)
+
+- **Sumber data filter.** `GET /api/v1/tryout-sessions` menggabungkan `tryout_sessions` dengan induk `tryout_events`, `tryout_session_mapels`, dan `mapels`. Parameter `search` (maks 128 karakter) memakai `ILIKE` partial case-insensitive pada `event_name`, `name` sesi, `mapel_name`, dan `mapel_code`, dengan escape backslash/`%`/`_`. `limit` default `100`, maksimal `200`. Respons `data.sessions[]` menambah `event_id`, `event_name`, `mapel_code`, dan `mapel_name`; `submission_count` adalah jumlah baris submission, bukan peserta.
+- **Alur halaman laporan.** Halaman `#/reports/tryout` memuat daftar sesi awal lewat `getTryoutSessions()`. Input pencarian di-debounce lalu memanggil `getTryoutSessions({ search })` ke server; opsi ditampilkan sebagai `event_name · name · mapel_name` dengan nilai awal `Semua sesi`. Tombol **Cari/Filter** menyalin `selectedSessionId` menjadi `appliedSessionId`; perubahan `appliedSessionId` memicu `getTryoutReport(appliedSessionId || null)` untuk `summary`, `attempts`, dan `violations`. Tabel layar tetap 7 kolom Fase 6u (`Nama`, `Sekolah`, `Mapel`, `Jumlah Soal`, `Benar`, `Salah`, `Nilai`) dan log pelanggaran tetap tersembunyi sampai `Lihat detail`.
+- **Alur unduh.** Tombol **Unduh Excel** memanggil `downloadTryoutReportExcel(appliedSessionId || null, tryoutName.trim())`, sehingga `GET /api/v1/reports/tryout/export.xlsx` menerima `tryout_name` dan `session_id`. `tryout_name` memakai `ILIKE` partial/escape yang sama terhadap `coalesce(event_name, session_name)`; bila keduanya ada, digabung `AND`. Permission `tryout_reports.read` tidak diubah, dan `Content-Disposition` memakai slug induk/sesi bila filter aktif, jika tidak `laporan-tryout-semua.xlsx`.
+- **Format XLSX.** Worksheet `Laporan Tryout` memuat tiga baris judul (`HASIL TRYOUT <nama>`, `NEW PRIMAGAMA YOGYAKARTA`, tanggal `id-ID` huruf besar), header dua level baris 6–7 (A–E `NO|NAMA SISWA|USER|ASAL SEKOLAH|WAKTU`, grup dinamis `B|S|NILAI` per mapel, lalu `TOTAL|RATA-RATA|RANKING`), data mulai baris 8 diurutkan `TOTAL` menurun, lalu catatan kaki `KETERANGAN`, aturan `B`/`S`, kriteria pengurutan, statistik `MAKSIMAL|MINIMAL|RATA-RATA` per mapel, dan tanda tangan. Tidak ada kunci jawaban atau pembahasan.
+- **Kompatibilitas dan gate.** `POST /api/v1/tryout-sessions` dan `PATCH /api/v1/tryout-sessions/{id}/activate` tetap dipertahankan untuk klien lama, tetapi section **Buat Sesi Tryout** dan **Sesi Tersedia** dihapus dari halaman laporan; operasi tulis berada di manajemen tryout. Tidak ada migrasi database; rollback ke `REL-27`, gate `REL-28`, regresi `REL-24`–`REL-27` tidak berubah, dan Fase 7 tetap dibatalkan.
+
 ## 9. Non-Fungsional dan Keamanan
 
 - Pool koneksi kecil dan `statement_timeout` untuk melindungi RAM 2GB.
@@ -188,3 +197,4 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 | 6j | Penyederhanaan status soal & pagination | Dokumen aktif diselaraskan dengan ADR-004 |
 | 6t | Tryout multi-mapel & submit global per sesi | histori (ADR-016) |
 | 6u | Induk–sesi, status turunan, ekspor, dan lanjut sesi | Dokumen aktif diselaraskan dengan ADR-017; gate `REL-27` |
+| 6v | Filter sesi laporan, filter `tryout_name`, dan format XLSX baru | Dokumen aktif diselaraskan dengan ADR-018; gate `REL-28` menunggu QA/smoke test |

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Bank Soal CMS API
   version: 0.3.0
-  description: 'Fase 6u / ADR-017 — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel (UNIQUE(session_id) pada tryout_session_mapels). status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; batas ends_at induk mengunci login dan akses sesi, deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Payload flat legacy mapel_codes[] dipecah per mapel. CMS tidak menampilkan kolom Submission, opsi jadikan sesi aktif, atau kolom Lembar pada daftar tryout; submission_count hanya field API.'
+  description: 'Fase 6u / ADR-017 — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel (UNIQUE(session_id) pada tryout_session_mapels). status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; batas ends_at induk mengunci login dan akses sesi, deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Payload flat legacy mapel_codes[] dipecah per mapel. CMS tidak menampilkan kolom Submission, opsi jadikan sesi aktif, atau kolom Lembar pada daftar tryout; submission_count hanya field API. Fase 6v / ADR-018 menambahkan search dan limit pada daftar sesi serta tryout_name pada ekspor XLSX; format XLSX memakai worksheet Laporan Tryout dengan header dua level dan grup B|S|NILAI per mapel, tanpa mengubah permission tryout_reports.read. Endpoint create/activate legacy tetap dipertahankan.'
 security:
   - cookieAuth: []
 servers:
@@ -494,21 +494,53 @@ paths:
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryout-sessions:
     get:
-      summary: Daftar sesi tryout beserta jumlah submission (tryout_reports.read)
+      summary: Daftar sesi tryout untuk filter laporan (tryout_reports.read)
+      description: 'Sumber data tryout_sessions + tryout_events + tryout_session_mapels + mapels. search memakai ILIKE partial case-insensitive pada nama induk, nama sesi, nama mapel, dan kode mapel; backslash, %, dan _ di-escape. Hasil diurutkan menurut event_name lalu id sesi. submission_count adalah jumlah baris submission, bukan jumlah peserta.'
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+          description: 'Teks pencarian opsional, maksimal 128 karakter setelah trim; ILIKE partial dengan escape wildcard; kosong berarti tanpa filter.'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+          description: 'Jumlah maksimal sesi yang dikembalikan; default 100, maksimal 200.'
       responses:
-        '200': { description: Daftar sesi }
+        '200':
+          description: Daftar sesi beserta konteks induk dan mapel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      sessions:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportTryoutSession' }
+        '400': { description: 'search lebih dari 128 karakter atau limit bukan bilangan bulat 1..200' }
+        '403': { description: Tidak memiliki permission tryout_reports.read }
     post:
-      summary: Buat sesi tryout dengan nama dan tanggal; dapat langsung diaktifkan (tryout_reports.read)
+      summary: Buat sesi tryout legacy dengan nama dan tanggal (tryout_reports.read)
+      description: 'Endpoint legacy dipertahankan untuk klien lama. Payload wajib membawa event_id yang valid (alias eventId diterima). Fase 6v menghapus section pembuatan sesi dari halaman laporan; pembuatan sesi dilakukan di halaman manajemen tryout.'
       responses:
         '201': { description: Sesi dibuat }
         '400': { description: Validasi gagal }
+        '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/tryout-sessions/{id}/activate:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     patch:
       summary: Jadikan satu sesi sebagai sesi aktif (tryout_reports.read)
+      description: 'Endpoint legacy dipertahankan; tombol Aktifkan tidak lagi tersedia di halaman laporan Fase 6v.'
       responses:
         '200': { description: Sesi diaktifkan }
+        '400': { description: Validasi gagal }
+        '403': { description: Tidak memiliki permission tryout_reports.read }
         '404': { description: Sesi tidak ditemukan }
   /api/v1/reports/tryout:
     get:
@@ -520,17 +552,26 @@ paths:
         '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/reports/tryout/export.xlsx:
     get:
-      summary: Unduh laporan tryout sebagai file Excel (tryout_reports.read)
-      description: 'File .xlsx berisi seluruh peserta/siswa yang terdaftar, termasuk yang belum submit, dengan kolom Jenis, Nama, Sekolah, Kelas, Mapel, Jumlah Soal, Benar, Salah, Nilai, Status. Tidak memuat kunci jawaban atau pembahasan. Tidak memakai LIMIT 500; dibaca per batch 500.'
+      summary: Unduh laporan tryout XLSX dengan filter sesi dan nama tryout (tryout_reports.read)
+      description: 'Kedua filter digabung AND bila keduanya diisi; permission tryout_reports.read tidak diubah. File memakai worksheet Laporan Tryout: tiga baris judul (HASIL TRYOUT <nama>, NEW PRIMAGAMA YOGYAKARTA, tanggal id-ID huruf besar), header dua level pada baris 6-7 dengan A-E NO|NAMA SISWA|USER|ASAL SEKOLAH|WAKTU, grup per mapel B|S|NILAI dengan nama mapel dinamis, lalu TOTAL|RATA-RATA|RANKING. Data mulai baris 8 diurutkan TOTAL menurun. Catatan kaki memuat KETERANGAN, aturan B/S, kriteria pengurutan, statistik MAKSIMAL|MINIMAL|RATA-RATA per mapel, dan tanda tangan. Tidak memuat kunci jawaban atau pembahasan. Seluruh sesi yang cocok diambil tanpa paginasi 500.'
       parameters:
         - { name: session_id, in: query, required: false, schema: { type: integer }, description: 'Batasi ekspor pada satu sesi; tanpa parameter, ekspor semua sesi.' }
+        - name: tryout_name
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+          description: 'Filter nama tryout opsional, maksimal 128 karakter; ILIKE case-insensitive/partial terhadap coalesce(event_name, session_name), dengan backslash, %, dan _ di-escape. Bila session_id juga diisi, digabung AND.'
       responses:
         '200':
-          description: File XLSX
+          description: File XLSX; Content-Disposition mengikuti filter
+          headers:
+            Content-Disposition:
+              description: 'attachment; filename laporan-tryout-<event_slug>-<session_slug>.xlsx saat filter dipakai dan slug tersedia, jika tidak laporan-tryout-semua.xlsx.'
+              schema: { type: string }
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema: { type: string, format: binary }
-        '400': { description: session_id tidak valid }
+        '400': { description: 'session_id tidak valid atau tryout_name lebih dari 128 karakter/bukan string' }
         '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/tryout/questions:
     get:
@@ -1038,6 +1079,21 @@ components:
             question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
             participant_ids: { type: array, items: { type: integer }, maxItems: 200 }
             is_active: { type: boolean, default: false }
+    ReportTryoutSession:
+      type: object
+      description: 'Baris sesi pada GET /api/v1/tryout-sessions untuk picker filter laporan; event_* berasal dari induk tryout_events.'
+      required: [id, name, slug, session_date, is_active, submission_count, event_id, event_name, mapel_code, mapel_name]
+      properties:
+        id: { type: integer }
+        name: { type: string, description: 'Nama sesi.' }
+        slug: { type: string }
+        session_date: { type: string, format: date, nullable: true }
+        is_active: { type: boolean }
+        submission_count: { type: integer, description: 'Jumlah baris tryout_submissions, bukan jumlah peserta.' }
+        event_id: { type: integer, description: 'ID induk tryout_events; wajib (NOT NULL).' }
+        event_name: { type: string, description: 'Nama induk tryout_events; selalu terisi lewat join.' }
+        mapel_code: { type: string, nullable: true }
+        mapel_name: { type: string, nullable: true }
     TryoutSession:
       allOf:
         - $ref: '#/components/schemas/CbtSettings'

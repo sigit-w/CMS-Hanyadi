@@ -154,7 +154,13 @@ export const addTryoutParticipants = (tryoutId, participantIds) =>
   });
 export const removeTryoutParticipant = (tryoutId, participantId) =>
   request(`/tryouts/${tryoutId}/participants/${participantId}`, { method: 'DELETE' });
-export const getTryoutSessions = () => request('/tryout-sessions');
+export const getTryoutSessions = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.search !== undefined && params.search !== null) query.set('search', String(params.search));
+  if (params.limit !== undefined && params.limit !== null) query.set('limit', String(params.limit));
+  const search = query.toString();
+  return request(`/tryout-sessions${search ? `?${search}` : ''}`);
+};
 export const getTryoutEventSessions = (tryoutId) => request(`/tryouts/${tryoutId}/sessions`);
 export const createTryoutSession = (payload) =>
   request('/tryout-sessions', { method: 'POST', body: JSON.stringify(payload) });
@@ -162,9 +168,12 @@ export const activateTryoutSession = (id) =>
   request(`/tryout-sessions/${id}/activate`, { method: 'PATCH' });
 export const getTryoutReport = (sessionId) =>
   request(`/reports/tryout${sessionId ? `?session_id=${sessionId}` : ''}`);
-export async function downloadTryoutReportExcel(sessionId) {
-  const query = sessionId ? `?${new URLSearchParams({ session_id: sessionId }).toString()}` : '';
-  const response = await fetch(`${BASE}/reports/tryout/export.xlsx${query}`, { credentials: 'include' });
+export async function downloadTryoutReportExcel(sessionId, tryoutName) {
+  const params = new URLSearchParams();
+  if (sessionId) params.set('session_id', sessionId);
+  if (tryoutName) params.set('tryout_name', tryoutName);
+  const query = params.toString();
+  const response = await fetch(`${BASE}/reports/tryout/export.xlsx${query ? `?${query}` : ''}`, { credentials: 'include' });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiRequestError(

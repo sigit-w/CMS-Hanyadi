@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  activateTryoutSession,
-  createTryoutSession,
   downloadTryoutReportExcel,
   getTryoutReport,
   getTryoutSessions
@@ -12,15 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
-const emptySession = () => ({
-  name: '',
-  session_date: new Date().toISOString().slice(0, 10),
-  is_active: true
-});
 
 function displayDate(value) {
   const text = String(value ?? '');
@@ -34,81 +25,69 @@ function displayDateTime(value) {
   });
 }
 
+function sessionLabel(session) {
+  return [session.event_name, session.name, session.mapel_name].filter(Boolean).join(' · ') || '—';
+}
+
 export default function TryoutReport() {
-  const [sessions, setSessions] = useState([]);
-  const [sessionId, setSessionId] = useState('');
+  const [filterSessions, setFilterSessions] = useState([]);
+  const [reportSessions, setReportSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [appliedSessionId, setAppliedSessionId] = useState('');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [tryoutName, setTryoutName] = useState('');
   const [report, setReport] = useState({ summary: [], attempts: [], violations: [] });
-  const [form, setForm] = useState(emptySession);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [openViolations, setOpenViolations] = useState({});
 
-  const load = useCallback(async () => {
-    const [sessionData, reportData] = await Promise.all([
-      getTryoutSessions(),
-      getTryoutReport(sessionId || null)
-    ]);
-    setSessions(sessionData.sessions);
-    setReport({
-      summary: reportData.summary,
-      attempts: reportData.attempts ?? [],
-      violations: reportData.violations ?? []
-    });
-  }, [sessionId]);
+  useEffect(() => {
+    let active = true;
+    getTryoutSessions()
+      .then((data) => { if (active) setReportSessions(data.sessions ?? []); })
+      .catch((err) => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, [load]);
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
-  async function handleCreate(event) {
-    event.preventDefault();
-    setError('');
-    setNotice('');
-    if (!form.name.trim()) {
-      setError('Nama sesi wajib diisi');
-      return;
-    }
-    setSaving(true);
-    try {
-      const data = await createTryoutSession({
-        name: form.name.trim(),
-        session_date: form.session_date,
-        is_active: form.is_active
-      });
-      setNotice(`Sesi ${data.session.name} dibuat${data.session.is_active ? ' dan diaktifkan' : ''}.`);
-      setForm({ ...emptySession(), is_active: false });
-      setSessionId(data.session.id);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
+  useEffect(() => {
+    let active = true;
+    getTryoutSessions({ search: debouncedSearch })
+      .then((data) => { if (active) setFilterSessions(data.sessions ?? []); })
+      .catch((err) => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [debouncedSearch]);
 
-  async function handleActivate(id) {
-    setError('');
-    setNotice('');
-    try {
-      const data = await activateTryoutSession(id);
-      setNotice(`Sesi ${data.session.name} sekarang aktif untuk submission baru.`);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
+  useEffect(() => {
+    let active = true;
+    getTryoutReport(appliedSessionId || null)
+      .then((data) => {
+        if (!active) return;
+        setReport({
+          summary: data.summary,
+          attempts: data.attempts ?? [],
+          violations: data.violations ?? []
+        });
+      })
+      .catch((err) => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [appliedSessionId]);
 
   async function handleDownload() {
     setError('');
     setDownloading(true);
     try {
-      const blob = await downloadTryoutReportExcel(sessionId || null);
+      const name = tryoutName.trim();
+      const blob = await downloadTryoutReportExcel(appliedSessionId || null, name);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `laporan-tryout-${sessionId || 'semua'}.xlsx`;
+      link.download = `laporan-tryout-${name.replace(/[\\/:*?"<>|]/g, '-') || 'semua'}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -124,7 +103,14 @@ export default function TryoutReport() {
     setOpenViolations((current) => ({ ...current, [id]: !current[id] }));
   }
 
-  const groupedSessions = sessions.map((session) => ({
+  const optionSessions = [...filterSessions];
+  if (selectedSessionId && !optionSessions.some((session) => session.id === selectedSessionId)) {
+    const selected = filterSessions.find((session) => session.id === selectedSessionId)
+      ?? reportSessions.find((session) => session.id === selectedSessionId);
+    if (selected) optionSessions.unshift(selected);
+  }
+
+  const groupedSessions = reportSessions.map((session) => ({
     ...session,
     rows: report.summary.filter((row) => row.session_id === session.id),
     attempts: report.attempts.filter((row) => row.session_id === session.id),
@@ -140,78 +126,61 @@ export default function TryoutReport() {
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
-      {notice && <Alert variant="success">{notice}</Alert>}
-      <div className="flex justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
-          {downloading ? 'Mengunduh…' : 'Unduh Excel'}
-        </Button>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle className="text-base">Buat Sesi Tryout</CardTitle></CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleCreate}>
-              <div className="space-y-1.5">
-                <Label>Nama sesi</Label>
-                <Input value={form.name} placeholder="Contoh: Tryout Minggu 1"
-                  onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Tanggal sesi</Label>
-                <Input type="date" value={form.session_date}
-                  onChange={(event) => setForm({ ...form, session_date: event.target.value })} />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={form.is_active}
-                  onChange={(event) => setForm({ ...form, is_active: event.target.checked })} />
-                <span>Jadikan sesi aktif</span>
-              </label>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Menyimpan…' : 'Buat Sesi'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-base">Sesi Tersedia</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Filter Laporan Tryout</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] md:items-end">
             <div className="space-y-1.5">
-              <Label>Filter laporan</Label>
-              <SelectNative value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
+              <Label htmlFor="tryout-report-search">Cari tryout</Label>
+              <Input id="tryout-report-search" value={search}
+                placeholder="Cari tryout, sesi, atau mapel"
+                onChange={(event) => setSearch(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tryout-report-session">Sesi tryout</Label>
+              <SelectNative id="tryout-report-session" value={selectedSessionId}
+                onChange={(event) => setSelectedSessionId(event.target.value)}>
                 <option value="">Semua sesi</option>
-                {sessions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {session.name} · {displayDate(session.session_date)}
-                  </option>
+                {optionSessions.map((session) => (
+                  <option key={session.id} value={session.id}>{sessionLabel(session)}</option>
                 ))}
               </SelectNative>
             </div>
-            <ul className="m-0 list-none space-y-2 p-0">
-              {sessions.map((session) => (
-                <li key={session.id} className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm">
-                  <span>
-                    <strong>{session.name}</strong>
-                    <span className="text-muted-foreground"> · {displayDate(session.session_date)} · {session.submission_count} jawaban</span>
-                    {session.is_active && <Badge className="ml-2" variant="secondary">aktif</Badge>}
-                  </span>
-                  {!session.is_active && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => handleActivate(session.id)}>
-                      Aktifkan
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
+            <Button type="button" onClick={() => {
+              setError('');
+              setAppliedSessionId(selectedSessionId);
+            }}>
+              Cari/Filter
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Unduh Laporan</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="space-y-1.5 sm:max-w-sm sm:flex-1">
+              <Label htmlFor="tryout-report-name">Nama tryout</Label>
+              <Input id="tryout-report-name" value={tryoutName}
+                placeholder="Contoh: Tryout TKA"
+                onChange={(event) => setTryoutName(event.target.value)} />
+            </div>
+            <Button type="button" variant="outline" onClick={handleDownload} disabled={downloading}>
+              {downloading ? 'Mengunduh…' : 'Unduh Excel'}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Filter nama tryout diterapkan pada file Excel yang diunduh.
+          </p>
+        </CardContent>
+      </Card>
 
       {groupedSessions.length === 0 && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Belum ada sesi dengan submission. Buat sesi lalu minta siswa mengirim jawaban.</p>
+            <p className="text-sm text-muted-foreground">Belum ada sesi dengan submission. Minta peserta mengirim jawaban.</p>
           </CardContent>
         </Card>
       )}

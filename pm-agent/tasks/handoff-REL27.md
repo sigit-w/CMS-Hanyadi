@@ -13,7 +13,7 @@
 
 - Path file: `db/migrations/030_tryout_events_and_sessions.sql`, `tryout-agent/index.html`, `pm-agent/progress/status-board.md`
 - Endpoint / UI: `#/tryouts`, `#/reports/tryout`, tryout publik `{slug}` per sesi
-- Bukti (log, screenshot, test result): gate QA/docs/deploy **GO**; backup `/tmp/opencode/bank_soal_db-pre030-2026-11-24.dump` ada (187958 bytes); migrasi `030` sudah dijalankan; services sehat; regresi 32/32; baseline DB `1|1|1|2|10|1|3`; Fase 6u belum di-commit/di-push, user belum meminta commit/push
+- Bukti (log, screenshot, test result): gate QA/docs/deploy **GO**; backup `/tmp/opencode/bank_soal_db-pre030-2026-11-24.dump` ada (187958 bytes); migrasi `030` sudah dijalankan; services sehat; regresi 32/32; baseline DB `1|1|1|2|10|1|3`; Fase 6u sudah di-commit dan di-push ke `origin/main` di commit `b9f377a` — `Finalisasi Fase 6u — tryout bersesi dan tutup REL-27` — sesuai permintaan user
 
 ## Acceptance Criteria Terpenuhi
 

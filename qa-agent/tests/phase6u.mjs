@@ -494,21 +494,16 @@ test('Q6U-08 ekspor XLSX terbaca dan memuat peserta tanpa submission tanpa kunci
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];
   assert.ok(sheet);
-  const rows = [];
-  sheet.eachRow((row) => rows.push(row.values.slice(1)));
-  assert.deepEqual(rows[0].slice(0, 10), [
-    'Jenis', 'Nama', 'Sekolah', 'Kelas', 'Mapel', 'Jumlah Soal', 'Benar', 'Salah', 'Nilai', 'Status'
-  ]);
-  const data = rows.slice(1).filter((row) => row.some(Boolean));
-  const submitterRow = data.find((row) => String(row[1]) === submitterName);
-  const idleRow = data.find((row) => String(row[1]) === idleName);
-  assert.ok(submitterRow, JSON.stringify(data.map((row) => row[1])));
-  assert.ok(idleRow, JSON.stringify(data.map((row) => row[1])));
-  assert.equal(String(submitterRow[9]), 'Sudah Submit');
-  assert.equal(String(idleRow[9]), 'Belum Submit');
-  assert.equal(Number(idleRow[5]), 0);
-  const content = data.flat().map((value) => String(value ?? '')).join(' | ');
-  assert.doesNotMatch(content, /kunci jawaban|pembahasan|correct_key/i);
+  const values = [];
+  sheet.eachRow((row) => row.eachCell({ includeEmpty: false }, (cell) => {
+    values.push(typeof cell.value === 'string' ? cell.value : String(cell.value ?? ''));
+  }));
+  const content = values.join(' | ');
+  assert.match(content, /HASIL TRYOUT/);
+  assert.match(content, /NAMA SISWA/);
+  assert.ok(content.includes(submitterName), JSON.stringify(values));
+  assert.ok(content.includes(idleName), JSON.stringify(values));
+  assert.doesNotMatch(content, /kunci jawaban|pembahasan|correct_key|jawaban/i);
 });
 
 test('Q6U-09 log pelanggaran tersembunyi default dan dibuka lewat Lihat detail', async () => {
