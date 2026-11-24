@@ -183,12 +183,14 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
     'Manajemen Tryout',
     'Manajemen Bimbel',
     'Buat/Daftar Tryout',
+    'Prospektus',
     'Laporan Tryout',
     '#/questions',
     '#/users/new',
     '#/roles',
     '#/reports/system',
     '#/tryouts',
+    '#/tryouts/prospektus',
     '#/bimbel/siswa',
     '#/bimbel/program-belajar',
     '#/reports/tryout',
@@ -198,6 +200,9 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
     'Tanggal & Jam Mulai',
     'Lembar Soal (',
     'Tambah Peserta Tryout',
+    'A. Peserta Didik',
+    'Kelola Peserta',
+    'Detail Peserta Tryout',
     'Peserta Umum',
     'PIN (9 digit)',
     'Generate ulang',
@@ -208,6 +213,8 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
   }
   assert.ok(!bundle.includes('Perbandingan Jawaban'),
     'Section perbandingan jawaban tidak boleh tampil di laporan tryout');
+  assert.ok(!bundle.includes('Kelola Siswa Tryout'),
+    'Label lama Kelola Siswa Tryout tidak boleh tampil lagi');
 });
 
 test('P5-13 soal baru langsung tampil tanpa pengaktifan readiness', async () => {

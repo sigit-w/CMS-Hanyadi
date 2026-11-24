@@ -170,6 +170,14 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -f /opt/virtual-office-bank-soal/db/migrations/022_participant_password_nullable.sql
 ```
 
+Status Prospektus untuk Peserta Umum yang dikeluarkan dari tryout (Fase 6p/ADR-008; idempotent, dijalankan setelah `022`):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/023_prospektus_peserta_umum.sql
+```
+
 Kredensial tersimpan di
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
 
@@ -204,6 +212,7 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - `tryout_sessions` menyimpan `name`, `session_date`, `start_at`, `end_at`, dan `mapel_id`; `start_at`/`end_at` memakai `TIMESTAMPTZ` zona `Asia/Jakarta`, `end_at > start_at`, dan `session_date` tetap diturunkan dari `start_at` untuk kompatibilitas laporan. Hanya satu sesi yang boleh aktif. Submission baru otomatis memakai sesi aktif. Permission `tryout_reports.read` mengontrol halaman laporan yang menampilkan perbandingan jawaban dan kunci.
 - `tryout_session_sheets` menyimpan lembar soal yang dipakai sebuah TO; `tryout_session_questions` tetap diisi dengan turunan soal lembar tersebut agar presentation service tidak berubah. `tryout_session_participants` boleh kosong. Bila sesi aktif memiliki baris soal, daftar soal dan submission dibatasi sesuai daftar; sesi lama tanpa baris tetap memakai perilaku sebelumnya. Permission `tryouts.manage` mengontrol pembuatan TO dan CRUD peserta di CMS.
 - `tryout_participants` menyimpan `jenis` (`siswa` atau `umum`), `nama`, `sekolah`, `wa_orang_tua`, serta `program_belajar_id` (FK ke `program_belajar`). Siswa memakai `email` + `password_hash` + `kelas` dan login dengan email/password. Peserta Umum memakai `pin_hash` (scrypt), `email NULL`, `kelas=0`, `program_belajar_id NULL`, WA wajib, dan login dengan Nama + PIN. Nama Umum unik case-insensitive. Plaintext PIN tidak disimpan. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
+- Fase 6p (ADR-008) menambahkan `prospek` dan `prospek_at`. Hanya Peserta Umum yang boleh ber-`prospek=true`. Mengeluarkan Umum dari tryout menandai barisnya sebagai prospek, menonaktifkannya, dan mencabut sesinya; data tetap dipakai halaman Prospektus dan histori submission. Mengeluarkan Siswa hanya menghapus baris `tryout_session_participants`, bukan data siswa.
 - `tryout_submissions` dan `auth_sessions` memakai `participant_id` untuk akun peserta dan `user_id` untuk akun CMS; tepat salah satu yang terisi. Baris lama milik user ber-role `peserta` sudah dipindahkan ke `participant_id` oleh migrasi `010`.
 - Daftar soal CMS memakai pagination server-side dengan `page` dan `limit` default 20; respons menyertakan `pagination: { page, limit, total }` (ADR-004).
 - `question_sheets` menyimpan satu lembar soal dengan tepat satu `mapel_id`, kode unik 12 karakter termasuk tanda hubung, `duration_minutes` positif, dan flag `archived` untuk soft delete. Kode generator = `LS-<KODE_MAPEL>-mmyy`, misalnya `LS-MTKA-mmyy`; kode mapel berasal langsung dari `mapels.code` tanpa pemetaan nama/fallback. Kode hasil edit hanya wajib memenuhi panjang 12 dan karakter `A-Z0-9-`.

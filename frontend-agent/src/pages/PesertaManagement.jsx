@@ -134,7 +134,7 @@ export default function PesertaManagement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Kelola Siswa Tryout</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Kelola Siswa</h1>
         <p className="text-sm text-muted-foreground">
           Buat, ubah, dan nonaktifkan siswa tryout lengkap dengan program belajar, kelas, sekolah, dan nomor WA orang tua. Siswa login memakai email dan password yang dibuat di sini.
         </p>

@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -280,3 +280,16 @@ Permintaan pemilik: ubah halaman Buat Tryout menjadi Nama Tryout (Camel/Title Ca
 | TRY-12 | Tryout | P0 | done | BE-32 (kontrak) | Login `Nama atau Email` / `Password atau PIN`, aset `?v=11`/`?v=12` terverifikasi |
 | QA-29 | QA | P0 | done | QA-29A, BE-32, FE-29, TRY-12 | U-01..U-10 lolos; regresi 142/142, 0 bug P0/P1 |
 | REL-17 | PM | P0 | done | QA-29 | **GO** 2026-11-24; terpisah dari `REL-15` yang masih partial |
+
+## Fase 6p — Peserta Tryout, Detail, Hapus Relasi & Prospektus — 2026-11-24
+
+Permintaan pemilik: siswa tidak tampil default di Buat Tryout; tombol tambah peserta membuka `A. Peserta Didik` / `B. Peserta Umum`; baris peserta terlampir diklik untuk detail; hapus pakai icon keranjang sampah, bukan checkbox; Umum yang dikeluarkan masuk halaman Prospektus; Siswa hanya terlepas dari tryout; label `Kelola Siswa Tryout` → `Kelola Siswa`; deploy/commit/push. Keputusan lengkap di `pm-agent/decisions/ADR-008-peserta-tryout-dan-prospektus.md`; requirement dan AC di `pm-agent/tasks/phase6p-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-18 | PM | P0 | done | - | ADR-008 accepted; backlog + handoff BE-33/FE-30/TRY-13/QA-30 diterbitkan |
+| BE-33 | Backend | P0 | done | PM-18 | Migrasi `023`, endpoint hapus relasi, `POST /participants/{id}/prospek` untuk draft, `GET /prospektus`, filter `?prospek=`, OpenAPI |
+| FE-30 | Frontend | P0 | done | BE-33 (kontrak) | Picker siswa, detail baris, trash icon, halaman/menu Prospektus, label `Kelola Siswa`; bundle `index-CIWSCIZ4.js` |
+| TRY-13 | Tryout | P1 | done | BE-33 (kontrak) | Tanpa perubahan kode; login Umum & Siswa lolos |
+| QA-30 | QA | P0 | done | BE-33, FE-30, TRY-13 | PR-01..PR-08 lolos; regresi 150/150; `phase6p-report.md` |
+| REL-18 | PM | P0 | done | QA-30 | **GO** 2026-11-24; health/aset produksi terverifikasi |

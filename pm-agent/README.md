@@ -37,10 +37,16 @@ Memecah pekerjaan menjadi task, menentukan prioritas dan dependency, memantau pr
 | `decisions/ADR-004-penyederhanaan-soal.md` | Keputusan status approved, versi nonaktif, dan pagination Fase 6j |
 | `decisions/ADR-006-manajemen-bimbel.md` | Keputusan grup menu, rute, dan permission Manajemen Bimbel Fase 6n |
 | `decisions/ADR-007-peserta-umum-tryout.md` | Keputusan alur Buat Tryout, lembar soal, Peserta Umum, PIN, dan login Fase 6o |
+| `tasks/phase6p-backlog.md` | Requirement, keputusan, & AC Fase 6p: peserta tryout, detail, hapus relasi, & Prospektus |
+| `tasks/handoff-BE33.md` | Serah terima PM→Backend Fase 6p: migrasi 023, endpoint hapus relasi & prospektus |
+| `tasks/handoff-FE30.md` | Serah terima PM→Frontend Fase 6p: picker siswa, detail baris, trash icon, & halaman Prospektus |
+| `tasks/handoff-TRY13.md` | Serah terima PM→Tryout Fase 6p: verifikasi non-regresi login |
+| `tasks/handoff-QA30.md` | Serah terima PM→QA Fase 6p: PR-01..PR-08, regresi, & gate REL-18 |
+| `decisions/ADR-008-peserta-tryout-dan-prospektus.md` | Keputusan Default peserta, picker, detail, hapus relasi, & status prospek Fase 6p |
 
-Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
+Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`; Fase 6p ada di `tasks/phase6p-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
 
-Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`.
+Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`. Fase 6p final 2026-11-24 dengan `REL-18` **GO**; bukti regresi 150/150 dan keputusan rilis ada di `qa-agent/reports/phase6p-report.md` dan `qa-agent/reports/phase6p-release-gate.md`.
 
 ## Ritme Kerja
 

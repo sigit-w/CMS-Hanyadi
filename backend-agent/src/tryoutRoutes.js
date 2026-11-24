@@ -127,6 +127,57 @@ tryoutRouter.delete('/tryouts/:id', adminOnly, asyncHandler(async (req, res) => 
   res.json({ ok: true, data: { tryout_id: id, deleted: true }, meta: nowMeta() });
 }));
 
+tryoutRouter.delete('/tryouts/:id/participants/:participantId', adminOnly, asyncHandler(async (req, res) => {
+  const tryoutId = parseId(req.params.id);
+  const participantId = parseId(req.params.participantId, 'participant_id');
+
+  const result = await withTransaction(async (client) => {
+    const foundTryout = await client.query('SELECT id FROM tryout_sessions WHERE id = $1', [tryoutId]);
+    if (!foundTryout.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+
+    const foundParticipant = await client.query(
+      `SELECT id, nama, jenis FROM tryout_participants WHERE id = $1`,
+      [participantId]
+    );
+    const participant = foundParticipant.rows[0];
+    if (!participant) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
+
+    const removed = await client.query(
+      `DELETE FROM tryout_session_participants
+       WHERE session_id = $1 AND participant_id = $2`,
+      [tryoutId, participantId]
+    );
+    if (removed.rowCount === 0) {
+      throw new ApiError('NOT_FOUND', 'Peserta tidak terlampir pada tryout ini', 404);
+    }
+
+    let prospek = false;
+    if (participant.jenis === 'umum') {
+      await client.query(
+        `UPDATE tryout_participants
+         SET is_active = false, prospek = true, prospek_at = now()
+         WHERE id = $1`,
+        [participantId]
+      );
+      await client.query(
+        `UPDATE auth_sessions SET revoked_at = now()
+         WHERE participant_id = $1 AND revoked_at IS NULL`,
+        [participantId]
+      );
+      prospek = true;
+    }
+
+    const updated = await client.query(
+      `SELECT id, nama, jenis, is_active, prospek, prospek_at
+       FROM tryout_participants WHERE id = $1`,
+      [participantId]
+    );
+    return { participant: updated.rows[0], prospek, removed: true };
+  });
+
+  res.json({ ok: true, data: result, meta: nowMeta() });
+}));
+
 tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const name = requireName(req.body?.name);
   const mapelCode = requireMapelCode(req.body?.mapel_code ?? req.body?.mapel);

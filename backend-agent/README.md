@@ -28,6 +28,8 @@ Saat membuat peserta Siswa (`jenis='siswa'`), `password` opsional. Jika kosong, 
 
 Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, dan `pin` 9 digit. Hanya `pin_hash` scrypt yang disimpan; login memakai `username = nama` dan `password = pin`. Nama Umum unik tanpa memperhatikan huruf besar/kecil. Payload lama Siswa dan endpoint lama `/tryout-sessions` tetap diterima.
 
+Fase 6p (ADR-008) menambahkan `DELETE /api/v1/tryouts/{id}/participants/{participantId}` untuk mengeluarkan peserta dari sebuah tryout. Peserta Siswa hanya kehilangan relasi `tryout_session_participants`; data siswa tidak diubah. Peserta Umum yang dikeluarkan mengalami hal yang sama dan ditandai `prospek=true`, `prospek_at` terisi, `is_active=false`, serta sesinya dicabut. Data tersebut muncul di `GET /api/v1/prospektus`. Untuk daftar peserta pada form tryout yang belum disimpan, `POST /api/v1/participants/{id}/prospek` melakukan hal yang sama tanpa memerlukan ID tryout; Siswa ditolak dengan `400`. Endpoint lama `DELETE /participants/{id}` tetap berarti nonaktifkan peserta secara global dan tidak dipakai untuk aksi tryout.
+
 ## Jenis Soal
 
 `question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/TXT juga menerima `Jawaban: B,D`.

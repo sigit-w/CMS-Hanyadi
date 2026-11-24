@@ -178,8 +178,11 @@ paths:
   /api/v1/participants:
     get:
       summary: Daftar peserta tryout beserta jumlah submission (tryouts.manage)
+      parameters:
+        - { name: prospek, in: query, required: false, schema: { type: boolean }, description: 'Filter status prospek Peserta Umum.' }
       responses:
         '200': { description: Daftar peserta }
+        '400': { description: Nilai prospek tidak valid }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
       summary: Buat peserta tryout baru, Siswa atau Peserta Umum (tryouts.manage)
@@ -195,9 +198,11 @@ paths:
                     jenis: { type: string, enum: [umum] }
                     nama: { type: string, maxLength: 128 }
                     sekolah: { type: string, maxLength: 255 }
-                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
-                    wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
-                - type: object
+                     pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
+                     wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
+                     prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
+                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
+                 - type: object
                   required: [nama, email, kelas, sekolah]
                   properties:
                     jenis: { type: string, enum: [siswa], default: siswa }
@@ -207,15 +212,33 @@ paths:
                     sekolah: { type: string, maxLength: 255 }
                     program_belajar_id: { type: integer, nullable: true }
                     wa_orang_tua: { type: string, maxLength: 20, nullable: true }
-                    password:
-                      type: string
-                      format: password
-                      minLength: 6
-                      description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+                     password:
+                       type: string
+                       format: password
+                       minLength: 6
+                       description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+                     prospek: { type: boolean, readOnly: true, description: 'False untuk Siswa.' }
+                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
       responses:
         '201': { description: Peserta dibuat }
         '400': { description: Validasi gagal }
         '409': { description: Email/Nama Peserta Umum sudah digunakan }
+  /api/v1/prospektus:
+    get:
+      summary: Daftar Peserta Umum yang dikeluarkan dari tryout (tryouts.manage)
+      responses:
+        '200': { description: Daftar prospektus }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+  /api/v1/participants/{id}/prospek:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: Tandai Peserta Umum dari daftar draft tryout sebagai prospek (tryouts.manage)
+      description: 'Dipakai saat trash diklik sebelum tryout disimpan. Siswa ditolak 400.'
+      responses:
+        '200': { description: Peserta Umum menjadi prospek dan sesinya dicabut }
+        '400': { description: Peserta bukan Umum }
+        '404': { description: Peserta tidak ditemukan }
   /api/v1/participants/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -311,6 +334,17 @@ paths:
       responses:
         '200': { description: Tryout dihapus }
         '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryouts/{id}/participants/{participantId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: participantId, in: path, required: true, schema: { type: integer } }
+    delete:
+      summary: Keluarkan peserta dari tryout tanpa menghapus data induk (tryouts.manage)
+      description: 'Umum ditandai prospek, dinonaktifkan, dan sesinya dicabut. Siswa hanya terlepas dari tryout.'
+      responses:
+        '200': { description: Relasi dihapus; field prospek dikembalikan }
+        '404': { description: Tryout, peserta, atau relasi tidak ditemukan }
+        '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryout-sessions:
     get:
       summary: Daftar sesi tryout beserta jumlah submission (tryout_reports.read)

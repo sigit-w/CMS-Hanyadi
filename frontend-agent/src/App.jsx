@@ -13,6 +13,7 @@ import SystemReport from './pages/SystemReport.jsx';
 import TryoutReport from './pages/TryoutReport.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import TryoutManagement from './pages/TryoutManagement.jsx';
+import ProspektusManagement from './pages/ProspektusManagement.jsx';
 import PesertaManagement from './pages/PesertaManagement.jsx';
 import { getMe, logout } from './api.js';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
     label: 'Manajemen Tryout',
     items: [
       { path: '/tryouts', hash: '#/tryouts', label: 'Buat/Daftar Tryout', permission: 'tryouts.manage', icon: ClipboardList },
+      { path: '/tryouts/prospektus', hash: '#/tryouts/prospektus', label: 'Prospektus', permission: 'tryouts.manage', icon: Users },
       { path: '/reports/tryout', hash: '#/reports/tryout', label: 'Laporan Tryout', permission: 'tryout_reports.read', icon: BarChart3 }
     ]
   },
@@ -156,6 +158,8 @@ export default function App() {
     page = <UserManagement can={can} />;
   } else if (activePath === '/tryouts') {
     page = <TryoutManagement />;
+  } else if (activePath === '/tryouts/prospektus') {
+    page = <ProspektusManagement />;
   } else if (activePath === '/bimbel/siswa') {
     page = <PesertaManagement />;
   } else if (activePath === '/mapels') {

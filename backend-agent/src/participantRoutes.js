@@ -13,7 +13,7 @@ const manageParticipants = authorize('tryouts.manage');
 const PARTICIPANT_SELECT = `
   SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
          p.program_belajar_id, pb.name AS program_belajar_name, p.wa_orang_tua,
-         p.is_active, p.created_at, p.updated_at,
+         p.is_active, p.prospek, p.prospek_at, p.created_at, p.updated_at,
          (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.participant_id = p.id) AS submission_count
   FROM tryout_participants p
   LEFT JOIN program_belajar pb ON pb.id = p.program_belajar_id
@@ -138,8 +138,27 @@ async function loadJenis(client, id) {
 }
 
 participantRouter.get('/participants', manageParticipants, asyncHandler(async (req, res) => {
-  const { rows } = await query(`${PARTICIPANT_SELECT} ORDER BY p.id DESC`);
+  const prospekFilter = req.query.prospek;
+  if (prospekFilter !== undefined && prospekFilter !== 'true' && prospekFilter !== 'false') {
+    throw new ApiError('VALIDATION_ERROR', 'prospek harus bernilai true atau false');
+  }
+  const params = [];
+  let where = '';
+  if (prospekFilter !== undefined) {
+    params.push(prospekFilter === 'true');
+    where = 'WHERE p.prospek = $1';
+  }
+  const { rows } = await query(`${PARTICIPANT_SELECT} ${where} ORDER BY p.id DESC`, params);
   res.json({ ok: true, data: { participants: rows }, meta: nowMeta() });
+}));
+
+participantRouter.get('/prospektus', manageParticipants, asyncHandler(async (req, res) => {
+  const { rows } = await query(
+    `${PARTICIPANT_SELECT}
+     WHERE p.prospek = true
+     ORDER BY p.prospek_at DESC NULLS LAST, p.id DESC`
+  );
+  res.json({ ok: true, data: { prospektus: rows }, meta: nowMeta() });
 }));
 
 participantRouter.post('/participants', manageParticipants, asyncHandler(async (req, res) => {
@@ -268,6 +287,38 @@ participantRouter.delete('/participants/:id', manageParticipants, asyncHandler(a
     return rows[0];
   });
   res.json({ ok: true, data: { participant, deleted: true }, meta: nowMeta() });
+}));
+
+participantRouter.post('/participants/:id/prospek', manageParticipants, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+
+  const participant = await withTransaction(async (client) => {
+    const current = await client.query(
+      'SELECT id, jenis FROM tryout_participants WHERE id = $1',
+      [id]
+    );
+    const row = current.rows[0];
+    if (!row) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
+    if (row.jenis !== 'umum') {
+      throw new ApiError('VALIDATION_ERROR', 'Hanya Peserta Umum yang dapat menjadi prospek');
+    }
+
+    const updated = await client.query(
+      `UPDATE tryout_participants
+       SET is_active = false, prospek = true, prospek_at = now()
+       WHERE id = $1
+       RETURNING id, nama, jenis, is_active, prospek, prospek_at`,
+      [id]
+    );
+    await client.query(
+      `UPDATE auth_sessions SET revoked_at = now()
+       WHERE participant_id = $1 AND revoked_at IS NULL`,
+      [id]
+    );
+    return updated.rows[0];
+  });
+
+  res.json({ ok: true, data: { participant, prospek: true }, meta: nowMeta() });
 }));
 
 participantRouter.put('/participants/:id/password', manageParticipants, asyncHandler(async (req, res) => {
