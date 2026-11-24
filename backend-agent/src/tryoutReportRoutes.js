@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import ExcelJS from 'exceljs';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
 import { parseId } from './validate.js';
@@ -85,6 +86,96 @@ tryoutReportRouter.patch('/tryout-sessions/:id/activate', authorize('tryout_repo
     return rows[0];
   });
   res.json({ ok: true, data: { session }, meta: nowMeta() });
+}));
+
+tryoutReportRouter.get('/reports/tryout/export.xlsx', authorize('tryout_reports.read'), asyncHandler(async (req, res) => {
+  const sessionId = req.query.session_id ? parseId(req.query.session_id, 'session_id') : null;
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Laporan Tryout');
+  sheet.columns = [
+    { header: 'Jenis', key: 'jenis', width: 14 },
+    { header: 'Nama', key: 'nama', width: 32 },
+    { header: 'Sekolah', key: 'sekolah', width: 28 },
+    { header: 'Kelas', key: 'kelas', width: 10 },
+    { header: 'Mapel', key: 'mapel', width: 24 },
+    { header: 'Jumlah Soal', key: 'jumlah_soal', width: 14 },
+    { header: 'Benar', key: 'benar', width: 10 },
+    { header: 'Salah', key: 'salah', width: 10 },
+    { header: 'Nilai', key: 'nilai', width: 12 },
+    { header: 'Status', key: 'status', width: 16 }
+  ];
+  sheet.getRow(1).font = { bold: true };
+
+  const pageSize = 500;
+  let offset = 0;
+  while (true) {
+    const roster = await query(
+      `SELECT s.id AS session_id, s.name AS session_name,
+              p.id AS participant_id, p.nama, p.jenis, p.sekolah, p.kelas,
+              m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name
+       FROM tryout_sessions s
+       JOIN tryout_session_participants sp ON sp.session_id = s.id
+       JOIN tryout_participants p ON p.id = sp.participant_id
+       LEFT JOIN tryout_session_mapels tsm ON tsm.session_id = s.id
+       LEFT JOIN mapels m ON m.id = coalesce(tsm.mapel_id, s.mapel_id)
+       WHERE ($1::bigint IS NULL OR s.id = $1)
+       ORDER BY s.id, p.id
+       LIMIT $2 OFFSET $3`,
+      [sessionId, pageSize, offset]
+    );
+    if (roster.rows.length === 0) break;
+
+    const participantIds = [...new Set(roster.rows.map((row) => Number(row.participant_id)))];
+    const stats = await query(
+      `SELECT ts.session_id, ts.participant_id, q.mapel_id,
+              count(*)::int AS total,
+              count(*) FILTER (WHERE ts.is_correct)::int AS correct,
+              count(*) FILTER (WHERE NOT ts.is_correct)::int AS wrong,
+              round(100.0 * count(*) FILTER (WHERE ts.is_correct)
+                    / nullif(count(*), 0), 1) AS score
+       FROM tryout_submissions ts
+       JOIN questions q ON q.id = ts.question_id
+       WHERE ($1::bigint IS NULL OR ts.session_id = $1)
+         AND ts.participant_id = ANY($2::bigint[])
+       GROUP BY ts.session_id, ts.participant_id, q.mapel_id`,
+      [sessionId, participantIds]
+    );
+    const statsByKey = new Map(stats.rows.map((row) => [
+      `${row.session_id}:${row.participant_id}:${row.mapel_id}`, row
+    ]));
+
+    for (const row of roster.rows) {
+      const key = `${row.session_id}:${row.participant_id}:${row.mapel_id}`;
+      const summary = statsByKey.get(key);
+      const total = Number(summary?.total ?? 0);
+      sheet.addRow({
+        jenis: row.jenis === 'umum' ? 'prospektus' : 'siswa',
+        nama: row.nama,
+        sekolah: row.sekolah,
+        kelas: Number(row.kelas ?? 0),
+        mapel: row.mapel_name ?? row.mapel_code ?? '-',
+        jumlah_soal: total,
+        benar: Number(summary?.correct ?? 0),
+        salah: Number(summary?.wrong ?? 0),
+        nilai: summary?.score === null || summary?.score === undefined ? 0 : Number(summary.score),
+        status: total > 0 ? 'Sudah Submit' : 'Belum Submit'
+      });
+    }
+
+    if (roster.rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="laporan-tryout-${sessionId ?? 'semua'}.xlsx"`
+  );
+  await workbook.xlsx.write(res);
+  res.end();
 }));
 
 tryoutReportRouter.get('/reports/tryout', authorize('tryout_reports.read'), asyncHandler(async (req, res) => {

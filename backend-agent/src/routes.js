@@ -104,12 +104,31 @@ const TRYOUT_QUESTION_SELECT = `
   JOIN mapels m ON m.id = q.mapel_id
 `;
 
+async function resolveQuestionSession(req) {
+  if (req.query.session_id === undefined || req.query.session_id === null || req.query.session_id === '') {
+    return req.auth.tryoutSessionId ?? null;
+  }
+  const sessionId = parseId(req.query.session_id, 'session_id');
+  if (!req.auth.tryoutEventId || !req.auth.user?.id) {
+    throw new ApiError('FORBIDDEN', 'Sesi tidak tersedia untuk akun ini', 403);
+  }
+  const allowed = await query(
+    `SELECT 1
+       FROM tryout_sessions s
+       JOIN tryout_session_participants tp ON tp.session_id = s.id
+      WHERE s.id = $1 AND s.event_id = $2 AND tp.participant_id = $3`,
+    [sessionId, req.auth.tryoutEventId, req.auth.user.id]
+  );
+  if (!allowed.rows[0]) throw new ApiError('NOT_FOUND', 'Sesi tidak ditemukan', 404);
+  return sessionId;
+}
+
 router.get('/tryout/questions', authorize('tryout.access'), asyncHandler(async (req, res) => {
   const mapel = req.query.mapel ? requireMapelCode(req.query.mapel) : null;
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const offset = (page - 1) * limit;
-  const boundSessionId = req.auth.tryoutSessionId ?? null;
+  const boundSessionId = await resolveQuestionSession(req);
   const where = `
     WHERE ($1::text IS NULL OR m.code = $1)
       AND q.status = 'approved'

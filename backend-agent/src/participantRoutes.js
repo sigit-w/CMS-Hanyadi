@@ -43,6 +43,16 @@ function participantTable(jenis) {
   return jenis === 'umum' ? 'prospektus' : 'siswa';
 }
 
+function appendSearch(where, params, search) {
+  if (search === undefined || search === null || !String(search).trim()) return where;
+  params.push(`%${String(search).trim()}%`);
+  where.push(`(p.nama ILIKE $${params.length}
+              OR coalesce(p.email, '') ILIKE $${params.length}
+              OR p.kelas::text ILIKE $${params.length}
+              OR coalesce(p.sekolah, '') ILIKE $${params.length})`);
+  return where;
+}
+
 async function loadParticipant(client, id) {
   const { rows } = await client.query(`${PARTICIPANT_SELECT} WHERE p.id = $1`, [id]);
   return rows[0];
@@ -168,7 +178,20 @@ async function loadJenis(client, id) {
 }
 
 participantRouter.get('/siswa', manageParticipants, asyncHandler(async (req, res) => {
-  const { rows } = await query(`${SISWA_SELECT} WHERE s.jenis = 'siswa' ORDER BY s.id DESC`);
+  const params = [];
+  const where = ["s.jenis = 'siswa'"];
+  const search = req.query.search ?? req.query.q;
+  if (search !== undefined && search !== null && String(search).trim()) {
+    params.push(`%${String(search).trim()}%`);
+    where.push(`(s.nama ILIKE $${params.length}
+                OR coalesce(s.email, '') ILIKE $${params.length}
+                OR s.kelas::text ILIKE $${params.length}
+                OR coalesce(s.sekolah, '') ILIKE $${params.length})`);
+  }
+  const { rows } = await query(
+    `${SISWA_SELECT} WHERE ${where.join(' AND ')} ORDER BY s.id DESC`,
+    params
+  );
   res.json({ ok: true, data: { siswa: rows }, meta: nowMeta() });
 }));
 
@@ -178,11 +201,13 @@ participantRouter.get('/participants', manageParticipants, asyncHandler(async (r
     throw new ApiError('VALIDATION_ERROR', 'prospek harus bernilai true atau false');
   }
   const params = [];
-  let where = '';
+  const conditions = [];
   if (prospekFilter !== undefined) {
     params.push(prospekFilter === 'true');
-    where = 'WHERE p.prospek = $1';
+    conditions.push(`p.prospek = $${params.length}`);
   }
+  appendSearch(conditions, params, req.query.search ?? req.query.q);
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(`${PARTICIPANT_SELECT} ${where} ORDER BY p.id DESC`, params);
   res.json({ ok: true, data: { participants: rows }, meta: nowMeta() });
 }));
@@ -195,10 +220,14 @@ participantRouter.get('/participants/:id/detail', manageParticipants, asyncHandl
 }));
 
 participantRouter.get('/prospektus', manageParticipants, asyncHandler(async (req, res) => {
+  const params = [];
+  const conditions = ["p.jenis = 'umum'"];
+  appendSearch(conditions, params, req.query.search ?? req.query.q);
   const { rows } = await query(
     `${PARTICIPANT_SELECT}
-     WHERE p.jenis = 'umum'
-     ORDER BY p.bergabung, p.prospek_at DESC NULLS LAST, p.id DESC`
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY p.bergabung, p.prospek_at DESC NULLS LAST, p.id DESC`,
+    params
   );
   res.json({ ok: true, data: { prospektus: rows }, meta: nowMeta() });
 }));

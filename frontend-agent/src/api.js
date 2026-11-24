@@ -111,8 +111,14 @@ export const createQuestionSheet = (payload) =>
 export const updateQuestionSheet = (id, payload) =>
   request(`/question-sheets/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 export const deleteQuestionSheet = (id) => request(`/question-sheets/${id}`, { method: 'DELETE' });
-export const getSiswa = () => request('/siswa');
-export const getParticipants = () => request('/participants');
+export const getSiswa = (params) => {
+  const query = new URLSearchParams(params).toString();
+  return request(`/siswa${query ? `?${query}` : ''}`);
+};
+export const getParticipants = (params) => {
+  const query = new URLSearchParams(params).toString();
+  return request(`/participants${query ? `?${query}` : ''}`);
+};
 export const getParticipantDetail = (id) => request(`/participants/${id}/detail`);
 export const createParticipant = (payload) =>
   request('/participants', { method: 'POST', body: JSON.stringify(payload) });
@@ -121,7 +127,10 @@ export const updateParticipant = (id, payload) =>
 export const deleteParticipant = (id) => request(`/participants/${id}`, { method: 'DELETE' });
 export const markParticipantProspek = (id) =>
   request(`/participants/${id}/prospek`, { method: 'POST' });
-export const getProspektus = () => request('/prospektus');
+export const getProspektus = (params) => {
+  const query = new URLSearchParams(params).toString();
+  return request(`/prospektus${query ? `?${query}` : ''}`);
+};
 export const getProspektusDetail = (id) => request(`/prospektus/${id}`);
 export const registerProspektus = (id, payload) =>
   request(`/prospektus/${id}/daftar`, { method: 'POST', body: JSON.stringify(payload) });
@@ -146,12 +155,26 @@ export const addTryoutParticipants = (tryoutId, participantIds) =>
 export const removeTryoutParticipant = (tryoutId, participantId) =>
   request(`/tryouts/${tryoutId}/participants/${participantId}`, { method: 'DELETE' });
 export const getTryoutSessions = () => request('/tryout-sessions');
+export const getTryoutEventSessions = (tryoutId) => request(`/tryouts/${tryoutId}/sessions`);
 export const createTryoutSession = (payload) =>
   request('/tryout-sessions', { method: 'POST', body: JSON.stringify(payload) });
 export const activateTryoutSession = (id) =>
   request(`/tryout-sessions/${id}/activate`, { method: 'PATCH' });
 export const getTryoutReport = (sessionId) =>
   request(`/reports/tryout${sessionId ? `?session_id=${sessionId}` : ''}`);
+export async function downloadTryoutReportExcel(sessionId) {
+  const query = sessionId ? `?${new URLSearchParams({ session_id: sessionId }).toString()}` : '';
+  const response = await fetch(`${BASE}/reports/tryout/export.xlsx${query}`, { credentials: 'include' });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new ApiRequestError(
+      body?.error?.message ?? `HTTP ${response.status}`,
+      response.status,
+      body?.error?.code
+    );
+  }
+  return response.blob();
+}
 export const getRoles = () => request('/roles');
 export const getPermissions = () => request('/permissions');
 export const updateRolePermissions = (id, permissions) =>

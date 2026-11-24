@@ -18,6 +18,7 @@ const participantEmail = `qa_6t_${suffix}@qa.test`;
 const participantPassword = crypto.randomBytes(18).toString('base64url');
 const sheetIds = {};
 const sessionIds = [];
+const eventIds = [];
 const slugs = {};
 let participantId;
 let multiTryout;
@@ -130,6 +131,7 @@ before(async () => {
     assert.equal(result.status, 201, JSON.stringify(result.body));
     const tryout = result.body.data.tryout;
     sessionIds.push(Number(tryout.id));
+    eventIds.push(Number(tryout.event_id ?? tryout.tryout_event_id));
     slugs[definition.key] = tryout.slug;
     if (definition.key === 'multi') multiTryout = tryout;
   }
@@ -168,7 +170,9 @@ after(async () => {
       'DELETE FROM tryout_submissions WHERE participant_id = $1 OR session_id = ANY($2::bigint[])',
       [participantId, sessionIds]
     );
-    await query('DELETE FROM tryout_sessions WHERE id = ANY($1::bigint[])', [sessionIds]);
+  }
+  if (eventIds.length) {
+    await query('DELETE FROM tryout_events WHERE id = ANY($1::bigint[])', [eventIds]);
   }
   if (participantId) {
     await query('DELETE FROM tryout_participants WHERE id = $1', [participantId]);
@@ -176,23 +180,28 @@ after(async () => {
   await pool.end();
 });
 
-test('Q6T-01 create tryout multi-mapel menyimpan dua mapel unik', async () => {
+test('Q6T-01 legacy mapel_codes dipecah menjadi dua sesi satu mapel', async () => {
   const detail = await request(BACKEND, `/api/v1/tryouts/${multiTryout.id}`, {
     headers: await adminHeaders()
   });
   assert.equal(detail.status, 200, JSON.stringify(detail.body));
   const tryout = detail.body.data.tryout;
   assert.deepEqual(tryout.mapels.map((item) => item.code).sort(), ['IPAS', 'MTKA']);
-  assert.equal(tryout.mapel_code, 'MTKA');
+  assert.equal(tryout.sessions.length, 2);
+  assert.deepEqual([...new Set(tryout.sessions.map((session) => session.mapel_code))].sort(),
+    ['IPAS', 'MTKA']);
   assert.equal(tryout.sheet_ids.length, 2);
 
   const rows = await query(
-    `SELECT m.code FROM tryout_session_mapels tsm
+    `SELECT tsm.session_id, m.code
+       FROM tryout_session_mapels tsm
        JOIN mapels m ON m.id = tsm.mapel_id
-      WHERE tsm.session_id = $1 ORDER BY m.code`,
-    [multiTryout.id]
+      WHERE tsm.session_id = ANY($1::bigint[])
+      ORDER BY tsm.session_id, m.code`,
+    [tryout.sessions.map((session) => Number(session.id))]
   );
-  assert.deepEqual(rows.rows.map((row) => row.code), ['IPAS', 'MTKA']);
+  assert.equal(rows.rows.length, 2);
+  assert.deepEqual(rows.rows.map((row) => row.code).sort(), ['IPAS', 'MTKA']);
 });
 
 test('Q6T-02 mapel ganda dan konflik mapel_code ditolak', async () => {
@@ -217,7 +226,7 @@ test('Q6T-03 lembar dari mapel yang tidak dipilih ditolak', async () => {
     payload: { mapel_codes: ['MTKA'], sheet_ids: [sheetIds.MTKA, sheetIds.IPAS] }
   });
   assert.equal(result.status, 400, JSON.stringify(result.body));
-  assert.match(result.body.error.message, /bukan mapel terpilih/);
+  assert.match(result.body.error.message, /Sebagian lembar soal tidak ditemukan, diarsipkan, atau bukan mapel sesi ini/);
 });
 
 test('Q6T-04 submit-all non-CBT mengirim semua jawaban tanpa feedback', async () => {
@@ -289,10 +298,17 @@ test('Q6T-05 respon violation memuat info pelanggaran tanpa mengubah kuota', asy
   assert.ok(quota.rows.every((row) => Number(row.cbt_max_violations) === 3));
 });
 
-test('Q6T-06 marker frontend multi-mapel, toast, dan asset terbaru', () => {
+test('Q6T-06 marker frontend bersesi, toast, dan asset terbaru', () => {
   const cms = readFileSync(CMS_FILE, 'utf8');
-  assert.match(cms, /mapel_codes/);
+  assert.match(cms, /sessions/);
+  assert.match(cms, /mapel_code/);
+  assert.doesNotMatch(cms, /mapel_codes/);
+  assert.doesNotMatch(cms, /jadikan sesi aktif/i);
   assert.doesNotMatch(cms, /jenis\s*===\s*['"]siswa['"]/);
+
+  const table = cms.slice(cms.indexOf('Daftar Tryout'));
+  assert.doesNotMatch(table, /Lembar/);
+  assert.doesNotMatch(table, /Submission/);
 
   const js = readFileSync(TRYOUT_JS, 'utf8');
   assert.doesNotMatch(js, /presentation\/questions\/\$\{[^}]+\}\/submit/);
@@ -300,5 +316,5 @@ test('Q6T-06 marker frontend multi-mapel, toast, dan asset terbaru', () => {
   assert.match(js, /Pelanggaran tercatat:/);
 
   const html = readFileSync(TRYOUT_HTML, 'utf8');
-  assert.match(html, /app\.js\?v=18/);
+  assert.match(html, /app\.js\?v=19/);
 });

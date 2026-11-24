@@ -45,15 +45,18 @@ async function sessionPayload(account, sessionId, tryoutSession = null) {
       [account.id]
     );
     if (!participant.rows[0]) throw new ApiError('UNAUTHORIZED', 'Akun peserta tidak aktif', 401);
-    if (!tryoutSession?.id || !tryoutSession?.slug) {
+    if (!tryoutSession?.id || !tryoutSession?.slug || !tryoutSession?.eventId
+      || !tryoutSession?.eventSlug) {
       throw new ApiError('UNAUTHORIZED', 'Sesi peserta tidak memiliki tryout yang terikat', 401);
     }
     return {
       user: {
         ...participant.rows[0],
+        tryout_event_id: Number(tryoutSession.eventId),
         tryout_session_id: Number(tryoutSession.id),
-        tryout_slug: tryoutSession.slug,
-        tryout_name: tryoutSession.name ?? null
+        tryout_slug: tryoutSession.eventSlug,
+        tryout_name: tryoutSession.eventName ?? tryoutSession.name ?? null,
+        tryout_session_slug: tryoutSession.sessionSlug ?? tryoutSession.slug
       },
       roles: PARTICIPANT_ROLES,
       accessToken: signAccessToken({
@@ -62,8 +65,10 @@ async function sessionPayload(account, sessionId, tryoutSession = null) {
         roles: PARTICIPANT_ROLES,
         permissions: PARTICIPANT_PERMISSIONS,
         account_type: ACCOUNT_TYPE_PARTICIPANT,
+        tryout_event_id: Number(tryoutSession.eventId),
         tryout_session_id: Number(tryoutSession.id),
-        tryout_slug: tryoutSession.slug
+        tryout_slug: tryoutSession.eventSlug,
+        tryout_session_slug: tryoutSession.sessionSlug ?? tryoutSession.slug
       })
     };
   }
@@ -143,20 +148,37 @@ async function loadTryoutForParticipant(client, rawSlug, participantId) {
   }
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
-    `SELECT s.id, s.slug, s.name,
-            EXISTS (
-              SELECT 1 FROM tryout_session_participants p
-              WHERE p.session_id = s.id AND p.participant_id = $2
-            ) AS is_participant
-     FROM tryout_sessions s
-     WHERE s.slug = $1`,
+    `SELECT e.id AS event_id, e.slug AS event_slug, e.name AS event_name,
+            e.starts_at, e.ends_at,
+            s.id, s.slug AS session_slug, s.name
+     FROM tryout_events e
+     JOIN tryout_sessions s ON s.event_id = e.id
+     JOIN tryout_session_participants p ON p.session_id = s.id AND p.participant_id = $2
+     WHERE e.slug = $1
+        OR EXISTS (SELECT 1 FROM tryout_sessions legacy
+                   WHERE legacy.slug = $1 AND legacy.event_id = e.id)
+     ORDER BY (s.slug = $1) DESC, s.id ASC
+     LIMIT 1`,
     [slug, participantId]
   );
   const tryout = rows[0];
-  if (!tryout?.is_participant) {
+  if (!tryout) {
     throw new ApiError('UNAUTHORIZED', 'Akun tidak terdaftar pada tryout ini', 401);
   }
-  return tryout;
+  if (!tryout.ends_at || new Date(tryout.ends_at).getTime() <= Date.now()) {
+    throw new ApiError('TRYOUT_ENDED', 'Batas akhir tryout sudah terlampaui', 401);
+  }
+  return {
+    id: tryout.id,
+    slug: tryout.event_slug,
+    sessionSlug: tryout.session_slug,
+    name: tryout.name,
+    eventId: tryout.event_id,
+    eventSlug: tryout.event_slug,
+    eventName: tryout.event_name,
+    startsAt: tryout.starts_at,
+    endsAt: tryout.ends_at
+  };
 }
 
 async function registerFailedLogin(type, account) {
@@ -210,11 +232,13 @@ publicAuthRouter.post('/login', asyncHandler(async (req, res) => {
     const isParticipant = type === ACCOUNT_TYPE_PARTICIPANT;
     const session = await client.query(
       `INSERT INTO auth_sessions
-         (user_id, participant_id, tryout_session_id, refresh_hash, expires_at, last_used_at)
-       VALUES ($1, $2, $3, $4, now() + make_interval(days => $5), now())
-       RETURNING id`,
+          (user_id, participant_id, tryout_session_id, tryout_event_id,
+           refresh_hash, expires_at, last_used_at)
+        VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => $6), now())
+        RETURNING id`,
       [isParticipant ? null : account.id, isParticipant ? account.id : null,
-        isParticipant ? tryout.id : null, hashToken(refreshToken), config.auth.refreshTtlDays]
+        isParticipant ? tryout.id : null, isParticipant ? tryout.eventId : null,
+        hashToken(refreshToken), config.auth.refreshTtlDays]
     );
     return { refreshToken, sessionId: session.rows[0].id };
   });
@@ -236,17 +260,23 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
   const result = await withTransaction(async (client) => {
     const found = await client.query(
         `SELECT s.id, s.user_id, s.participant_id, s.tryout_session_id,
-              tp.jenis AS participant_jenis, ts.slug AS tryout_slug, ts.name AS tryout_name
+              coalesce(s.tryout_event_id, ts.event_id) AS tryout_event_id,
+              tp.jenis AS participant_jenis,
+              e.slug AS tryout_slug, e.name AS tryout_name,
+              ts.slug AS tryout_session_slug, ts.name AS tryout_session_name
          FROM auth_sessions s
          LEFT JOIN contributors c ON c.id = s.user_id
          LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
          LEFT JOIN tryout_sessions ts ON ts.id = s.tryout_session_id
+         LEFT JOIN tryout_events e ON e.id = coalesce(s.tryout_event_id, ts.event_id)
        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL
          AND s.expires_at > now()
          AND (s.user_id IS NULL OR c.is_active = true)
          AND (s.participant_id IS NULL OR (
            tp.is_active = true
            AND s.tryout_session_id IS NOT NULL
+           AND e.id IS NOT NULL
+           AND now() <= e.ends_at
            AND EXISTS (
              SELECT 1 FROM tryout_session_participants p
              WHERE p.session_id = s.tryout_session_id AND p.participant_id = s.participant_id
@@ -275,7 +305,11 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
       tryoutSession: isParticipant ? {
         id: session.tryout_session_id,
         slug: session.tryout_slug,
-        name: session.tryout_name
+        sessionSlug: session.tryout_session_slug,
+        name: session.tryout_session_name,
+        eventId: session.tryout_event_id,
+        eventSlug: session.tryout_slug,
+        eventName: session.tryout_name
       } : null,
       sessionId: session.id,
       refreshToken: nextRefresh
@@ -310,9 +344,11 @@ publicAuthRouter.get('/me', authenticate, asyncHandler(async (req, res) => {
       user: req.auth.user,
       roles: req.auth.roles,
       permissions: req.auth.permissions,
+      tryout_event_id: req.auth.tryoutEventId ?? null,
       tryout_session_id: req.auth.tryoutSessionId ?? null,
       tryout_slug: req.auth.tryoutSlug ?? null,
-      tryout_name: req.auth.tryoutName ?? null
+      tryout_name: req.auth.tryoutName ?? null,
+      tryout_session_slug: req.auth.tryoutSessionSlug ?? null
     },
     meta: nowMeta()
   });

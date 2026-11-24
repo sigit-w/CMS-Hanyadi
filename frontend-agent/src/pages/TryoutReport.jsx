@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   activateTryoutSession,
   createTryoutSession,
+  downloadTryoutReportExcel,
   getTryoutReport,
   getTryoutSessions
 } from '../api.js';
@@ -41,6 +42,8 @@ export default function TryoutReport() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [openViolations, setOpenViolations] = useState({});
 
   const load = useCallback(async () => {
     const [sessionData, reportData] = await Promise.all([
@@ -97,6 +100,30 @@ export default function TryoutReport() {
     }
   }
 
+  async function handleDownload() {
+    setError('');
+    setDownloading(true);
+    try {
+      const blob = await downloadTryoutReportExcel(sessionId || null);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `laporan-tryout-${sessionId || 'semua'}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function toggleViolations(id) {
+    setOpenViolations((current) => ({ ...current, [id]: !current[id] }));
+  }
+
   const groupedSessions = sessions.map((session) => ({
     ...session,
     rows: report.summary.filter((row) => row.session_id === session.id),
@@ -114,6 +141,11 @@ export default function TryoutReport() {
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
+      <div className="flex justify-end">
+        <Button type="button" variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+          {downloading ? 'Mengunduh…' : 'Unduh Excel'}
+        </Button>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -199,22 +231,22 @@ export default function TryoutReport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Nama Siswa</TableHead>
-                        <TableHead>Kelas</TableHead>
+                        <TableHead>Nama</TableHead>
                         <TableHead>Sekolah</TableHead>
                         <TableHead>Mapel</TableHead>
+                        <TableHead>Jumlah Soal</TableHead>
                         <TableHead>Benar</TableHead>
                         <TableHead>Salah</TableHead>
-                        <TableHead>Skor/Nilai</TableHead>
+                        <TableHead>Nilai</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {session.rows.map((row) => (
                         <TableRow key={`${row.user_id}-${row.mapel_id}`}>
                           <TableCell>{row.participant}</TableCell>
-                          <TableCell>{row.kelas || '—'}</TableCell>
                           <TableCell>{row.sekolah || '—'}</TableCell>
                           <TableCell>{row.mapel}</TableCell>
+                          <TableCell>{row.total ?? 0}</TableCell>
                           <TableCell>{row.correct}</TableCell>
                           <TableCell>{row.wrong}</TableCell>
                           <TableCell><strong>{Number(row.score ?? 0).toFixed(1)}</strong></TableCell>
@@ -260,27 +292,36 @@ export default function TryoutReport() {
                 )}
                 {session.violations.length > 0 && (
                   <div>
-                    <h3 className="mb-2 text-sm font-semibold">Log Pelanggaran</h3>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Waktu</TableHead>
-                          <TableHead>Peserta</TableHead>
-                          <TableHead>Jenis</TableHead>
-                          <TableHead>Detail</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {session.violations.map((row) => (
-                          <TableRow key={row.id}>
-                            <TableCell>{displayDateTime(row.created_at)}</TableCell>
-                            <TableCell>{row.participant ?? `#${row.participant_id}`}</TableCell>
-                            <TableCell>{row.violation_type}</TableCell>
-                            <TableCell>{JSON.stringify(row.detail ?? {})}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <div className="mb-2 flex justify-end">
+                      <Button type="button" variant="link" size="sm" onClick={() => toggleViolations(session.id)}>
+                        {openViolations[session.id] ? 'Tutup detail' : 'Lihat detail'}
+                      </Button>
+                    </div>
+                    {openViolations[session.id] && (
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold">Log Pelanggaran</h3>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Waktu</TableHead>
+                              <TableHead>Peserta</TableHead>
+                              <TableHead>Jenis</TableHead>
+                              <TableHead>Detail</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {session.violations.map((row) => (
+                              <TableRow key={row.id}>
+                                <TableCell>{displayDateTime(row.created_at)}</TableCell>
+                                <TableCell>{row.participant ?? `#${row.participant_id}`}</TableCell>
+                                <TableCell>{row.violation_type}</TableCell>
+                                <TableCell>{JSON.stringify(row.detail ?? {})}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -6,6 +6,8 @@
   ]);
   const TRYOUT_SLUG = resolveTryoutSlug();
   const state = {
+    sessions: [],
+    activeSessionId: null,
     questions: [],
     page: 1,
     total: 0,
@@ -26,6 +28,11 @@
 
   const elements = {
     listStatus: document.getElementById('listStatus'),
+    sessionTabs: document.getElementById('sessionTabs'),
+    completionPanel: document.getElementById('completionPanel'),
+    completionMessage: document.getElementById('completionMessage'),
+    nextSessionButton: document.getElementById('nextSessionButton'),
+    exitSessionButton: document.getElementById('exitSessionButton'),
     questionList: document.getElementById('questionList'),
     loadMore: document.getElementById('loadMore'),
     questionBody: document.getElementById('questionBody'),
@@ -81,7 +88,11 @@
     if (response.status === 401 || response.status === 403) {
       throw new SessionError(body?.error?.message ?? `HTTP ${response.status}`, response.status);
     }
-    if (!response.ok) throw new Error(body?.error?.message ?? `HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(body?.error?.message ?? `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     return body.data;
   }
 
@@ -89,6 +100,27 @@
     return error.status === 403
       ? 'Akun Anda tidak memiliki akses tryout.'
       : 'Sesi berakhir. Silakan masuk kembali.';
+  }
+
+  function withSession(payload = {}) {
+    const result = { ...payload };
+    if (state.activeSessionId != null) result.session_id = state.activeSessionId;
+    return result;
+  }
+
+  function sessionQuery(prefix) {
+    return state.activeSessionId == null
+      ? ''
+      : `${prefix}session_id=${encodeURIComponent(state.activeSessionId)}`;
+  }
+
+  function activeSession() {
+    return state.sessions.find((session) => Number(session.id) === Number(state.activeSessionId)) ?? null;
+  }
+
+  function nextSession() {
+    return state.sessions.find((session) => !session.completed
+      && Number(session.id) !== Number(state.activeSessionId)) ?? null;
   }
 
   function questionId(question) {
@@ -106,6 +138,7 @@
     elements.loginError.hidden = !message;
     elements.loginError.textContent = message;
     elements.loginPassword.value = '';
+    elements.completionPanel.hidden = true;
   }
 
   function showApp(session) {
@@ -119,14 +152,132 @@
     try {
       const session = await api('/auth/me');
       showApp(session);
+      await loadSessions(session);
+      return true;
+    } catch (error) {
+      if (error.status === 401) showLogin();
+      else showLogin(error instanceof SessionError ? sessionMessage(error) : error.message);
+      return false;
+    }
+  }
+
+  function normalizeSessions(data) {
+    const raw = Array.isArray(data) ? data : data?.sessions ?? [];
+    return raw.filter((session) => session && session.id != null).map((session) => ({
+      id: Number(session.id),
+      name: session.name ?? `Sesi ${session.id}`,
+      slug: session.slug ?? '',
+      mapel_code: session.mapel_code ?? '',
+      status: session.status ?? '',
+      completed: Boolean(session.completed ?? session.is_completed)
+    }));
+  }
+
+  function renderSessions() {
+    elements.sessionTabs.replaceChildren();
+    elements.sessionTabs.hidden = state.sessions.length === 0;
+    state.sessions.forEach((session, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'small';
+      const parts = [`Sesi ${index + 1}: ${session.name}`];
+      if (session.mapel_code) parts.push(session.mapel_code);
+      if (session.completed) parts.push('selesai');
+      button.textContent = parts.join(' · ');
+      button.disabled = session.completed;
+      if (session.id === state.activeSessionId) button.setAttribute('aria-current', 'true');
+      button.addEventListener('click', () => activateSession(session.id));
+      elements.sessionTabs.append(button);
+    });
+  }
+
+  async function loadSessions(authSession) {
+    let sessions;
+    try {
+      sessions = normalizeSessions(await api('/presentation/sessions'));
+    } catch (error) {
+      if (error instanceof SessionError) {
+        showLogin(sessionMessage(error));
+        return false;
+      }
+      if (error.status === 404 && Number(authSession?.tryout_session_id) > 0) {
+        sessions = [{
+          id: Number(authSession.tryout_session_id),
+          name: authSession.tryout_name ?? 'Sesi tryout',
+          slug: authSession.tryout_session_slug ?? authSession.tryout_slug ?? '',
+          mapel_code: '',
+          status: '',
+          completed: false
+        }];
+      } else {
+        elements.listStatus.textContent = 'Gagal memuat daftar sesi.';
+        toast(error.message, true);
+        return false;
+      }
+    }
+    state.sessions = sessions;
+    renderSessions();
+    if (!sessions.length) {
+      elements.listStatus.textContent = 'Tidak ada sesi yang tersedia untuk akun ini.';
+      elements.questionBody.textContent = 'Belum ada sesi yang dapat dikerjakan.';
+      elements.questionBody.className = 'question-body empty';
+      return true;
+    }
+    const firstOpen = sessions.find((session) => !session.completed);
+    if (!firstOpen) {
+      elements.listStatus.textContent = 'Semua sesi sudah selesai.';
+      elements.questionBody.textContent = 'Semua sesi sudah selesai. Silakan keluar.';
+      elements.questionBody.className = 'question-body empty';
+      elements.completionMessage.textContent = 'Semua sesi sudah selesai. Silakan keluar.';
+      elements.nextSessionButton.disabled = true;
+      elements.completionPanel.hidden = false;
+      return true;
+    }
+    await activateSession(firstOpen.id);
+    return true;
+  }
+
+  async function activateSession(id) {
+    const session = state.sessions.find((item) => Number(item.id) === Number(id));
+    if (!session || session.completed) return false;
+    if (state.activeSessionId === session.id && !state.locked) return true;
+    resetSessionState();
+    state.activeSessionId = session.id;
+    renderSessions();
+    elements.listStatus.textContent = `Sesi ${session.name}: memuat soal…`;
+    try {
       const cbtStarted = await startCbt();
       if (!cbtStarted) await loadQuestions(1);
       return true;
     } catch (error) {
-      if (error instanceof SessionError && error.status === 401) showLogin();
-      else showLogin(error instanceof SessionError ? sessionMessage(error) : error.message);
+      if (error instanceof SessionError) showLogin(sessionMessage(error));
+      else {
+        elements.listStatus.textContent = 'Gagal memuat soal sesi ini.';
+        toast(error.message, true);
+      }
       return false;
     }
+  }
+
+  function markSessionComplete() {
+    const session = activeSession();
+    if (session) session.completed = true;
+    renderSessions();
+    elements.nav.replaceChildren();
+    elements.finalizeButton.hidden = true;
+    elements.finalizeButton.disabled = false;
+    const next = nextSession();
+    elements.completionMessage.textContent = next
+      ? 'Sesi ini selesai. Lanjut ke sesi berikutnya atau keluar.'
+      : 'Sesi ini selesai. Silakan keluar.';
+    elements.nextSessionButton.disabled = !next;
+    elements.completionPanel.hidden = false;
+  }
+
+  async function continueNextSession() {
+    const next = nextSession();
+    if (!next) return;
+    await activateSession(next.id);
   }
 
   async function handleLogin(event) {
@@ -164,7 +315,7 @@
     }
   }
 
-  function resetExamState() {
+  function resetSessionState() {
     window.clearTimeout(state.timerId);
     state.questions = [];
     state.page = 1;
@@ -183,16 +334,32 @@
     state.lastFocusLossAt = 0;
     elements.timerDisplay.hidden = true;
     elements.finalizeButton.hidden = true;
+    elements.finalizeButton.disabled = false;
     elements.fullscreenButton.hidden = true;
     elements.cbtStatus.hidden = true;
+    elements.loadMore.hidden = true;
     elements.questionList.replaceChildren();
+    elements.nav.replaceChildren();
     elements.questionBody.textContent = 'Pilih soal di sebelah kiri untuk mulai.';
     elements.questionBody.className = 'question-body empty';
+    elements.completionPanel.hidden = true;
+  }
+
+  function resetExamState() {
+    resetSessionState();
+    state.sessions = [];
+    state.activeSessionId = null;
+    elements.sessionTabs.replaceChildren();
+    elements.sessionTabs.hidden = true;
   }
 
   async function startCbt() {
     try {
-      const payload = await api('/presentation/cbt/attempt/start', { method: 'POST' });
+      const payload = await api('/presentation/cbt/attempt/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withSession())
+      });
       state.cbtMode = true;
       state.attempt = payload.attempt;
       state.questions = payload.questions;
@@ -221,7 +388,7 @@
       return true;
     } catch (error) {
       if (error instanceof SessionError) throw error;
-      if (error.message.includes('mode CBT')) return false;
+      if (/CBT/i.test(error.message)) return false;
       throw error;
     }
   }
@@ -265,7 +432,7 @@
   async function loadQuestions(page = 1, append = false) {
     elements.listStatus.textContent = 'Memuat daftar soal…';
     try {
-      const data = await api(`/tryout/questions?page=${page}&limit=20`);
+      const data = await api(`/tryout/questions?page=${page}&limit=20${sessionQuery('&')}`);
       state.questions = append ? [...state.questions, ...data.questions] : data.questions;
       state.total = data.pagination.total;
       state.page = page;
@@ -314,7 +481,7 @@
       return;
     }
     try {
-      const detail = await api(`/presentation/questions/${id}`);
+      const detail = await api(`/presentation/questions/${id}${sessionQuery('?')}`);
       const index = state.questions.findIndex((item) => questionId(item) === id);
       renderQuestion(detail, index);
       renderNavigation(index);
@@ -360,7 +527,7 @@
     const request = api('/presentation/cbt/attempt/autosave', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question_id: id, ...payload })
+      body: JSON.stringify(withSession({ question_id: id, ...payload }))
     }).catch((error) => {
       toast(error.message, true);
     }).finally(() => {
@@ -391,7 +558,7 @@
       await api('/presentation/cbt/attempt/flag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question_id: id, flagged })
+        body: JSON.stringify(withSession({ question_id: id, flagged }))
       });
       if (flagged) state.flags.add(String(id));
       else state.flags.delete(String(id));
@@ -562,10 +729,15 @@
     if (!window.confirm('Kumpulkan jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
     try {
       await flushDrafts();
-      const result = await api('/presentation/cbt/attempt/finalize', { method: 'POST' });
-      state.attempt.status = result.status;
+      const result = await api('/presentation/cbt/attempt/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withSession())
+      });
+      state.attempt.status = result.status ?? 'submitted';
       lockCbt();
       toast('Jawaban terkirim. Hasil dapat dilihat administrator.');
+      markSessionComplete();
     } catch (error) {
       if (error instanceof SessionError) {
         showLogin(sessionMessage(error));
@@ -613,10 +785,11 @@
       await api('/presentation/attempts/submit-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers })
+        body: JSON.stringify(withSession({ answers }))
       });
       lockAnswers();
       toast('Jawaban terkirim. Hasil dapat dilihat administrator.');
+      markSessionComplete();
     } catch (error) {
       if (error instanceof SessionError) showLogin(sessionMessage(error));
       else toast(error.message, true);
@@ -649,7 +822,7 @@
       const result = await api('/presentation/cbt/attempt/violation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ violation_type: type, detail })
+        body: JSON.stringify({ violation_type: type, detail, session_id: state.activeSessionId })
       });
       const count = result.violation_count;
       const maxViolations = result.max_violations ?? result.limit ?? '∞';
@@ -657,6 +830,7 @@
       if (result.status !== 'in_progress') {
         state.attempt.status = result.status;
         lockCbt();
+        if (typeof markSessionComplete === 'function') markSessionComplete();
         toast(`${notice}. Attempt dikunci. Jawaban dikumpulkan otomatis.`, true);
       } else {
         toast(notice, true);
@@ -713,10 +887,12 @@
     if (isCbt()) finishCbt();
     else submitAllAnswers();
   });
+  elements.nextSessionButton.addEventListener('click', continueNextSession);
+  elements.exitSessionButton.addEventListener('click', handleLogout);
   elements.fullscreenButton.addEventListener('click', enterFullscreen);
 
   const refreshOnVisible = () => {
-    if (isCbt() || document.hidden || !elements.loginGate.hidden) return;
+    if (state.locked || isCbt() || document.hidden || !elements.loginGate.hidden) return;
     loadQuestions(1);
   };
   document.addEventListener('visibilitychange', refreshOnVisible);

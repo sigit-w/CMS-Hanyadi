@@ -12,13 +12,16 @@ async function loadAuth(req) {
 
   const session = await query(
     `SELECT s.id, s.user_id, s.participant_id, s.tryout_session_id,
+            coalesce(s.tryout_event_id, ts.event_id) AS tryout_event_id,
             c.username, c.display_name,
              coalesce(tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama,
-             ts.slug AS tryout_slug, ts.name AS tryout_name
+             e.slug AS tryout_slug, e.name AS tryout_name, e.ends_at AS tryout_ends_at,
+             ts.slug AS tryout_session_slug, ts.name AS tryout_session_name
      FROM auth_sessions s
      LEFT JOIN contributors c ON c.id = s.user_id
      LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
      LEFT JOIN tryout_sessions ts ON ts.id = s.tryout_session_id
+     LEFT JOIN tryout_events e ON e.id = coalesce(s.tryout_event_id, ts.event_id)
      WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`,
     [payload.sid]
   );
@@ -28,9 +31,14 @@ async function loadAuth(req) {
   if (payload.account_type === ACCOUNT_TYPE_PARTICIPANT || found.participant_id) {
     if (!found.participant_id || Number(payload.sub) !== Number(found.participant_id)
       || !found.participant_username) return null;
-    if (!found.tryout_session_id || !found.tryout_slug
+    const tokenSlug = payload.tryout_slug;
+    const slugMatches = !tokenSlug || tokenSlug === found.tryout_slug
+      || tokenSlug === found.tryout_session_slug;
+    if (!found.tryout_session_id || !found.tryout_event_id || !found.tryout_slug
       || Number(payload.tryout_session_id) !== Number(found.tryout_session_id)
-      || payload.tryout_slug !== found.tryout_slug) return null;
+      || (payload.tryout_event_id && Number(payload.tryout_event_id) !== Number(found.tryout_event_id))
+      || !slugMatches
+      || !found.tryout_ends_at || new Date(found.tryout_ends_at).getTime() <= Date.now()) return null;
     const membership = await query(
       `SELECT 1 FROM tryout_session_participants
        WHERE session_id = $1 AND participant_id = $2`,
@@ -43,15 +51,19 @@ async function loadAuth(req) {
         id: found.participant_id,
         username: found.participant_username,
         display_name: found.participant_nama,
+        tryout_event_id: Number(found.tryout_event_id),
         tryout_session_id: Number(found.tryout_session_id),
         tryout_slug: found.tryout_slug,
-        tryout_name: found.tryout_name
+        tryout_name: found.tryout_name,
+        tryout_session_slug: found.tryout_session_slug
       },
       roles: PARTICIPANT_ROLES,
       permissions: PARTICIPANT_PERMISSIONS,
+      tryoutEventId: Number(found.tryout_event_id),
       tryoutSessionId: Number(found.tryout_session_id),
       tryoutSlug: found.tryout_slug,
-      tryoutName: found.tryout_name
+      tryoutName: found.tryout_name,
+      tryoutSessionSlug: found.tryout_session_slug
     };
   }
 

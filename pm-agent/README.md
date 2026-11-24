@@ -57,10 +57,19 @@ Memecah pekerjaan menjadi task, menentukan prioritas dan dependency, memantau pr
 | `tasks/handoff-DOC07.md` | Serah terima PM→Dokumentasi Fase 6t: arsitektur multi-mapel |
 | `tasks/handoff-REL26.md` | Serah terima PM→Release Fase 6t: backup, deploy, & smoke test |
 | `decisions/ADR-016-tryout-multi-mapel-dan-alur-peserta.md` | Keputusan multi-mapel, lembar soal, notifikasi, submit global, & picker siswa |
+| `tasks/phase6u-backlog.md` | Requirement, keputusan, & AC Fase 6u: tryout bersesi, laporan, & lanjutan sesi |
+| `tasks/handoff-BE40.md` | Serah terima PM→Backend Fase 6u: migrasi `030`, API sesi, & ekspor |
+| `tasks/handoff-FE37.md` | Serah terima PM→Frontend Fase 6u: form sesi, prospektus, & laporan |
+| `tasks/handoff-TRY19.md` | Serah terima PM→Tryout Fase 6u: tab sesi & lanjut/keluar |
+| `tasks/handoff-PRES07.md` | Serah terima PM→Presentasi Fase 6u: soal per sesi & deadline |
+| `tasks/handoff-QA37.md` | Serah terima PM→QA Fase 6u: verifikasi R1–R11 & gate REL-27 |
+| `tasks/handoff-DOC08.md` | Serah terima PM→Dokumentasi Fase 6u: arsitektur & ekspor |
+| `tasks/handoff-REL27.md` | Serah terima PM→Release Fase 6u: backup, deploy, & smoke test |
+| `decisions/ADR-017-tryout-bersesi-dan-laporan.md` | Keputusan induk–sesi, prospektus, status, laporan, ekspor, & lanjutan sesi |
 
-Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`; Fase 6p ada di `tasks/phase6p-backlog.md`; Fase 6q ada di `tasks/phase6q-backlog.md`; Fase 6t ada di `tasks/phase6t-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
+Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`; Fase 6p ada di `tasks/phase6p-backlog.md`; Fase 6q ada di `tasks/phase6q-backlog.md`; Fase 6t ada di `tasks/phase6t-backlog.md`; Fase 6u ada di `tasks/phase6u-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
 
-Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`. Fase 6p final 2026-11-24 dengan `REL-18` **GO**; bukti regresi 150/150 dan keputusan rilis ada di `qa-agent/reports/phase6p-report.md` dan `qa-agent/reports/phase6p-release-gate.md`. Fase 6q final 2026-11-24 dengan `REL-19` **GO**; bukti regresi 155/155 dan keputusan rilis ada di `qa-agent/reports/phase6q-report.md` dan `qa-agent/reports/phase6q-release-gate.md`. Fase 6 ditutup 2026-11-24 dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, dan penutup tercatat di `pm-agent/progress/status-board.md`.
+Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`. Fase 6p final 2026-11-24 dengan `REL-18` **GO**; bukti regresi 150/150 dan keputusan rilis ada di `qa-agent/reports/phase6p-report.md` dan `qa-agent/reports/phase6p-release-gate.md`. Fase 6q final 2026-11-24 dengan `REL-19` **GO**; bukti regresi 155/155 dan keputusan rilis ada di `qa-agent/reports/phase6q-report.md` dan `qa-agent/reports/phase6q-release-gate.md`. Fase 6 ditutup 2026-11-24 dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, dan penutup tercatat di `pm-agent/progress/status-board.md`. Fase 6t final 2026-11-24 dengan `REL-26` **GO**, regresi 21/21, commit `8507105`, dan push ke `origin/main`. Fase 6u final 2026-11-24 dengan `REL-27` **GO** secara gate QA/docs/deploy: regresi `32 tests, 32 pass, 0 fail`, `YAML OK 3.0.3 56`, dan `git diff --check` OK. Migrasi `030` sudah dijalankan, backup pre-`030` ada (187958 bytes), services sehat, baseline DB `1|1|1|2|10|1|3`. Seluruh task Fase 6u `done` dan gate `REL-27` **GO (belum commit)** — perubahan belum di-commit/di-push karena user belum meminta commit/push. Gate `REL-01…REL-27` tetap berlaku; Fase 7 tetap dibatalkan.
 
 ## Ritme Kerja
 

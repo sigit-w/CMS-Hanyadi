@@ -6,6 +6,7 @@ import {
   deleteTryout,
   getMapels,
   getParticipantDetail,
+  getProspektus,
   getQuestionSheets,
   getSiswa,
   getTryout,
@@ -24,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
+import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const MAPEL_LABELS = {
@@ -50,23 +52,35 @@ function tryoutMapelText(tryout) {
   return [...new Set(labels.filter(Boolean))].join(', ') || '—';
 }
 
+function statusVariant(status) {
+  if (status === 'berlangsung') return 'default';
+  if (status === 'selesai') return 'secondary';
+  return 'outline';
+}
+
 function jakartaInputDate(offsetHours = 0) {
   const shifted = new Date(Date.now() + (7 + offsetHours) * 60 * 60 * 1000);
   return shifted.toISOString().slice(0, 16);
 }
 
-const emptyForm = () => ({
+const emptySession = () => ({
   name: '',
-  start_at: jakartaInputDate(),
-  end_at: jakartaInputDate(2),
-  mapel_codes: [],
-  is_active: true,
+  mapel_code: '',
+  sheet_ids: [],
   cbt_enabled: false,
   cbt_duration_minutes: 90,
   cbt_shuffle_questions: false,
   cbt_shuffle_options: false,
   cbt_require_fullscreen: true,
   cbt_max_violations: 3
+});
+
+const emptyForm = () => ({
+  name: '',
+  slug: '',
+  starts_at: jakartaInputDate(),
+  ends_at: jakartaInputDate(2),
+  sessions: [emptySession()]
 });
 
 const cbtFormFromTryout = (tryout) => ({
@@ -98,11 +112,12 @@ function formatDateTime(value) {
   });
 }
 
-function participantSubtitle(participant) {
-  if (participant.jenis === 'umum') {
-    return `Peserta Umum · ${participant.sekolah || '—'} · WA ${participant.wa_orang_tua || '—'}`;
+function participantSubtitle(participant, source) {
+  const label = source ?? (participant.jenis === 'umum' ? 'Peserta Umum' : 'Siswa');
+  if (label === 'Siswa' || label === 'Prospektus') {
+    return `${label} · ${participant.email || '—'} · Kelas ${participant.kelas || '—'} · ${participant.sekolah || '—'}`;
   }
-  return `Siswa · ${participant.email || '—'} · Kelas ${participant.kelas || '—'} · ${participant.sekolah || '—'}`;
+  return `${label} · ${participant.sekolah || '—'} · WA ${participant.wa_orang_tua || '—'}`;
 }
 
 function ParticipantRows({ rows, onDetail, onRemove, emptyText }) {
@@ -113,7 +128,7 @@ function ParticipantRows({ rows, onDetail, onRemove, emptyText }) {
     <div className="max-h-56 space-y-2 overflow-y-auto">
       {rows.map((participant) => (
         <div
-          key={participant.id}
+          key={`${participant.source ?? ''}-${participant.id}`}
           role="button"
           tabIndex={0}
           className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -127,7 +142,9 @@ function ParticipantRows({ rows, onDetail, onRemove, emptyText }) {
         >
           <span className="min-w-0">
             <strong className="block truncate">{participant.nama}</strong>
-            <span className="block truncate text-xs text-muted-foreground">{participantSubtitle(participant)}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {participantSubtitle(participant, participant.source)}
+            </span>
           </span>
           <Button
             type="button"
@@ -152,9 +169,9 @@ export default function TryoutManagement() {
   const [mapels, setMapels] = useState([]);
   const [sheetsByMapel, setSheetsByMapel] = useState({});
   const [participants, setParticipants] = useState([]);
-  const [siswaLoading, setSiswaLoading] = useState(false);
+  const [prospektus, setProspektus] = useState([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
   const [draftParticipants, setDraftParticipants] = useState([]);
-  const [selectedSheets, setSelectedSheets] = useState([]);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [detailParticipant, setDetailParticipant] = useState(null);
   const [managedTryoutId, setManagedTryoutId] = useState(null);
@@ -165,11 +182,12 @@ export default function TryoutManagement() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pesertaDialog, setPesertaDialog] = useState(null);
+  const [umumTab, setUmumTab] = useState('manual');
   const [participantTarget, setParticipantTarget] = useState('draft');
+  const [participantSearch, setParticipantSearch] = useState('');
   const [umumForm, setUmumForm] = useState(emptyUmum);
   const [umumError, setUmumError] = useState('');
   const [savingPeserta, setSavingPeserta] = useState(false);
-  const [siswaSearch, setSiswaSearch] = useState('');
   const [cbtTarget, setCbtTarget] = useState(null);
   const [cbtForm, setCbtForm] = useState(cbtFormFromTryout({}));
   const [savingCbt, setSavingCbt] = useState(false);
@@ -181,20 +199,18 @@ export default function TryoutManagement() {
   const mapelOptions = Array.from(new Map(
     mapels.filter((mapel) => mapel.code).map((mapel) => [mapel.code, mapel])
   ).values());
-  const sheetMapelById = new Map();
-  Object.entries(sheetsByMapel).forEach(([code, list]) => {
-    list.forEach((sheet) => sheetMapelById.set(String(sheet.id), code));
-  });
-  const seenSheetIds = new Set();
-  const sheetOptions = form.mapel_codes.flatMap((code) => (sheetsByMapel[code] ?? [])
-    .map((sheet) => ({ ...sheet, id: String(sheet.id), sheetMapelCode: sheet.mapel_code ?? code }))
-    .filter((sheet) => {
-      if (!sheet.id || seenSheetIds.has(sheet.id)) return false;
-      seenSheetIds.add(sheet.id);
-      return true;
-    }));
-  const siswaRows = participants.filter((participant) => (
-    String(participant.nama ?? '').toLowerCase().includes(siswaSearch.trim().toLowerCase())
+  const usedMapelCodes = [...new Set(form.sessions.map((session) => session.mapel_code).filter(Boolean))];
+  const sheetCodesKey = [...usedMapelCodes].sort().join('|');
+  const participantSource = pesertaDialog === 'siswa' || (pesertaDialog === 'umum' && umumTab === 'siswa')
+    ? 'siswa'
+    : pesertaDialog === 'umum' && umumTab === 'prospektus' ? 'prospektus' : null;
+  const sourceRows = participantSource === 'siswa'
+    ? participants
+    : participantSource === 'prospektus' ? prospektus : [];
+  const searchTerm = participantSearch.trim().toLowerCase();
+  const filteredSourceRows = sourceRows.filter((participant) => (
+    [participant.nama, participant.email, participant.kelas, participant.sekolah]
+      .some((value) => String(value ?? '').toLowerCase().includes(searchTerm))
   ));
 
   const refreshTryouts = async () => {
@@ -225,14 +241,11 @@ export default function TryoutManagement() {
     return () => { active = false; };
   }, []);
 
-  const mapelCodesKey = form.mapel_codes.join('|');
-
   useEffect(() => {
     let active = true;
-    const codes = mapelCodesKey ? mapelCodesKey.split('|') : [];
+    const codes = sheetCodesKey ? sheetCodesKey.split('|') : [];
     if (codes.length === 0) {
       setSheetsByMapel({});
-      setSelectedSheets([]);
       return undefined;
     }
     async function loadSheets() {
@@ -244,7 +257,15 @@ export default function TryoutManagement() {
         if (!active) return;
         setSheetsByMapel(Object.fromEntries(results));
         const available = new Set(results.flatMap(([, list]) => list.map((sheet) => String(sheet.id))));
-        setSelectedSheets((current) => current.filter((id) => available.has(id)));
+        setForm((current) => ({
+          ...current,
+          sessions: current.sessions.map((session) => ({
+            ...session,
+            sheet_ids: codes.includes(session.mapel_code)
+              ? session.sheet_ids.filter((id) => available.has(String(id)))
+              : []
+          }))
+        }));
       } catch (err) {
         if (active) setError(err.message);
       }
@@ -258,60 +279,95 @@ export default function TryoutManagement() {
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [mapelCodesKey]);
+  }, [sheetCodesKey]);
 
   useEffect(() => {
-    if (pesertaDialog !== 'siswa') return undefined;
+    if (!participantSource) return undefined;
     let active = true;
-    setSiswaLoading(true);
-    async function loadSiswa() {
+    async function loadSource() {
       try {
-        const data = await getSiswa();
+        setSourceLoading(true);
+        const data = participantSource === 'siswa'
+          ? await getSiswa({ search: participantSearch.trim() })
+          : await getProspektus({ search: participantSearch.trim() });
         if (!active) return;
-        setParticipants((data.siswa ?? []).filter((participant) => participant.is_active));
+        if (participantSource === 'siswa') {
+          setParticipants((data.siswa ?? []).filter((participant) => participant.is_active));
+        } else {
+          setProspektus((data.prospektus ?? []).filter((participant) => participant.is_active));
+        }
         setError('');
       } catch (err) {
         if (active) setError(err.message);
       } finally {
-        if (active) setSiswaLoading(false);
+        if (active) setSourceLoading(false);
       }
     }
-    loadSiswa();
-    const refreshOnVisible = () => { if (!document.hidden) loadSiswa(); };
+    const timer = window.setTimeout(loadSource, 250);
+    const refreshOnVisible = () => { if (!document.hidden) loadSource(); };
     document.addEventListener('visibilitychange', refreshOnVisible);
     window.addEventListener('focus', refreshOnVisible);
     return () => {
       active = false;
+      window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [pesertaDialog]);
+  }, [participantSource, participantSearch]);
 
-  function toggleMapel(code) {
-    const nextMapels = form.mapel_codes.includes(code)
-      ? form.mapel_codes.filter((item) => item !== code)
-      : [...form.mapel_codes, code];
-    setForm({ ...form, mapel_codes: nextMapels });
-    if (nextMapels.length < form.mapel_codes.length) {
-      setSelectedSheets((current) => current.filter((id) => nextMapels.includes(sheetMapelById.get(id))));
-    }
+  function updateSession(index, patch) {
+    setForm((current) => ({
+      ...current,
+      sessions: current.sessions.map((session, position) => (
+        position === index ? { ...session, ...patch } : session
+      ))
+    }));
   }
 
-  function toggleValue(value, setter) {
-    setter((current) => current.includes(value)
-      ? current.filter((item) => item !== value)
-      : [...current, value]);
+  function changeSessionMapel(index, code) {
+    updateSession(index, { mapel_code: code, sheet_ids: [] });
+  }
+
+  function toggleSessionSheet(index, id) {
+    setForm((current) => ({
+      ...current,
+      sessions: current.sessions.map((session, position) => {
+        if (position !== index) return session;
+        const sheetId = String(id);
+        return {
+          ...session,
+          sheet_ids: session.sheet_ids.includes(sheetId)
+            ? session.sheet_ids.filter((item) => String(item) !== sheetId)
+            : [...session.sheet_ids, sheetId]
+        };
+      })
+    }));
+  }
+
+  function addSession() {
+    setForm((current) => ({ ...current, sessions: [...current.sessions, emptySession()] }));
+  }
+
+  function removeSession(index) {
+    setForm((current) => ({
+      ...current,
+      sessions: current.sessions.length === 1
+        ? current.sessions
+        : current.sessions.filter((_, position) => position !== index)
+    }));
   }
 
   function openPesertaUmum(target = 'draft') {
     setUmumForm(emptyUmum());
     setUmumError('');
+    setUmumTab('manual');
+    setParticipantSearch('');
     setParticipantTarget(target);
     setPesertaDialog('umum');
   }
 
   function openPesertaSiswa(target = 'draft') {
-    setSiswaSearch('');
+    setParticipantSearch('');
     setParticipantTarget(target);
     setPesertaDialog('siswa');
   }
@@ -326,7 +382,7 @@ export default function TryoutManagement() {
     }
   }
 
-  async function handlePickSiswa(participant) {
+  async function handlePickParticipant(participant, sourceLabel) {
     setError('');
     setNotice('');
     if (participantTarget === 'manage') {
@@ -335,7 +391,7 @@ export default function TryoutManagement() {
         await addTryoutParticipants(managedTryoutId, [participant.id]);
         await loadManagedParticipants(managedTryoutId);
         await refreshTryouts();
-        setNotice(`Siswa "${participant.nama}" ditambahkan ke tryout ini.`);
+        setNotice(`${sourceLabel} "${participant.nama}" ditambahkan ke tryout ini.`);
         setPesertaDialog('manage');
       } catch (err) {
         setError(err.message);
@@ -345,21 +401,24 @@ export default function TryoutManagement() {
       return;
     }
     setSelectedParticipants((current) => (
-      current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
+      current.some((id) => String(id) === String(participant.id))
+        ? current : [...current, String(participant.id)]
     ));
     setDraftParticipants((current) => (
       current.some((item) => String(item.id) === String(participant.id))
-        ? current : [participant, ...current]
+        ? current : [{ ...participant, source: sourceLabel }, ...current]
     ));
     setPesertaDialog(null);
-    setNotice(`Siswa "${participant.nama}" ditambahkan ke tryout.`);
+    setNotice(`${sourceLabel} "${participant.nama}" ditambahkan ke tryout.`);
   }
 
   async function handleRemoveDraftParticipant(participant) {
-    const isUmum = participant.jenis === 'umum';
-    const message = isUmum
-      ? `Keluarkan Peserta Umum "${participant.nama}" dari daftar tryout? Datanya akan disimpan di Prospektus dan login dinonaktifkan.`
-      : `Keluarkan Siswa "${participant.nama}" dari daftar tryout? Data siswa tidak akan dihapus.`;
+    const isProspektus = participant.source === 'Prospektus';
+    const isUmum = participant.jenis === 'umum' && !isProspektus;
+    const label = isProspektus ? 'Prospektus' : isUmum ? 'Peserta Umum' : 'Siswa';
+    const message = isProspektus
+      ? `Keluarkan Prospektus "${participant.nama}" dari daftar tryout?`
+      : `Keluarkan ${label} "${participant.nama}" dari daftar tryout?`;
     if (!window.confirm(message)) return;
     setError('');
     setNotice('');
@@ -369,7 +428,7 @@ export default function TryoutManagement() {
       setDraftParticipants((current) => current.filter((item) => String(item.id) !== String(participant.id)));
       setNotice(isUmum
         ? `Peserta Umum "${participant.nama}" dipindahkan ke Prospektus.`
-        : `Siswa "${participant.nama}" dikeluarkan dari tryout. Data siswa tetap tersimpan.`);
+        : `${label} "${participant.nama}" dikeluarkan dari tryout.`);
     } catch (err) {
       setError(err.message);
     }
@@ -443,7 +502,10 @@ export default function TryoutManagement() {
         wa_orang_tua: umumForm.wa_orang_tua.trim()
       });
       const participant = created.participant;
-      setDraftParticipants((current) => [participant, ...current.filter((item) => item.id !== participant.id)]);
+      setDraftParticipants((current) => [
+        { ...participant, source: 'Peserta Umum' },
+        ...current.filter((item) => item.id !== participant.id)
+      ]);
       if (participantTarget === 'manage') {
         await addTryoutParticipants(managedTryoutId, [participant.id]);
         await loadManagedParticipants(managedTryoutId);
@@ -451,7 +513,8 @@ export default function TryoutManagement() {
         setPesertaDialog('manage');
       } else {
         setSelectedParticipants((current) => (
-          current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
+          current.some((id) => String(id) === String(participant.id))
+            ? current : [...current, String(participant.id)]
         ));
         setPesertaDialog(null);
       }
@@ -463,44 +526,66 @@ export default function TryoutManagement() {
     }
   }
 
+  function validateForm() {
+    if (!form.name.trim() || !form.starts_at || !form.ends_at) {
+      return 'Lengkapi Nama Tryout, slug jika diinginkan, dan jadwal tryout.';
+    }
+    if (Date.parse(form.ends_at) <= Date.parse(form.starts_at)) {
+      return 'Tanggal & jam selesai harus setelah tanggal & jam mulai.';
+    }
+    if (form.sessions.length === 0) return 'Tryout harus memiliki minimal satu sesi.';
+    const codes = form.sessions.map((session) => session.mapel_code);
+    if (codes.some((code) => !code)) return 'Setiap sesi wajib memilih tepat satu mapel.';
+    if (new Set(codes).size !== codes.length) return 'Setiap sesi harus memakai mapel yang berbeda.';
+    for (const session of form.sessions) {
+      if (session.sheet_ids.length === 0) {
+        return `Sesi "${mapelLabel(session.mapel_code)}" wajib memilih minimal satu lembar soal.`;
+      }
+      const duration = Number(session.cbt_duration_minutes);
+      if (session.cbt_enabled && (!String(session.cbt_duration_minutes).trim()
+        || !Number.isInteger(duration) || duration < 1 || duration > 600)) {
+        return 'Durasi CBT tiap sesi harus antara 1 dan 600 menit.';
+      }
+      const maxViolations = Number(session.cbt_max_violations);
+      if (!Number.isInteger(maxViolations) || maxViolations < 0 || maxViolations > 100) {
+        return 'Batas pelanggaran tiap sesi harus antara 0 dan 100.';
+      }
+    }
+    return '';
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
     setNotice('');
-    if (!form.name.trim() || !form.start_at || !form.end_at || form.mapel_codes.length === 0
-      || selectedSheets.length === 0) {
-      setError('Lengkapi Nama Tryout, jadwal, minimal satu mapel, dan minimal satu lembar soal.');
-      return;
-    }
-    if (Date.parse(form.end_at) <= Date.parse(form.start_at)) {
-      setError('Tanggal & jam selesai harus setelah tanggal & jam mulai.');
-      return;
-    }
-    if (form.cbt_enabled && (!Number.isInteger(Number(form.cbt_duration_minutes))
-      || Number(form.cbt_duration_minutes) < 1 || Number(form.cbt_duration_minutes) > 600)) {
-      setError('Durasi CBT harus antara 1 dan 600 menit.');
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setSaving(true);
     try {
+      const name = form.name.trim();
       const created = await createTryout({
-        name: form.name.trim(),
-        start_at: form.start_at,
-        end_at: form.end_at,
-        mapel_codes: form.mapel_codes,
-        sheet_ids: [...new Set(selectedSheets.map(Number))],
+        name,
+        slug: form.slug.trim() || undefined,
+        starts_at: form.starts_at,
+        ends_at: form.ends_at,
         participant_ids: selectedParticipants.map(Number),
-        is_active: form.is_active,
-        cbt_enabled: form.cbt_enabled,
-        cbt_duration_minutes: form.cbt_enabled ? Number(form.cbt_duration_minutes) : null,
-        cbt_shuffle_questions: form.cbt_shuffle_questions,
-        cbt_shuffle_options: form.cbt_shuffle_options,
-        cbt_require_fullscreen: form.cbt_require_fullscreen,
-        cbt_max_violations: Number(form.cbt_max_violations)
+        sessions: form.sessions.map((session) => ({
+          name: session.name.trim() || undefined,
+          mapel_code: session.mapel_code,
+          sheet_ids: session.sheet_ids.map(Number),
+          cbt_enabled: session.cbt_enabled,
+          cbt_duration_minutes: session.cbt_enabled ? Number(session.cbt_duration_minutes) : null,
+          cbt_shuffle_questions: session.cbt_shuffle_questions,
+          cbt_shuffle_options: session.cbt_shuffle_options,
+          cbt_require_fullscreen: session.cbt_require_fullscreen,
+          cbt_max_violations: Number(session.cbt_max_violations)
+        }))
       });
       setNotice(`Tryout "${created.tryout.name}" berhasil dibuat. URL peserta: ${tryoutUrl(created.tryout.slug)}`);
       setForm(emptyForm());
-      setSelectedSheets([]);
       setSelectedParticipants([]);
       setDraftParticipants([]);
       await refreshTryouts();
@@ -569,11 +654,60 @@ export default function TryoutManagement() {
     }
   }
 
+  function renderSourcePicker(sourceLabel) {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="flex-1"
+            value={participantSearch}
+            placeholder={`Cari nama, email, kelas, atau sekolah ${sourceLabel.toLowerCase()}`}
+            onChange={(event) => setParticipantSearch(event.target.value)}
+          />
+          <Button type="button" variant="outline" size="sm" onClick={() => setParticipantSearch('')}>
+            Bersihkan
+          </Button>
+        </div>
+        <div className="max-h-64 space-y-2 overflow-y-auto">
+          {sourceLoading && filteredSourceRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Memuat data {sourceLabel.toLowerCase()}…</p>
+          ) : filteredSourceRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {sourceRows.length === 0
+                ? `Belum ada ${sourceLabel.toLowerCase()} yang tersedia.`
+                : `Tidak ada ${sourceLabel.toLowerCase()} yang cocok dengan pencarian.`}
+            </p>
+          ) : filteredSourceRows.map((participant) => (
+            <div key={`${sourceLabel}-${participant.id}`} className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm">
+              <span className="min-w-0">
+                <strong className="block truncate">{participant.nama}</strong>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {participantSubtitle(participant, sourceLabel)}
+                </span>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                disabled={savingPeserta || isAlreadySelected(participant)}
+                onClick={() => handlePickParticipant(participant, sourceLabel)}
+              >
+                {isAlreadySelected(participant) ? 'Dipilih' : savingPeserta ? 'Menambahkan…' : 'Pilih'}
+              </Button>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Pencarian dijalankan di server dan disaring kembali di halaman ini.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Manajemen Tryout</h1>
-        <p className="text-sm text-muted-foreground">Buat Tryout baru, tentukan jadwal, mapel, lembar soal, dan peserta yang diundang.</p>
+        <p className="text-sm text-muted-foreground">Buat Tryout baru, tentukan jadwal, sesi/mapel, lembar soal, dan peserta yang diundang.</p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
@@ -586,62 +720,145 @@ export default function TryoutManagement() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Nama Tryout</Label>
-                <Input value={form.name} maxLength={128} placeholder="Contoh: Tryout Matematika November"
+                <Input value={form.name} maxLength={128} placeholder="Contoh: Tryout November"
                   onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </div>
               <div className="space-y-1.5">
+                <Label>Slug (opsional)</Label>
+                <Input value={form.slug} placeholder="contoh: tryout-november"
+                  onChange={(event) => setForm({ ...form, slug: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
                 <Label>Tanggal &amp; Jam Mulai</Label>
-                <Input type="datetime-local" value={form.start_at}
-                  onChange={(event) => setForm({ ...form, start_at: event.target.value })} />
+                <Input type="datetime-local" value={form.starts_at}
+                  onChange={(event) => setForm({ ...form, starts_at: event.target.value })} />
               </div>
               <div className="space-y-1.5">
                 <Label>Tanggal &amp; Jam Selesai</Label>
-                <Input type="datetime-local" value={form.end_at}
-                  onChange={(event) => setForm({ ...form, end_at: event.target.value })} />
+                <Input type="datetime-local" value={form.ends_at}
+                  onChange={(event) => setForm({ ...form, ends_at: event.target.value })} />
               </div>
             </div>
 
-            <fieldset className="rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Mapel ({form.mapel_codes.length} dipilih)</legend>
-              {mapelOptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada mapel tersedia.</p>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {mapelOptions.map((mapel) => (
-                    <label className="flex items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={mapel.code}>
-                      <Checkbox className="mt-0.5" checked={form.mapel_codes.includes(mapel.code)}
-                        onChange={() => toggleMapel(mapel.code)} />
-                      <span>{mapelLabel(mapel.code, mapel.name)}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              <p className="mt-2 text-xs text-muted-foreground">Pilih minimal satu mapel. Mapel yang sama tidak akan dihitung dua kali.</p>
-            </fieldset>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold">Sesi Tryout ({form.sessions.length})</h2>
+                <Button type="button" variant="outline" size="sm" onClick={addSession}>Tambah Sesi</Button>
+              </div>
+              {form.sessions.map((session, index) => {
+                const sheetOptions = (sheetsByMapel[session.mapel_code] ?? []).map((sheet) => ({
+                  ...sheet,
+                  id: String(sheet.id),
+                  sheetMapelCode: sheet.mapel_code ?? session.mapel_code
+                }));
+                return (
+                  <fieldset key={index} className="space-y-4 rounded-lg border p-4">
+                    <legend className="px-1 text-sm font-semibold">Sesi {index + 1}</legend>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label>Nama Sesi (opsional)</Label>
+                        <Input value={session.name} maxLength={128} placeholder={`Sesi ${index + 1}`}
+                          onChange={(event) => updateSession(index, { name: event.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Mapel (tepat satu)</Label>
+                        <SelectNative value={session.mapel_code}
+                          onChange={(event) => changeSessionMapel(index, event.target.value)}>
+                          <option value="">Pilih mapel</option>
+                          {mapelOptions.map((mapel) => {
+                            const usedElsewhere = usedMapelCodes.includes(mapel.code) && session.mapel_code !== mapel.code;
+                            return (
+                              <option key={mapel.code} value={mapel.code} disabled={usedElsewhere}>
+                                {mapelLabel(mapel.code, mapel.name)}{usedElsewhere ? ' (dipakai sesi lain)' : ''}
+                              </option>
+                            );
+                          })}
+                        </SelectNative>
+                        {mapelOptions.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Belum ada mapel tersedia.</p>
+                        )}
+                      </div>
+                    </div>
 
-            <fieldset className="rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Lembar Soal ({selectedSheets.length} dipilih)</legend>
-              {form.mapel_codes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Pilih minimal satu mapel terlebih dahulu untuk memuat lembar soal.</p>
-              ) : sheetOptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif pada mapel yang dipilih.</p>
-              ) : (
-                <div className="max-h-56 space-y-2 overflow-y-auto">
-                  {sheetOptions.map((sheet) => (
-                    <label className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={sheet.id}>
-                      <Checkbox className="mt-0.5" checked={selectedSheets.includes(sheet.id)}
-                        onChange={() => toggleValue(sheet.id, setSelectedSheets)} />
-                      <span>
-                        <strong>{sheet.name}</strong> <span className="text-muted-foreground">({sheet.code})</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {mapelLabel(sheet.sheetMapelCode)} · {sheet.question_count} soal · {sheet.duration_minutes ? `${sheet.duration_minutes} menit` : 'durasi bebas'}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </fieldset>
+                    <fieldset className="rounded-lg border p-4">
+                      <legend className="px-1 text-sm font-semibold">
+                        Lembar Soal ({session.sheet_ids.length} dipilih)
+                      </legend>
+                      {!session.mapel_code ? (
+                        <p className="text-sm text-muted-foreground">Pilih mapel pada sesi ini untuk memuat lembar soal.</p>
+                      ) : sheetOptions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif pada mapel sesi ini.</p>
+                      ) : (
+                        <div className="max-h-56 space-y-2 overflow-y-auto">
+                          {sheetOptions.map((sheet) => (
+                            <label className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={sheet.id}>
+                              <Checkbox className="mt-0.5" checked={session.sheet_ids.includes(sheet.id)}
+                                onChange={() => toggleSessionSheet(index, sheet.id)} />
+                              <span>
+                                <strong>{sheet.name}</strong> <span className="text-muted-foreground">({sheet.code})</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {mapelLabel(sheet.sheetMapelCode)} · {sheet.question_count} soal · {sheet.duration_minutes ? `${sheet.duration_minutes} menit` : 'durasi bebas'}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </fieldset>
+
+                    <fieldset className="rounded-lg border p-4">
+                      <legend className="px-1 text-sm font-semibold">Mode CBT Sesi Ini</legend>
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox checked={session.cbt_enabled}
+                            onChange={(event) => updateSession(index, { cbt_enabled: event.target.checked })} />
+                          Aktifkan CBT untuk sesi ini
+                        </label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label>Durasi (menit)</Label>
+                            <Input type="number" min={1} max={600} disabled={!session.cbt_enabled}
+                              value={session.cbt_duration_minutes}
+                              onChange={(event) => updateSession(index, { cbt_duration_minutes: event.target.value })} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Batas Pelanggaran</Label>
+                            <Input type="number" min={0} max={100} value={session.cbt_max_violations}
+                              onChange={(event) => updateSession(index, { cbt_max_violations: event.target.value })} />
+                            <p className="text-xs text-muted-foreground">0 = tanpa batas; pelanggaran ke-N+1 mengumpulkan jawaban otomatis.</p>
+                          </div>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <label className="flex items-center gap-2 text-sm">
+                            <Checkbox checked={session.cbt_shuffle_questions}
+                              onChange={(event) => updateSession(index, { cbt_shuffle_questions: event.target.checked })} />
+                            Acak urutan soal
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <Checkbox checked={session.cbt_shuffle_options}
+                              onChange={(event) => updateSession(index, { cbt_shuffle_options: event.target.checked })} />
+                            Acak opsi/pernyataan
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <Checkbox checked={session.cbt_require_fullscreen}
+                              onChange={(event) => updateSession(index, { cbt_require_fullscreen: event.target.checked })} />
+                            Wajib fullscreen
+                          </label>
+                        </div>
+                      </div>
+                    </fieldset>
+
+                    {form.sessions.length > 1 && (
+                      <div className="flex justify-end">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeSession(index)}>
+                          <Trash2 className="mr-2 h-4 w-4 text-destructive" /> Hapus Sesi
+                        </Button>
+                      </div>
+                    )}
+                  </fieldset>
+                );
+              })}
+            </div>
 
             <fieldset className="rounded-lg border p-4">
               <legend className="px-1 text-sm font-semibold">Peserta Tryout ({selectedParticipants.length} dipilih, opsional)</legend>
@@ -658,60 +875,11 @@ export default function TryoutManagement() {
               </div>
             </fieldset>
 
-            <fieldset className="rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Mode CBT</legend>
-              <div className="space-y-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={form.cbt_enabled}
-                    onChange={(event) => setForm({ ...form, cbt_enabled: event.target.checked })} />
-                  Aktifkan CBT (timer, submit akhir, autosave, pengawasan)
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Durasi (menit)</Label>
-                    <Input type="number" min={1} max={600} disabled={!form.cbt_enabled}
-                      value={form.cbt_duration_minutes}
-                      onChange={(event) => setForm({ ...form, cbt_duration_minutes: event.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Batas Pelanggaran</Label>
-                    <Input type="number" min={0} max={100}
-                      value={form.cbt_max_violations}
-                      onChange={(event) => setForm({ ...form, cbt_max_violations: event.target.value })} />
-                    <p className="text-xs text-muted-foreground">0 = tanpa batas; pelanggaran ke-N+1 mengumpulkan jawaban otomatis.</p>
-                  </div>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={form.cbt_shuffle_questions}
-                      onChange={(event) => setForm({ ...form, cbt_shuffle_questions: event.target.checked })} />
-                    Acak urutan soal
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={form.cbt_shuffle_options}
-                      onChange={(event) => setForm({ ...form, cbt_shuffle_options: event.target.checked })} />
-                    Acak opsi/pernyataan
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={form.cbt_require_fullscreen}
-                      onChange={(event) => setForm({ ...form, cbt_require_fullscreen: event.target.checked })} />
-                    Wajib fullscreen
-                  </label>
-                </div>
-              </div>
-            </fieldset>
-
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={form.is_active}
-                onChange={(event) => setForm({ ...form, is_active: event.target.checked })} />
-              Jadikan sesi aktif
-            </label>
-
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={saving}>
                 {saving ? 'Menyimpan…' : 'Simpan Tryout'}
               </Button>
-              <span className="text-xs text-muted-foreground">Lembar soal wajib dipilih minimal satu; peserta opsional.</span>
+              <span className="text-xs text-muted-foreground">Tiap sesi wajib memiliki satu mapel dan minimal satu lembar soal; peserta opsional.</span>
             </div>
           </form>
         </CardContent>
@@ -726,84 +894,85 @@ export default function TryoutManagement() {
           </Button>
           <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left" onClick={openPesertaUmum}>
             <span className="font-semibold">B. Peserta Umum</span>
-            <span className="text-xs text-muted-foreground">Isi data peserta dan PIN login</span>
+            <span className="text-xs text-muted-foreground">Isi data baru atau pilih siswa/prospektus</span>
           </Button>
         </div>
       </Dialog>
 
       <Dialog open={pesertaDialog === 'siswa'} onClose={closePesertaFlow} title="A. Peserta Didik">
         <p className="mb-3 text-sm text-muted-foreground">Pilih siswa dari data Kelola Siswa untuk dilampirkan ke tryout ini.</p>
-        <Input
-          value={siswaSearch}
-          placeholder="Cari nama siswa"
-          onChange={(event) => setSiswaSearch(event.target.value)}
-        />
-        <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
-          {siswaLoading && participants.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Memuat data siswa aktif…</p>
-          ) : siswaRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {participants.length === 0
-                ? 'Belum ada siswa aktif. Tambahkan siswa aktif di menu Kelola Siswa, lalu buka dialog ini lagi.'
-                : 'Tidak ada siswa yang cocok dengan pencarian.'}
-            </p>
-          ) : siswaRows.map((participant) => (
-            <div key={participant.id} className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm">
-              <span className="min-w-0">
-                <strong className="block truncate">{participant.nama}</strong>
-                <span className="block truncate text-xs text-muted-foreground">{participantSubtitle(participant)}</span>
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                disabled={savingPeserta || isAlreadySelected(participant)}
-                onClick={() => handlePickSiswa(participant)}
-              >
-                {isAlreadySelected(participant) ? 'Dipilih' : savingPeserta ? 'Menambahkan…' : 'Pilih'}
-              </Button>
-            </div>
-          ))}
-        </div>
+        {renderSourcePicker('Siswa')}
         <div className="mt-4 flex justify-end">
           <Button type="button" variant="ghost" onClick={closePesertaFlow}>Selesai</Button>
         </div>
       </Dialog>
 
-      <Dialog open={pesertaDialog === 'umum'} onClose={closePesertaFlow} title="Tambah Peserta Umum">
-        {umumError && <Alert variant="destructive">{umumError}</Alert>}
-        <form className="mt-3 space-y-4" onSubmit={handleCreateUmum}>
-          <div className="space-y-1.5">
-            <Label>Nama</Label>
-            <Input value={umumForm.nama} maxLength={128}
-              onChange={(event) => setUmumForm({ ...umumForm, nama: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Sekolah</Label>
-            <Input value={umumForm.sekolah} maxLength={255}
-              onChange={(event) => setUmumForm({ ...umumForm, sekolah: event.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>PIN (9 digit)</Label>
-            <div className="flex gap-2">
-              <Input value={umumForm.pin} readOnly inputMode="numeric" maxLength={9} />
-              <Button type="button" variant="secondary" onClick={() => setUmumForm({ ...umumForm, pin: generatePin() })}>
-                Generate ulang
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">PIN otomatis dibuat dan dipakai peserta untuk login bersama Nama.</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Nomor WA Orang Tua</Label>
-            <Input value={umumForm.wa_orang_tua} maxLength={20} placeholder="08xxxxxxxxxx"
-              onChange={(event) => setUmumForm({ ...umumForm, wa_orang_tua: event.target.value })} />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={closePesertaFlow}>Batal</Button>
-            <Button type="submit" disabled={savingPeserta}>
-              {savingPeserta ? 'Menyimpan…' : 'Simpan Peserta'}
+      <Dialog open={pesertaDialog === 'umum'} onClose={closePesertaFlow} title="B. Peserta Umum">
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          {[
+            { key: 'manual', label: 'Form Manual' },
+            { key: 'siswa', label: 'Dari Siswa' },
+            { key: 'prospektus', label: 'Dari Prospektus' }
+          ].map((tab) => (
+            <Button
+              key={tab.key}
+              type="button"
+              variant={umumTab === tab.key ? 'default' : 'outline'}
+              size="sm"
+              role="tab"
+              aria-selected={umumTab === tab.key}
+              onClick={() => { setUmumTab(tab.key); setParticipantSearch(''); }}
+            >
+              {tab.label}
             </Button>
+          ))}
+        </div>
+        {umumTab === 'manual' && (
+          <>
+            {umumError && <Alert variant="destructive">{umumError}</Alert>}
+            <form className="mt-3 space-y-4" onSubmit={handleCreateUmum}>
+              <div className="space-y-1.5">
+                <Label>Nama</Label>
+                <Input value={umumForm.nama} maxLength={128}
+                  onChange={(event) => setUmumForm({ ...umumForm, nama: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sekolah</Label>
+                <Input value={umumForm.sekolah} maxLength={255}
+                  onChange={(event) => setUmumForm({ ...umumForm, sekolah: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>PIN (9 digit)</Label>
+                <div className="flex gap-2">
+                  <Input value={umumForm.pin} readOnly inputMode="numeric" maxLength={9} />
+                  <Button type="button" variant="secondary" onClick={() => setUmumForm({ ...umumForm, pin: generatePin() })}>
+                    Generate ulang
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">PIN otomatis dibuat dan dipakai peserta untuk login bersama Nama.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Nomor WA Orang Tua</Label>
+                <Input value={umumForm.wa_orang_tua} maxLength={20} placeholder="08xxxxxxxxxx"
+                  onChange={(event) => setUmumForm({ ...umumForm, wa_orang_tua: event.target.value })} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={closePesertaFlow}>Batal</Button>
+                <Button type="submit" disabled={savingPeserta}>
+                  {savingPeserta ? 'Menyimpan…' : 'Simpan Peserta'}
+                </Button>
+              </div>
+            </form>
+          </>
+        )}
+        {(umumTab === 'siswa' || umumTab === 'prospektus') && renderSourcePicker(
+          umumTab === 'siswa' ? 'Siswa' : 'Prospektus'
+        )}
+        {(umumTab === 'siswa' || umumTab === 'prospektus') && (
+          <div className="mt-4 flex justify-end">
+            <Button type="button" variant="ghost" onClick={closePesertaFlow}>Selesai</Button>
           </div>
-        </form>
+        )}
       </Dialog>
 
       <Dialog open={Boolean(detailParticipant)} onClose={() => setDetailParticipant(null)} title="Detail Peserta Tryout">
@@ -844,7 +1013,7 @@ export default function TryoutManagement() {
           <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left"
             onClick={() => openPesertaUmum('manage')}>
             <span className="font-semibold">B. Peserta Umum</span>
-            <span className="text-xs text-muted-foreground">Isi data peserta dan PIN login</span>
+            <span className="text-xs text-muted-foreground">Form manual atau pilih siswa/prospektus</span>
           </Button>
         </div>
       </Dialog>
@@ -900,7 +1069,7 @@ export default function TryoutManagement() {
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">
           <CardTitle className="text-base">Daftar Tryout</CardTitle>
-          <Badge variant="secondary">{tryouts.length} sesi</Badge>
+          <Badge variant="secondary">{tryouts.length} tryout</Badge>
         </CardHeader>
         <CardContent>
           {tryouts.length === 0 ? (
@@ -914,10 +1083,8 @@ export default function TryoutManagement() {
                   <TableHead>Mulai</TableHead>
                   <TableHead>Selesai</TableHead>
                   <TableHead>Mapel</TableHead>
-                  <TableHead>Lembar</TableHead>
                   <TableHead>Soal</TableHead>
                   <TableHead>Peserta</TableHead>
-                  <TableHead>Submission</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
@@ -935,22 +1102,18 @@ export default function TryoutManagement() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell>{formatDateTime(tryout.start_at)}</TableCell>
-                    <TableCell>{formatDateTime(tryout.end_at)}</TableCell>
+                    <TableCell>{formatDateTime(tryout.starts_at ?? tryout.start_at)}</TableCell>
+                    <TableCell>{formatDateTime(tryout.ends_at ?? tryout.end_at)}</TableCell>
                     <TableCell>{tryoutMapelText(tryout)}</TableCell>
-                    <TableCell>{tryout.sheet_count ?? '—'}</TableCell>
                     <TableCell>{tryout.question_count}</TableCell>
                     <TableCell>{tryout.participant_count}</TableCell>
-                    <TableCell>{tryout.submission_count}</TableCell>
                     <TableCell>
                       <Badge variant={tryout.cbt_enabled ? 'default' : 'secondary'}>
                         {tryout.cbt_enabled ? `CBT ${tryout.cbt_duration_minutes}m` : 'Tryout'}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={tryout.is_active ? 'default' : 'secondary'}>
-                        {tryout.is_active ? 'Aktif' : 'Nonaktif'}
-                      </Badge>
+                      <Badge variant={statusVariant(tryout.status)}>{tryout.status ?? '—'}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">

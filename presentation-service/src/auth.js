@@ -1,6 +1,21 @@
 import crypto from 'node:crypto';
+import { pool } from './db.js';
 
 const secret = process.env.AUTH_JWT_SECRET || '';
+
+function unauthorized(res, message = 'Login diperlukan untuk mengakses tryout') {
+  return res.status(401).json({
+    ok: false,
+    error: { code: 'UNAUTHORIZED', message, status: 401 }
+  });
+}
+
+function gone(res, message = 'Batas akhir tryout telah terlampaui') {
+  return res.status(410).json({
+    ok: false,
+    error: { code: 'GONE', message, status: 410 }
+  });
+}
 
 export function parseCookies(header) {
   const result = {};
@@ -36,36 +51,58 @@ export function verifyAccessToken(token) {
 }
 
 export function requireTryoutSession(permission = 'presentation.read') {
-  return (req, res, next) => {
-    const token = parseCookies(req.get('cookie')).access_token;
-    const payload = verifyAccessToken(token);
-    if (!payload?.sub) {
-      return res.status(401).json({
-        ok: false,
-        error: { code: 'UNAUTHORIZED', message: 'Login diperlukan untuk mengakses tryout', status: 401 }
-      });
+  return async (req, res, next) => {
+    try {
+      const token = parseCookies(req.get('cookie')).access_token;
+      const payload = verifyAccessToken(token);
+      if (!payload?.sub) return unauthorized(res);
+      if (!Array.isArray(payload.permissions) || !payload.permissions.includes(permission)) {
+        return res.status(403).json({
+          ok: false,
+          error: { code: 'FORBIDDEN', message: 'Role tidak memiliki akses tryout', status: 403 }
+        });
+      }
+      const isParticipant = payload.account_type === 'participant';
+      let tryoutEventId = null;
+      if (isParticipant) {
+        if (!payload.tryout_session_id || !payload.tryout_slug) {
+          return unauthorized(res, 'Sesi tryout tidak valid. Masuk melalui tautan tryout.');
+        }
+        const sessionId = Number(payload.tryout_session_id);
+        if (!Number.isSafeInteger(sessionId) || sessionId < 1) return unauthorized(res);
+        const claimedEventId = payload.tryout_event_id === undefined
+          ? null : Number(payload.tryout_event_id);
+        if (claimedEventId !== null && (!Number.isSafeInteger(claimedEventId) || claimedEventId < 1)) {
+          return unauthorized(res);
+        }
+        const { rows } = await pool.query(
+          `SELECT s.event_id, e.ends_at
+           FROM tryout_sessions s
+           JOIN tryout_events e ON e.id = s.event_id
+           WHERE s.id = $1`,
+          [sessionId]
+        );
+        const event = rows[0];
+        if (!event || (claimedEventId !== null && Number(event.event_id) !== claimedEventId)) {
+          return unauthorized(res);
+        }
+        if (!event.ends_at || Date.now() > Date.parse(event.ends_at)) {
+          return gone(res);
+        }
+        tryoutEventId = Number(event.event_id);
+      }
+      req.auth = {
+        userId: isParticipant ? null : payload.sub,
+        participantId: isParticipant ? payload.sub : null,
+        accountType: isParticipant ? 'participant' : 'user',
+        roles: payload.roles ?? [],
+        tryoutEventId,
+        tryoutSessionId: isParticipant ? Number(payload.tryout_session_id) : null,
+        tryoutSlug: isParticipant ? payload.tryout_slug : null
+      };
+      next();
+    } catch (error) {
+      next(error);
     }
-    if (!Array.isArray(payload.permissions) || !payload.permissions.includes(permission)) {
-      return res.status(403).json({
-        ok: false,
-        error: { code: 'FORBIDDEN', message: 'Role tidak memiliki akses tryout', status: 403 }
-      });
-    }
-    const isParticipant = payload.account_type === 'participant';
-    if (isParticipant && (!payload.tryout_session_id || !payload.tryout_slug)) {
-      return res.status(401).json({
-        ok: false,
-        error: { code: 'UNAUTHORIZED', message: 'Sesi tryout tidak valid. Masuk melalui tautan tryout.', status: 401 }
-      });
-    }
-    req.auth = {
-      userId: isParticipant ? null : payload.sub,
-      participantId: isParticipant ? payload.sub : null,
-      accountType: isParticipant ? 'participant' : 'user',
-      roles: payload.roles ?? [],
-      tryoutSessionId: isParticipant ? Number(payload.tryout_session_id) : null,
-      tryoutSlug: isParticipant ? payload.tryout_slug : null
-    };
-    next();
   };
 }

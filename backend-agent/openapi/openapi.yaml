@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Bank Soal CMS API
   version: 0.3.0
-  description: 'Fase 6 — manajemen role & autentikasi — Virtual Office Software House. Fase 6t: tryout multi-mapel lewat mapel_codes[] dan tabel tryout_session_mapels; tryout_sessions.mapel_id hanya kompatibilitas pembacaan.'
+  description: 'Fase 6u / ADR-017 — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel (UNIQUE(session_id) pada tryout_session_mapels). status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; batas ends_at induk mengunci login dan akses sesi, deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Payload flat legacy mapel_codes[] dipecah per mapel. CMS tidak menampilkan kolom Submission, opsi jadikan sesi aktif, atau kolom Lembar pada daftar tryout; submission_count hanya field API.'
 security:
   - cookieAuth: []
 servers:
@@ -185,7 +185,9 @@ paths:
   /api/v1/siswa:
     get:
       summary: Daftar Siswa murni dari public.siswa (tryouts.manage)
-      description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus.'
+      description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus. Fase 6u: pencarian server-side dipakai picker peserta.'
+      parameters:
+        - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
       responses:
         '200': { description: Daftar siswa }
         '403': { description: Tidak memiliki permission tryouts.manage }
@@ -194,6 +196,7 @@ paths:
       summary: Daftar peserta tryout beserta jumlah submission (tryouts.manage)
       parameters:
         - { name: prospek, in: query, required: false, schema: { type: boolean }, description: 'Filter status prospek Peserta Umum.' }
+        - { name: search, in: query, required: false, schema: { type: string }, description: 'Fase 6u: cari nama, email, kelas, atau sekolah untuk picker Peserta Umum; alias q diterima.' }
       responses:
         '200': { description: Daftar peserta }
         '400': { description: Nilai prospek tidak valid }
@@ -250,6 +253,9 @@ paths:
   /api/v1/prospektus:
     get:
       summary: Daftar Peserta Umum di tabel prospektus, termasuk status bergabung (tryouts.manage)
+      description: 'Fase 6u: picker Peserta Umum memakai endpoint ini dengan search server-side; prospektus aktif boleh dilampirkan langsung, sedangkan yang bergabung=true dipetakan ke ID siswa hasil konversi.'
+      parameters:
+        - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
       responses:
         '200': { description: Daftar prospektus }
         '403': { description: Tidak memiliki permission tryouts.manage }
@@ -348,61 +354,83 @@ paths:
         '404': { description: Peserta tidak ditemukan atau tidak aktif }
   /api/v1/tryouts:
     get:
-      summary: Daftar Tryout beserta mapels[], jumlah soal, peserta, dan submission (tryouts.manage)
+      summary: Daftar tryout induk beserta sesi dan status turunan (tryouts.manage)
+      description: 'Satu baris per tryout_events. Response memuat event_id, name, slug, starts_at, ends_at, status (terjadwal/berlangsung/selesai), sessions[], kompatibilitas mapels[]/mapel_code, dan submission_count (API only). CMS tidak merender submission_count sebagai kolom Submission.'
       responses:
-        '200': { description: Daftar tryout }
+        '200':
+          description: Daftar induk tryout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tryouts:
+                    type: array
+                    items: { $ref: '#/components/schemas/TryoutEvent' }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
-      summary: Buat Tryout baru dari lembar soal atau soal terpilih (tryouts.manage)
-      description: 'Alur baru memakai start_at/end_at/sheet_ids dan participant_ids opsional. Kirim mapel_codes (1-10 kode unik mapel aktif); mapel_code lama tetap diterima sebagai array satu elemen dan boleh dikirim bersamaan bila nilainya sama. Payload lama session_date/question_ids tetap diterima. Respons memuat mapels[] dari junction dan mapel_code/mapel_id/mapel_name dari mapel pertama untuk kompatibilitas.'
+      summary: Buat induk tryout dan banyak sesi (tryouts.manage)
+      description: 'Alur baru: kirim name, slug?, starts_at, ends_at, participant_ids?, dan sessions[]; tiap sesi memuat tepat satu mapel_code serta sheet_ids dan pengaturan CBT per sesi. Format flat legacy (start_at/end_at atau session_date, mapel_codes[]/mapel_code, sheet_ids/question_ids, cbt_*) tetap diterima dan dipecah menjadi satu sesi per mapel. Respons memuat data.tryout dengan event_id, status turunan, sessions[], dan mapels[]/mapel_code legacy.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [name]
-              anyOf:
-                - required: [mapel_codes]
-                - required: [mapel_code]
               oneOf:
-                - required: [start_at, end_at, sheet_ids]
-                - required: [session_date, question_ids]
-              properties:
-                name: { type: string, maxLength: 128 }
-                slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug URL unik. Di-generate dari nama + ID bila kosong.' }
-                session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
-
-                start_at: { type: string, format: date-time, description: 'Tanggal & jam mulai (Asia/Jakarta).' }
-                end_at: { type: string, format: date-time, description: 'Tanggal & jam selesai; wajib setelah start_at.' }
-                mapel_codes: { type: array, items: { type: string, pattern: '^[A-Z0-9]{4}$' }, minItems: 1, maxItems: 10, uniqueItems: true, description: 'Kode mapel aktif dari /api/v1/mapels; urutan pertama dipakai untuk field legacy.' }
-                mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Field legacy; dipetakan ke [mapel_code]. Tolak bila berbeda dengan mapel_codes.' }
-                sheet_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID lembar soal aktif dari /api/v1/question-sheets' }
-                question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'Kompatibilitas payload lama.' }
-                participant_ids: { type: array, items: { type: integer }, minItems: 0, maxItems: 200, description: 'Opsional; ID dari /api/v1/participants.' }
-                is_active: { type: boolean, default: false }
-                cbt_enabled: { type: boolean, default: false }
-                cbt_duration_minutes: { type: integer, minimum: 1, maximum: 600, description: 'Wajib bila cbt_enabled=true.' }
-                cbt_shuffle_questions: { type: boolean, default: false }
-                cbt_shuffle_options: { type: boolean, default: false }
-                cbt_require_fullscreen: { type: boolean, default: false }
-                cbt_max_violations: { type: integer, minimum: 0, maximum: 100, default: 0, description: '0 = tanpa batas.' }
+                - $ref: '#/components/schemas/TryoutWrite'
+                - $ref: '#/components/schemas/LegacyTryoutWrite'
       responses:
-        '201': { description: 'Tryout dibuat beserta relasi mapel (tryout_session_mapels), lembar/soal, dan peserta' }
-        '400': { description: 'Validasi jadwal, mapel (termasuk duplikat/konflik mapel_codes), lembar, soal, atau peserta gagal' }
+        '201':
+          description: 'Induk tryout_events dan sesi-sesinya dibuat'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tryout: { $ref: '#/components/schemas/TryoutEvent' }
+        '400': { description: 'Validasi jadwal, mapel (satu mapel per sesi, duplikat antarsesi, atau konflik mapel_codes), lembar, soal, atau peserta gagal' }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryouts/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
-      summary: Detail Tryout termasuk mapels[], question_ids, dan participant_ids (tryouts.manage)
+      summary: Detail induk tryout beserta sessions[] (tryouts.manage)
+      description: 'Parameter id menerima event_id atau session_id lama. Respons memuat event_id, name, slug, starts_at, ends_at, status turunan, sessions[], mapels[]/mapel_code legacy, dan submission_count (API only).'
       responses:
-        '200': { description: Detail tryout }
+        '200':
+          description: Detail tryout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tryout: { $ref: '#/components/schemas/TryoutEvent' }
         '404': { description: Tryout tidak ditemukan }
     delete:
       summary: Hapus Tryout dan relasinya (tryouts.manage); submission lama kehilangan session_id
+      description: 'Menghapus seluruh sesi dan induknya lewat cascade; session_id lama tetap diterima sebagai parameter.'
       responses:
         '200': { description: Tryout dihapus }
+        '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryouts/{id}/sessions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer }, description: 'event_id atau session_id lama.' }
+    get:
+      summary: Daftar semua sesi dari satu induk tryout (tryouts.manage)
+      description: 'Setiap sesi tepat satu mapel (tryout_session_mapels dengan UNIQUE(session_id)) dan membawa pengaturan CBT per sesi.'
+      responses:
+        '200':
+          description: Daftar sesi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tryout_event_id: { type: integer }
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/TryoutSession' }
+        '403': { description: Tidak memiliki permission tryouts.manage }
         '404': { description: Tryout tidak ditemukan }
   /api/v1/tryouts/{id}/cbt:
     parameters:
@@ -490,17 +518,34 @@ paths:
       responses:
         '200': { description: sessions, summary benar/salah/skor, details perbandingan jawaban, attempts CBT, dan violations }
         '403': { description: Tidak memiliki permission tryout_reports.read }
+  /api/v1/reports/tryout/export.xlsx:
+    get:
+      summary: Unduh laporan tryout sebagai file Excel (tryout_reports.read)
+      description: 'File .xlsx berisi seluruh peserta/siswa yang terdaftar, termasuk yang belum submit, dengan kolom Jenis, Nama, Sekolah, Kelas, Mapel, Jumlah Soal, Benar, Salah, Nilai, Status. Tidak memuat kunci jawaban atau pembahasan. Tidak memakai LIMIT 500; dibaca per batch 500.'
+      parameters:
+        - { name: session_id, in: query, required: false, schema: { type: integer }, description: 'Batasi ekspor pada satu sesi; tanpa parameter, ekspor semua sesi.' }
+      responses:
+        '200':
+          description: File XLSX
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { description: session_id tidak valid }
+        '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/tryout/questions:
     get:
-      summary: Daftar soal approved untuk peserta; dibatasi pada soal Tryout aktif bila dikonfigurasi (tryout.access)
+      summary: Daftar soal approved untuk peserta; Fase 6u dibatasi pada satu sesi (tryout.access)
+      description: 'Kirim session_id agar hanya soal sesi tersebut yang dimuat. Sesi harus masih berada di bawah induk tryout yang sama dan belum melewati ends_at.'
       parameters:
         - { name: mapel, in: query, schema: { type: string } }
+        - { name: session_id, in: query, schema: { type: integer }, description: 'ID sesi dari GET /api/v1/tryouts/{id}/sessions atau /api/v1/presentation/sessions.' }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
       responses:
-        '200': { description: Daftar soal tanpa kunci jawaban }
-        '401': { description: Sesi tidak aktif }
+        '200': { description: Daftar soal sesi tanpa kunci jawaban }
+        '401': { description: Sesi tidak aktif atau batas akhir induk terlampaui }
         '403': { description: Role tidak memiliki akses tryout }
+        '404': { description: Sesi tidak tersedia untuk akun ini }
   /api/v1/question-sheets/generate-code:
     get:
       summary: Usulkan kode lembar soal berdasarkan mapel (question_sheets.manage)
@@ -788,17 +833,37 @@ paths:
       responses:
         '200':
           description: Daftar sumber
+  /api/v1/presentation/sessions:
+    get:
+      summary: Daftar sesi tryout yang tersedia untuk peserta (presentation-service :8083)
+      description: 'Dipakai tryout-agent per sesi. Peserta melihat sesi miliknya dari satu tryout_events; status induk turunan, penanda completed/submitted, dan pengaturan CBT per sesi dikembalikan. Setelah ends_at induk, permintaan ditolak 401 netral. Endpoint ini berada di presentation-service, bukan backend CMS.'
+      responses:
+        '200':
+          description: Daftar sesi peserta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/TryoutPresentationSession' }
+        '401': { description: Sesi tidak valid, batas akhir tryout terlampaui, atau login diperlukan }
+        '403': { description: Bukan akun peserta yang terdaftar pada induk tryout }
   /api/v1/presentation/questions/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: session_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6u: batasi soal pada satu sesi induk tryout yang sama.' }
     get:
       summary: Penyajian soal approved dari tabel inti tanpa kunci jawaban
+      description: 'Soal ditolak 403 bila tidak termasuk sesi yang diminta; batas ends_at induk mengembalikan 410.'
       responses:
         '200':
           description: Konten soal siap disajikan
         '401': { description: Sesi tidak aktif }
         '403': { description: Soal tidak termasuk daftar tryout aktif }
         '404': { description: Soal approved tidak ditemukan }
+        '410': { description: Batas akhir tryout induk terlampaui }
   /api/v1/presentation/questions/{id}/submit:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -811,7 +876,8 @@ paths:
         '404': { description: Soal approved tidak ditemukan }
   /api/v1/presentation/cbt/attempt/start:
     post:
-      summary: Mulai atau lanjutkan attempt CBT peserta (presentation.read)
+      summary: Mulai atau lanjutkan attempt CBT peserta per sesi (presentation.read)
+      description: 'Kirim body { session_id } untuk memilih sesi. Deadline respon memuat deadline_at dan effective_deadline_at = min(start_at sesi + cbt_duration_minutes, ends_at induk).'
       responses:
         '200': { description: State attempt, daftar soal terpersonalisasi, draft, flag, dan deadline; tanpa skor/kunci }
         '403': { description: Peserta tidak terdaftar atau tryout bukan mode CBT }
@@ -819,7 +885,8 @@ paths:
         '410': { description: Waktu habis }
   /api/v1/presentation/cbt/attempt:
     get:
-      summary: Ambil state attempt CBT berjalan
+      summary: Ambil state attempt CBT berjalan untuk satu sesi
+      description: 'Kirim session_id di query. Autosave, flag, violation, dan finalize memakai session_id yang sama.'
       responses:
         '200': { description: State attempt tanpa skor/kunci }
         '404': { description: Attempt belum dimulai }
@@ -834,6 +901,7 @@ paths:
               type: object
               required: [question_id]
               properties:
+                session_id: { type: integer, description: 'Sesi aktif dari daftar sesi peserta.' }
                 question_id: { type: integer }
                 answer: { oneOf: [{ type: string }, { type: array, items: { type: string } }] }
                 answer_text: { type: string }
@@ -844,18 +912,43 @@ paths:
   /api/v1/presentation/cbt/attempt/flag:
     post:
       summary: Tandai atau hapus tanda ragu-ragu pada satu soal
+      description: 'Body dapat memuat session_id untuk menargetkan sesi aktif.'
       responses:
         '200': { description: Status flag tersimpan }
   /api/v1/presentation/cbt/attempt/violation:
     post:
       summary: Catat pelanggaran fullscreen/tab; auto-submit saat batas terlampaui
+      description: 'Body dapat memuat session_id; log pelanggaran di laporan tersembunyi sampai Lihat detail diklik.'
       responses:
         '200': { description: violation_count dan status attempt terbaru }
   /api/v1/presentation/cbt/attempt/finalize:
     post:
       summary: Kumpulkan seluruh draft menjadi submission final tanpa mengembalikan skor
+      description: 'Body dapat memuat session_id. Selesai finalize, tryout-agent menawarkan lanjut ke sesi berikutnya atau keluar.'
       responses:
         '200': { description: status submitted dan submitted_at }
+  /api/v1/presentation/attempts/submit-all:
+    post:
+      summary: Kirim seluruh jawaban non-CBT untuk satu sesi tanpa feedback (presentation.read)
+      description: 'Body memuat session_id dan answers; seluruh jawaban ditulis dalam satu transaksi per sesi. Response tidak mengandung is_correct, correct, atau explanation. Sesi submitted terkunci dan batas ends_at induk mengembalikan 410.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                session_id: { type: integer, description: 'Sesi yang sedang dikerjakan.' }
+                answers:
+                  type: array
+                  items: { type: object }
+      responses:
+        '200': { description: Jawaban tersimpan; tanpa skor ke peserta }
+        '401': { description: Sesi tidak valid }
+        '403': { description: Sesi tidak tersedia untuk akun ini }
+        '409': { description: Mode CBT tidak mendukung submit-all }
+        '410': { description: Batas akhir tryout terlampaui }
   /api/v1/presentation/attempts/summary:
     get:
       summary: Ringkasan jumlah jawaban terkirim dari database
@@ -881,6 +974,156 @@ components:
         text: { type: string, maxLength: 1000 }
         is_correct: { type: boolean }
         explanation: { type: string, nullable: true }
+    TryoutEventStatus:
+      type: string
+      enum: [terjadwal, berlangsung, selesai]
+      description: 'Status turunan server dari starts_at/ends_at induk; bukan kolom fisik dan tidak mengubah is_active.'
+    CbtSettings:
+      type: object
+      description: 'Pengaturan CBT per sesi tryout, bukan per induk.'
+      properties:
+        cbt_enabled: { type: boolean, default: false }
+        cbt_duration_minutes: { type: integer, minimum: 1, maximum: 600, description: 'Wajib bila cbt_enabled=true; durasi per sesi.' }
+        cbt_shuffle_questions: { type: boolean, default: false }
+        cbt_shuffle_options: { type: boolean, default: false }
+        cbt_require_fullscreen: { type: boolean, default: false }
+        cbt_max_violations: { type: integer, minimum: 0, maximum: 100, default: 0, description: '0 = tanpa batas.' }
+    TryoutSessionWrite:
+      allOf:
+        - $ref: '#/components/schemas/CbtSettings'
+        - type: object
+          required: [mapel_code]
+          properties:
+            name: { type: string, maxLength: 128, description: 'Opsional; default "<nama tryout> - <mapel_code>".' }
+            mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Tepat satu kode mapel aktif untuk sesi ini.' }
+            sheet_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Lembar aktif ber-mapel sama dengan sesi; alternatif question_ids.' }
+            question_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Kompatibilitas; soal harus approved dan ber-mapel sama dengan sesi.' }
+            start_at: { type: string, format: date-time, nullable: true, description: 'Opsional; harus berada dalam rentang induk.' }
+            end_at: { type: string, format: date-time, nullable: true, description: 'Opsional; harus berada dalam rentang induk dan setelah start_at.' }
+            mapel_codes: { type: array, items: { type: string }, deprecated: true, description: 'Ditolak di Fase 6u: satu sesi hanya satu mapel_code.' }
+    TryoutWrite:
+      type: object
+      required: [name, starts_at, ends_at, sessions]
+      properties:
+        name: { type: string, maxLength: 128 }
+        slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug unik induk. Di-generate dari nama + ID bila kosong.' }
+        starts_at: { type: string, format: date-time, description: 'Batas awal induk (Asia/Jakarta).' }
+        ends_at: { type: string, format: date-time, description: 'Batas akhir induk; setelah waktu ini status selesai dan sesi baru ditolak.' }
+        participant_ids: { type: array, maxItems: 200, items: { type: integer }, description: 'Opsional; ID dari /api/v1/participants, siswa, atau prospektus aktif.' }
+        sessions:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/TryoutSessionWrite' }
+          description: 'Mapel antarsesi harus berbeda; setiap sesi tepat satu mapel.'
+    LegacyTryoutWrite:
+      allOf:
+        - $ref: '#/components/schemas/CbtSettings'
+        - type: object
+          required: [name]
+          anyOf:
+            - required: [start_at, end_at]
+            - required: [session_date]
+          properties:
+            name: { type: string, maxLength: 128 }
+            slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$' }
+            starts_at: { type: string, format: date-time, description: 'Alias Fase 6u untuk start_at.' }
+            ends_at: { type: string, format: date-time, description: 'Alias Fase 6u untuk end_at.' }
+            start_at: { type: string, format: date-time }
+            end_at: { type: string, format: date-time }
+            session_date: { type: string, format: date, description: 'Payload lama; rentang harian diturunkan bila start_at/end_at tidak dikirim.' }
+            mapel_codes: { type: array, items: { type: string, pattern: '^[A-Z0-9]{4}$' }, minItems: 1, maxItems: 10, uniqueItems: true, description: 'Payload flat legacy; backend membuat satu sesi per mapel.' }
+            mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Field legacy; harus sama bila dikirim bersama mapel_codes.' }
+            sheet_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
+            question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
+            participant_ids: { type: array, items: { type: integer }, maxItems: 200 }
+            is_active: { type: boolean, default: false }
+    TryoutSession:
+      allOf:
+        - $ref: '#/components/schemas/CbtSettings'
+        - type: object
+          properties:
+            id: { type: integer }
+            event_id: { type: integer }
+            name: { type: string }
+            slug: { type: string }
+            session_date: { type: string, format: date, nullable: true }
+            start_at: { type: string, format: date-time }
+            end_at: { type: string, format: date-time }
+            is_active: { type: boolean }
+            status: { $ref: '#/components/schemas/TryoutEventStatus' }
+            mapel_id: { type: integer, nullable: true, description: 'Mirror legacy.' }
+            mapel_code: { type: string, nullable: true }
+            mapel_name: { type: string, nullable: true }
+            mapels:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  code: { type: string }
+                  name: { type: string }
+            question_ids: { type: array, items: { type: integer } }
+            sheet_ids: { type: array, items: { type: integer } }
+            participant_ids: { type: array, items: { type: integer } }
+            submission_count: { type: integer, description: 'Field API/laporan; tidak dirender sebagai kolom Submission di daftar CMS.' }
+    TryoutEvent:
+      type: object
+      properties:
+        id: { type: integer, description: 'ID kompatibilitas: session_id untuk induk satu sesi, event_id untuk induk banyak sesi.' }
+        event_id: { type: integer }
+        tryout_event_id: { type: integer }
+        parent_id: { type: integer }
+        name: { type: string }
+        slug: { type: string, description: 'Slug kanonik induk untuk URL/login; slug sesi lama tetap diterima.' }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/TryoutEventStatus' }
+        session_id: { type: integer, nullable: true }
+        session_slug: { type: string, nullable: true }
+        session_date: { type: string, format: date, nullable: true }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        is_active: { type: boolean }
+        mapel_id: { type: integer, nullable: true }
+        mapel_code: { type: string, nullable: true, description: 'Kompatibilitas: mapel sesi pertama/terendah.' }
+        mapel_name: { type: string, nullable: true }
+        mapels:
+          type: array
+          description: 'Kompatibilitas: agregat unik mapel seluruh sesi, diurutkan per kode.'
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              code: { type: string }
+              name: { type: string }
+        question_ids: { type: array, items: { type: integer } }
+        sheet_ids: { type: array, items: { type: integer } }
+        participant_ids: { type: array, items: { type: integer } }
+        question_count: { type: integer }
+        sheet_count: { type: integer }
+        participant_count: { type: integer }
+        submission_count: { type: integer, description: 'API only; tidak ada kolom Submission di daftar tryout.' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/TryoutSession' }
+    TryoutPresentationSession:
+      allOf:
+        - $ref: '#/components/schemas/CbtSettings'
+        - type: object
+          properties:
+            id: { type: integer }
+            tryout_event_id: { type: integer }
+            name: { type: string }
+            slug: { type: string }
+            mapel_code: { type: string, nullable: true }
+            status: { $ref: '#/components/schemas/TryoutEventStatus' }
+            start_at: { type: string, format: date-time }
+            end_at: { type: string, format: date-time }
+            completed: { type: boolean }
+            submitted: { type: boolean }
     QuestionSheetWrite:
       type: object
       required: [name, mapel_code, duration_minutes, question_ids]

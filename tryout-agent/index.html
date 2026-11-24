@@ -58,6 +58,7 @@
         <p id="listStatus" class="muted">Memuat daftar soal…</p>
       </div>
       <div class="panel-body">
+        <div id="sessionTabs" class="nav" hidden aria-label="Daftar sesi tryout"></div>
         <ul id="questionList" class="question-list"></ul>
         <button id="loadMore" type="button" hidden>Muat lebih banyak</button>
       </div>
@@ -70,11 +71,16 @@
       <div class="panel-body">
         <div id="questionBody" class="question-body empty">Pilih soal di sebelah kiri untuk mulai.</div>
         <div id="nav" class="nav"></div>
+        <div id="completionPanel" class="nav" hidden>
+          <p id="completionMessage" class="muted"></p>
+          <button id="nextSessionButton" type="button">Lanjut sesi berikutnya</button>
+          <button id="exitSessionButton" type="button">Keluar</button>
+        </div>
       </div>
     </section>
   </main>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app.js?v=18" defer></script>
+  <script src="/app.js?v=19" defer></script>
 </body>
 </html>

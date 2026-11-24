@@ -14,69 +14,127 @@ function assignmentOwnerId(auth) {
   return auth.accountType === 'participant' ? auth.participantId : auth.userId;
 }
 
-async function assertTryoutAssignment(auth, questionId) {
-  const userId = assignmentOwnerId(auth);
-  const boundSessionId = auth.accountType === 'participant' ? auth.tryoutSessionId : null;
-  if (auth.accountType === 'participant' && !boundSessionId) {
-    throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+function requestedSessionId(req) {
+  const values = [req.query?.session_id, req.body?.session_id]
+    .filter((value) => value !== undefined && value !== null && value !== '');
+  if (!values.length) return null;
+  const ids = values.map((value) => parseId(value));
+  if (new Set(ids).size > 1) {
+    throw new ApiError('VALIDATION_ERROR', 'session_id tidak konsisten');
   }
-  const { rows } = await pool.query(
-    `SELECT
-       EXISTS (SELECT 1 FROM tryout_session_participants p
-               WHERE p.session_id = s.id) AS has_participants,
-       EXISTS (SELECT 1 FROM tryout_session_participants p
-               WHERE p.session_id = s.id AND p.participant_id = $1) AS is_participant,
-       EXISTS (SELECT 1 FROM tryout_session_questions tq
-               WHERE tq.session_id = s.id) AS has_questions,
-       EXISTS (SELECT 1 FROM tryout_session_questions tq
-               WHERE tq.session_id = s.id AND tq.question_id = $2) AS has_question
-     FROM tryout_sessions s
-     WHERE ($3::bigint IS NOT NULL AND s.id = $3)
-        OR ($3::bigint IS NULL AND s.is_active)
-     ORDER BY s.id DESC
-     LIMIT 1`,
-    [userId, questionId, boundSessionId]
-  );
-  const session = rows[0];
-  if (!session) {
-    if (boundSessionId) throw new ApiError('FORBIDDEN', 'Tryout yang terikat tidak ditemukan', 403);
-    return;
-  }
-  if (session.has_participants && !session.is_participant) {
-    throw new ApiError('FORBIDDEN', 'Akun tidak terdaftar sebagai peserta tryout aktif', 403);
-  }
-  if (session.has_questions && !session.has_question) {
-    throw new ApiError('FORBIDDEN', 'Soal tidak termasuk daftar tryout aktif', 403);
+  return ids[0];
+}
+
+function timestamp(value) {
+  if (value === null || value === undefined) return null;
+  const time = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+function minDeadline(...values) {
+  const times = values.map(timestamp).filter((value) => value !== null);
+  return times.length ? new Date(Math.min(...times)).toISOString() : null;
+}
+
+function effectiveDeadlineAt(attempt, session) {
+  return minDeadline(attempt?.deadline_at, session?.event_ends_at);
+}
+
+function assertEventOpen(session) {
+  if (session?.event_open === false) {
+    throw new ApiError('GONE', 'Batas akhir tryout telah terlampaui', 410);
   }
 }
 
-async function resolvePresentationSession(auth, client = pool) {
-  const boundSessionId = auth.accountType === 'participant' ? auth.tryoutSessionId : null;
-  if (auth.accountType === 'participant' && !boundSessionId) {
-    throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+async function resolvePresentationSession(auth, requestedId = null, client = pool) {
+  if (auth.accountType === 'participant') {
+    if (!auth.tryoutEventId) {
+      throw new ApiError('FORBIDDEN', 'Tryout tidak terikat pada akun ini', 403);
+    }
+    const sessionId = requestedId ?? auth.tryoutSessionId;
+    if (!sessionId) {
+      throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+    }
+    const { rows } = await client.query(
+      `SELECT s.id, s.name, s.slug, s.event_id, s.start_at, s.end_at, s.is_active,
+              s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
+              s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
+              e.name AS event_name, e.slug AS event_slug,
+              e.starts_at AS event_starts_at, e.ends_at AS event_ends_at,
+              public.tryout_event_is_open(e.id) AS event_open,
+              public.tryout_event_status(e.id) AS event_status
+         FROM tryout_sessions s
+         JOIN tryout_events e ON e.id = s.event_id
+         JOIN tryout_session_participants p
+           ON p.session_id = s.id AND p.participant_id = $2
+        WHERE s.id = $1 AND s.event_id = $3
+        LIMIT 1`,
+      [sessionId, auth.participantId, auth.tryoutEventId]
+    );
+    const session = rows[0];
+    if (!session) {
+      if (requestedId) throw new ApiError('FORBIDDEN', 'Sesi tidak tersedia untuk akun ini', 403);
+      throw new ApiError('FORBIDDEN', 'Tryout yang terikat tidak ditemukan', 403);
+    }
+    return session;
   }
+
   const { rows } = await client.query(
-    `SELECT s.id, s.cbt_enabled, s.is_active,
+    `SELECT s.id, s.name, s.slug, s.event_id, s.start_at, s.end_at, s.is_active,
+            s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
+            s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
+            e.name AS event_name, e.slug AS event_slug,
+            e.starts_at AS event_starts_at, e.ends_at AS event_ends_at,
+            public.tryout_event_is_open(e.id) AS event_open,
+            public.tryout_event_status(e.id) AS event_status,
             EXISTS (SELECT 1 FROM tryout_session_participants p
                     WHERE p.session_id = s.id) AS has_participants,
             EXISTS (SELECT 1 FROM tryout_session_participants p
-                    WHERE p.session_id = s.id AND p.participant_id = $1) AS is_participant
+                    WHERE p.session_id = s.id AND p.participant_id = $2) AS is_participant
        FROM tryout_sessions s
-      WHERE ($2::bigint IS NOT NULL AND s.id = $2)
-         OR ($2::bigint IS NULL AND s.is_active)
+       LEFT JOIN tryout_events e ON e.id = s.event_id
+      WHERE ($1::bigint IS NOT NULL AND s.id = $1)
+         OR ($1::bigint IS NULL AND s.is_active)
       ORDER BY s.id DESC
       LIMIT 1`,
-    [assignmentOwnerId(auth), boundSessionId]
+    [requestedId, assignmentOwnerId(auth)]
   );
   const session = rows[0];
-  if (!session) {
-    if (boundSessionId) throw new ApiError('FORBIDDEN', 'Tryout yang terikat tidak ditemukan', 403);
-    throw new ApiError('FORBIDDEN', 'Tidak ada sesi tryout aktif', 403);
-  }
+  if (!session) throw new ApiError('FORBIDDEN', 'Tidak ada sesi tryout aktif', 403);
   if (session.has_participants && !session.is_participant) {
     throw new ApiError('FORBIDDEN', 'Akun tidak terdaftar sebagai peserta tryout aktif', 403);
   }
   return session;
+}
+
+async function assertQuestionAssigned(session, questionId, client = pool) {
+  const { rows } = await client.query(
+    `SELECT
+       EXISTS (SELECT 1 FROM tryout_session_questions tq
+               WHERE tq.session_id = s.id) AS has_questions,
+       EXISTS (SELECT 1 FROM tryout_session_questions tq
+               WHERE tq.session_id = s.id AND tq.question_id = $2) AS has_question
+      FROM tryout_sessions s
+     WHERE s.id = $1`,
+    [session.id, questionId]
+  );
+  if (rows[0]?.has_questions && !rows[0].has_question) {
+    throw new ApiError('FORBIDDEN', 'Soal tidak termasuk daftar tryout aktif', 403);
+  }
+}
+
+async function resolveQuestionSession(auth, requestedId) {
+  if (auth.accountType !== 'user' || requestedId !== null) {
+    return resolvePresentationSession(auth, requestedId);
+  }
+  try {
+    return await resolvePresentationSession(auth, null);
+  } catch (error) {
+    if (error.code === 'FORBIDDEN' && error.message === 'Tidak ada sesi tryout aktif') {
+      return { id: null, cbt_enabled: false, event_open: null };
+    }
+    throw error;
+  }
 }
 
 async function approvedQuestion(id, client = pool) {
@@ -166,43 +224,34 @@ function cbtSettings(session) {
   };
 }
 
-async function loadCbtSession(auth) {
-  if (auth.accountType !== 'participant') {
-    throw new ApiError('FORBIDDEN', 'Mode CBT hanya untuk akun peserta', 403);
-  }
-  const { rows } = await pool.query(
-    `SELECT s.id, s.name, s.slug, s.cbt_enabled, s.cbt_duration_minutes,
-            s.cbt_shuffle_questions, s.cbt_shuffle_options,
-            s.cbt_require_fullscreen, s.cbt_max_violations
-       FROM tryout_sessions s
-       JOIN tryout_session_participants p ON p.session_id = s.id
-      WHERE s.id = $1 AND p.participant_id = $2`,
-    [auth.tryoutSessionId, auth.participantId]
-  );
-  const session = rows[0];
-  if (!session) throw new ApiError('FORBIDDEN', 'Peserta tidak terdaftar pada tryout ini', 403);
+async function loadCbtSession(auth, requestedId = null, client = pool) {
+  const session = await resolvePresentationSession(auth, requestedId, client);
   if (!session.cbt_enabled) throw new ApiError('CONFLICT', 'Tryout ini tidak menggunakan mode CBT', 409);
   return session;
 }
 
-async function findAttempt(auth, sessionId) {
-  const { rows } = await pool.query(
+async function findAttempt(auth, sessionId, client = pool) {
+  const { rows } = await client.query(
     `SELECT * FROM tryout_attempts WHERE session_id = $1 AND participant_id = $2`,
     [sessionId, auth.participantId]
   );
   return rows[0] ?? null;
 }
 
-async function assertAttemptOpen(attempt) {
+async function assertAttemptOpen(attempt, session) {
   if (attempt.status !== 'in_progress') {
     throw new ApiError('CONFLICT', 'Attempt sudah ditutup', 409);
   }
-  if (attempt.deadline_at && Date.now() > Date.parse(attempt.deadline_at)) {
-    await pool.query(
-      `UPDATE tryout_attempts SET status = 'expired', updated_at = now() WHERE id = $1`,
-      [attempt.id]
-    );
-    attempt.status = 'expired';
+  const deadline = effectiveDeadlineAt(attempt, session);
+  if (deadline && Date.now() > Date.parse(deadline)) {
+    const storedDeadline = timestamp(attempt.deadline_at);
+    if (storedDeadline !== null && Date.now() > storedDeadline) {
+      await pool.query(
+        `UPDATE tryout_attempts SET status = 'expired', updated_at = now() WHERE id = $1`,
+        [attempt.id]
+      );
+      attempt.status = 'expired';
+    }
     throw new ApiError('GONE', 'Waktu pengerjaan habis', 410);
   }
 }
@@ -384,13 +433,15 @@ async function attemptPayload(attempt, session) {
   ]);
   const answers = {};
   for (const draft of drafts.rows) answers[String(draft.question_id)] = draft.answer;
+  const deadlineAt = effectiveDeadlineAt(attempt, session);
   return {
     attempt: {
       id: attempt.id,
       session_id: attempt.session_id,
       status: attempt.status,
       started_at: attempt.started_at,
-      deadline_at: attempt.deadline_at,
+      deadline_at: deadlineAt ?? attempt.deadline_at,
+      effective_deadline_at: deadlineAt,
       submitted_at: attempt.submitted_at,
       violation_count: attempt.violation_count,
       ...cbtSettings(session)
@@ -401,34 +452,37 @@ async function attemptPayload(attempt, session) {
   };
 }
 
-async function beginAttempt(auth) {
-  const session = await loadCbtSession(auth);
+async function beginAttempt(auth, requestedId = null) {
+  const session = await loadCbtSession(auth, requestedId);
+  assertEventOpen(session);
   let attempt = await findAttempt(auth, session.id);
   if (!attempt) {
+    const baseDeadline = deadlineFrom(new Date().toISOString(), session.cbt_duration_minutes);
+    const deadlineAt = minDeadline(baseDeadline, session.event_ends_at) ?? baseDeadline;
     const inserted = await pool.query(
       `INSERT INTO tryout_attempts (session_id, participant_id, seed, started_at, deadline_at)
        VALUES ($1, $2, $3, now(), $4)
        RETURNING *`,
-      [session.id, auth.participantId, crypto.randomUUID(),
-        deadlineFrom(new Date().toISOString(), session.cbt_duration_minutes)]
+      [session.id, auth.participantId, crypto.randomUUID(), deadlineAt]
     );
     attempt = inserted.rows[0];
   } else if (attempt.status === 'in_progress') {
-    await assertAttemptOpen(attempt);
+    await assertAttemptOpen(attempt, session);
   }
   return { attempt, session };
 }
 
-async function activeAttempt(auth) {
-  const session = await loadCbtSession(auth);
+async function activeAttempt(auth, requestedId = null) {
+  const session = await loadCbtSession(auth, requestedId);
+  assertEventOpen(session);
   const attempt = await findAttempt(auth, session.id);
   if (!attempt) throw new ApiError('NOT_FOUND', 'Attempt CBT tidak ditemukan', 404);
-  await assertAttemptOpen(attempt);
+  await assertAttemptOpen(attempt, session);
   return { attempt, session };
 }
 
 async function finalizeAttempt(attempt, session) {
-  await assertAttemptOpen(attempt);
+  await assertAttemptOpen(attempt, session);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -442,11 +496,15 @@ async function finalizeAttempt(attempt, session) {
       await client.query('COMMIT');
       return fresh;
     }
-    if (fresh.deadline_at && Date.now() > Date.parse(fresh.deadline_at)) {
-      await client.query(
-        `UPDATE tryout_attempts SET status = 'expired', updated_at = now() WHERE id = $1`,
-        [fresh.id]
-      );
+    const freshDeadline = effectiveDeadlineAt(fresh, session);
+    if (freshDeadline && Date.now() > Date.parse(freshDeadline)) {
+      const storedDeadline = timestamp(fresh.deadline_at);
+      if (storedDeadline !== null && Date.now() > storedDeadline) {
+        await client.query(
+          `UPDATE tryout_attempts SET status = 'expired', updated_at = now() WHERE id = $1`,
+          [fresh.id]
+        );
+      }
       await client.query('COMMIT');
       throw new ApiError('GONE', 'Waktu pengerjaan habis', 410);
     }
@@ -488,8 +546,78 @@ router.get('/health', asyncHandler(async (req, res) => {
   });
 }));
 
+router.get('/api/v1/presentation/sessions', requireTryoutSession(), asyncHandler(async (req, res) => {
+  if (req.auth.accountType !== 'participant' || !req.auth.tryoutEventId) {
+    throw new ApiError('FORBIDDEN', 'Daftar sesi hanya untuk peserta tryout', 403);
+  }
+  const { rows } = await pool.query(
+    `SELECT s.id, s.name, s.slug, s.event_id, s.start_at, s.end_at,
+            s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
+            s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
+            public.tryout_event_status($1::bigint) AS status,
+            coalesce(
+              (SELECT m.code FROM tryout_session_mapels tsm
+                JOIN mapels m ON m.id = tsm.mapel_id
+               WHERE tsm.session_id = s.id ORDER BY m.code LIMIT 1),
+              (SELECT m.code FROM mapels m WHERE m.id = s.mapel_id)
+            ) AS mapel_code,
+            CASE
+              WHEN s.cbt_enabled THEN EXISTS (
+                SELECT 1 FROM tryout_attempts a
+                WHERE a.session_id = s.id AND a.participant_id = $2
+                  AND a.status = 'submitted'
+              )
+              ELSE EXISTS (
+                SELECT 1 FROM tryout_session_questions tq
+                WHERE tq.session_id = s.id
+              ) AND NOT EXISTS (
+                SELECT 1 FROM tryout_session_questions tq
+                WHERE tq.session_id = s.id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tryout_submissions sub
+                    WHERE sub.session_id = s.id AND sub.participant_id = $2
+                      AND sub.version = 'v1' AND sub.question_id = tq.question_id
+                  )
+              )
+            END AS completed
+       FROM tryout_sessions s
+      WHERE s.event_id = $1
+        AND EXISTS (
+          SELECT 1 FROM tryout_session_participants p
+          WHERE p.session_id = s.id AND p.participant_id = $2
+        )
+      ORDER BY s.start_at, s.id`,
+    [req.auth.tryoutEventId, req.auth.participantId]
+  );
+  res.json({
+    ok: true,
+    data: {
+      sessions: rows.map((session) => ({
+        id: Number(session.id),
+        tryout_event_id: Number(session.event_id),
+        name: session.name,
+        slug: session.slug,
+        mapel_code: session.mapel_code,
+        status: session.status,
+        start_at: session.start_at,
+        end_at: session.end_at,
+        cbt_enabled: session.cbt_enabled,
+        cbt_duration_minutes: session.cbt_duration_minutes,
+        cbt_shuffle_questions: session.cbt_shuffle_questions,
+        cbt_shuffle_options: session.cbt_shuffle_options,
+        cbt_require_fullscreen: session.cbt_require_fullscreen,
+        cbt_max_violations: session.cbt_max_violations,
+        completed: Boolean(session.completed),
+        submitted: Boolean(session.completed)
+      }))
+    },
+    meta: nowMeta()
+  });
+}));
+
 router.get('/api/v1/presentation/questions', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const session = await resolvePresentationSession(req.auth);
+  const session = await resolvePresentationSession(req.auth, requestedSessionId(req));
+  assertEventOpen(session);
   const assigned = await sessionQuestions(session.id);
   const questions = await Promise.all(assigned.map(async (row) => {
     const questionId = Number(row.question_id);
@@ -526,7 +654,8 @@ router.post('/api/v1/presentation/attempts/submit-all', requireTryoutSession(), 
     return { questionId, payload: entry };
   });
 
-  const session = await resolvePresentationSession(req.auth);
+  const session = await resolvePresentationSession(req.auth, requestedSessionId(req));
+  assertEventOpen(session);
   if (session.cbt_enabled) {
     throw new ApiError('CONFLICT', 'Submit-all tidak tersedia untuk sesi CBT; gunakan finalize attempt', 409);
   }
@@ -567,7 +696,9 @@ router.post('/api/v1/presentation/attempts/submit-all', requireTryoutSession(), 
 
 router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
-  await assertTryoutAssignment(req.auth, id);
+  const session = await resolveQuestionSession(req.auth, requestedSessionId(req));
+  assertEventOpen(session);
+  await assertQuestionAssigned(session, id);
   const question = await approvedQuestion(id);
   const options = await questionOptions(id);
 
@@ -589,20 +720,16 @@ router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHa
 
 router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(), asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
-  await assertTryoutAssignment(req.auth, id);
+  const session = await resolveQuestionSession(req.auth, requestedSessionId(req));
+  assertEventOpen(session);
+  await assertQuestionAssigned(session, id);
   const question = await approvedQuestion(id);
 
   const graded = gradeSubmissionPayload(question, req.body);
   const { correct, answerValue, explanation, statementGrades } = graded;
 
   const isParticipant = req.auth.accountType === 'participant';
-  let sessionId = isParticipant ? req.auth.tryoutSessionId : null;
-  if (!sessionId) {
-    const activeSession = await pool.query(
-      'SELECT id FROM tryout_sessions WHERE is_active ORDER BY id DESC LIMIT 1'
-    );
-    sessionId = activeSession.rows[0]?.id ?? null;
-  }
+  const sessionId = session.id;
 
   const submitted = await pool.query(
     `INSERT INTO tryout_submissions (${isParticipant ? 'participant_id' : 'user_id'},
@@ -646,17 +773,17 @@ router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(),
 }));
 
 router.post('/api/v1/presentation/cbt/attempt/start', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const { attempt, session } = await beginAttempt(req.auth);
+  const { attempt, session } = await beginAttempt(req.auth, requestedSessionId(req));
   res.json({ ok: true, data: await attemptPayload(attempt, session), meta: nowMeta() });
 }));
 
 router.get('/api/v1/presentation/cbt/attempt', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const { attempt, session } = await activeAttempt(req.auth);
+  const { attempt, session } = await activeAttempt(req.auth, requestedSessionId(req));
   res.json({ ok: true, data: await attemptPayload(attempt, session), meta: nowMeta() });
 }));
 
 router.post('/api/v1/presentation/cbt/attempt/autosave', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const { attempt, session } = await activeAttempt(req.auth);
+  const { attempt, session } = await activeAttempt(req.auth, requestedSessionId(req));
   const questionId = parseId(req.body?.question_id);
   const assigned = await sessionQuestions(session.id);
   if (!assigned.some((row) => Number(row.question_id) === questionId)) {
@@ -679,7 +806,7 @@ router.post('/api/v1/presentation/cbt/attempt/autosave', requireTryoutSession(),
 }));
 
 router.post('/api/v1/presentation/cbt/attempt/flag', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const { attempt, session } = await activeAttempt(req.auth);
+  const { attempt, session } = await activeAttempt(req.auth, requestedSessionId(req));
   const questionId = parseId(req.body?.question_id);
   const assigned = await sessionQuestions(session.id);
   if (!assigned.some((row) => Number(row.question_id) === questionId)) {
@@ -709,7 +836,7 @@ router.post('/api/v1/presentation/cbt/attempt/violation', requireTryoutSession()
   if (!allowedTypes.has(violationType)) {
     throw new ApiError('VALIDATION_ERROR', 'Jenis pelanggaran tidak dikenal');
   }
-  const { attempt, session } = await activeAttempt(req.auth);
+  const { attempt, session } = await activeAttempt(req.auth, requestedSessionId(req));
   const detail = req.body?.detail && typeof req.body.detail === 'object' ? req.body.detail : {};
   await pool.query(
     `INSERT INTO tryout_cbt_violations (attempt_id, violation_type, detail)
@@ -742,7 +869,7 @@ router.post('/api/v1/presentation/cbt/attempt/violation', requireTryoutSession()
 }));
 
 router.post('/api/v1/presentation/cbt/attempt/finalize', requireTryoutSession(), asyncHandler(async (req, res) => {
-  const { attempt, session } = await activeAttempt(req.auth);
+  const { attempt, session } = await activeAttempt(req.auth, requestedSessionId(req));
   const finalized = await finalizeAttempt(attempt, session);
   res.json({
     ok: true,
@@ -752,11 +879,14 @@ router.post('/api/v1/presentation/cbt/attempt/finalize', requireTryoutSession(),
 }));
 
 router.get('/api/v1/presentation/attempts/summary', requireTryoutSession(), asyncHandler(async (req, res) => {
+  const requestedId = requestedSessionId(req);
+  const session = requestedId === null ? null : await resolvePresentationSession(req.auth, requestedId);
   const { rows } = await pool.query(
     `SELECT count(*)::int AS attempted
      FROM tryout_submissions
-     WHERE coalesce(participant_id, user_id) = $1`,
-    [assignmentOwnerId(req.auth)]
+     WHERE coalesce(participant_id, user_id) = $1
+       AND ($2::bigint IS NULL OR session_id = $2)`,
+    [assignmentOwnerId(req.auth), session?.id ?? null]
   );
   res.json({
     ok: true,

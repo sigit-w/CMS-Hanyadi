@@ -35,11 +35,11 @@ Konsekuensi desain:
  [PM Agent]
    | backlog, prioritas, status, handoff
    v
- [Frontend React] --HTTP/JSON--> [Backend Node.js] --SQL--> [PostgreSQL]
-   CMS input soal                 REST API + validator         bank_soal_db
-   upload & filter                ingestion & answer key       db/schema.sql
-        \                              |
-         \------- QA Agent <-----------/
+  [Frontend React] --HTTP/JSON--> [Backend Node.js] --SQL--> [PostgreSQL]
+    CMS input soal                 REST API + validator         bank_soal_db
+    upload & filter                ingestion & answer key       db/migrations/030_*
+         \                              |
+          \------- QA Agent <-----------/
                     | uji API, UI, integritas data
                     v
               Release Gate --> PM
@@ -50,7 +50,7 @@ Konsekuensi desain:
 | Path | Isi |
 |---|---|
 | `docs/` | Spesifikasi arsitektur, workflow, backlog Fase 3 |
-| `db/` | `schema.sql` dan petunjuk penerapan |
+| `db/` | `migrations/` (sumber kebenaran aktif), arsip `schema.sql`, dan petunjuk penerapan |
 | `pm-agent/tasks/` | Backlog & template handoff |
 | `pm-agent/progress/` | Status board progres antar agent |
 | `pm-agent/decisions/` | Log keputusan arsitektur |
@@ -67,7 +67,7 @@ Konsekuensi desain:
 
 ## 5. Model Data
 
-Skema kanonik ada di `db/schema.sql`. Ringkasan entitas:
+Sumber kebenaran skema aktif adalah rangkaian migrasi `db/migrations/` hingga `030_tryout_events_and_sessions.sql`, bukan `db/schema.sql` yang merupakan arsip Fase 3 dan sudah stale. Ringkasan entitas:
 
 | Entitas | Fungsi |
 |---|---|
@@ -81,9 +81,12 @@ Skema kanonik ada di `db/schema.sql`. Ringkasan entitas:
 | `presentation_versions` | Daftar versi penyajian (`v1`, `v2`, `v3`) — data historis nonaktif (ADR-004) |
 | `question_version_readiness` | Penanda kesiapan per soal per versi — data historis nonaktif (ADR-004) |
 | `v_question_catalog` | View ringkas untuk daftar soal (frontend & QA) |
-| `tryout_session_mapels` | Relasi banyak-ke-banyak sesi tryout–mapel; PK `(session_id, mapel_id)` menjamin mapel unik per sesi (ADR-016) |
+| `tryout_events` | Induk tryout: `id`, `name`, `slug` unik, `starts_at`, `ends_at`; satu induk memiliki banyak `tryout_sessions` (ADR-017) |
+| `tryout_sessions` | Anak induk lewat `event_id` FK `ON DELETE CASCADE`; satu sesi tepat satu mapel, pengaturan CBT (termasuk `cbt_duration_minutes`) berlaku per sesi |
+| `tryout_session_mapels` | Relasi sesi–mapel dengan `UNIQUE(session_id)` sejak migrasi `030`; menjamin tepat satu mapel per sesi. PK `(session_id, mapel_id)` warisan ADR-016 tetap ada |
+| `v_tryout_events` | View induk yang menambahkan `status` turunan dari `tryout_event_status(bigint)` |
 
-Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`, `tryout_sessions -> tryout_session_mapels -> mapels`. Kolom `tryout_sessions.mapel_id` tetap ada hanya untuk kompatibilitas klien lama (diisi mapel pertama); sumber kebenaran multi-mapel ada di junction. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
+Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`, `tryout_events -> tryout_sessions -> tryout_session_mapels -> mapels`. Kolom `tryout_sessions.mapel_id` tetap ada sebagai mirror legacy; sumber kebenaran mapel sesi adalah junction yang dibatasi `UNIQUE(session_id)`. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
 
 ## 6. Kontrak REST API (Rancangan Fase 3, diselaraskan Fase 6j)
 
@@ -103,9 +106,13 @@ Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `que
 | ~~PATCH~~ | ~~`/api/v1/questions/:id/readiness`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/presentation-versions`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/questions/:id/variants`~~ | **Deprecated (404)** — presentation service membaca tabel inti |
-| POST | `/api/v1/tryouts` | Buat tryout; terima `mapel_codes[]` (1–10 unik), `sheet_ids`, `participant_ids`, dan konfigurasi CBT |
-| GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail tryout dengan `mapels[]` + field `mapel_code` legacy |
-| POST | `/api/v1/presentation/attempts/submit-all` | Submit seluruh jawaban non-CBT dalam satu transaksi; tanpa skor ke peserta |
+| POST | `/api/v1/tryouts` | Buat induk `tryout_events` + banyak sesi lewat `sessions[]` (masing-masing satu `mapel_code`); payload flat legacy `mapel_codes[]`/`mapel_code`, `sheet_ids`, `participant_ids`, dan CBT tetap dipecah per mapel |
+| GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail induk dengan `event_id`, `name`, `slug`, `starts_at`, `ends_at`, `status`, `sessions[]`, kompatibilitas `mapels[]`/`mapel_code`, dan `submission_count` (API only) |
+| GET | `/api/v1/tryouts/:id/sessions` | Daftar sesi dari satu induk; `:id` boleh `event_id` atau `session_id` lama |
+| GET | `/api/v1/participants?search=` / `/api/v1/prospektus?search=` | Picker peserta: cari nama, email, kelas, dan sekolah |
+| GET | `/api/v1/reports/tryout/export.xlsx?session_id=` | Ekspor XLSX roster peserta/siswa (permission `tryout_reports.read`); tanpa kunci jawaban |
+| GET | `/api/v1/presentation/sessions` | Daftar sesi yang tersedia untuk peserta (presentation-service `:8083`) |
+| POST | `/api/v1/presentation/attempts/submit-all` | Submit seluruh jawaban non-CBT dalam satu transaksi per sesi; tanpa skor ke peserta |
 | POST | `/api/v1/presentation/cbt/attempt/violation` | Catat pelanggaran; response menyertakan `type`, `violation_count`, `max_violations` |
 | GET | `/health` | Status API & koneksi DB |
 
@@ -150,6 +157,17 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - Lembar soal dipilih per mapel; backend memastikan setiap `sheet_id` termasuk mapel terpilih dan mengexpand soal aktif dari seluruh lembar.
 - Peserta non-CBT mengirim seluruh jawaban sekali lewat `POST /api/v1/presentation/attempts/submit-all`; UI tidak lagi menyediakan submit per soal. Peserta CBT tetap memakai `finalize` attempt.
 - Setiap pelanggaran CBT memunculkan toast berisi jenis dan `n/m`. Debounce 750 ms dan batas pelanggaran tidak diubah.
+- ADR-016 tetap menjadi sejarah untuk data Fase 6t; untuk data baru aturan "satu tryout banyak mapel" digantikan ADR-017: induk memuat banyak sesi dan tiap sesi tepat satu mapel.
+
+## 8b. Fase 6u — Model Induk–Sesi, Status, dan Alur Tryout-Agent (ADR-017)
+
+- **Induk–sesi.** `tryout_events` adalah induk dengan `slug` unik dipakai URL undangan/login; `tryout_sessions.event_id` adalah FK `ON DELETE CASCADE`. Backfill awal 1:1 mempertahankan slug login, JWT, dan seluruh FK `session_id` existing. Slug sesi lama tetap diterima sebagai fallback; `auth_sessions` dan JWT menyimpan `tryout_event_id` di samping `tryout_session_id`.
+- **Satu sesi = satu mapel.** `tryout_session_mapels` dibatasi `UNIQUE(session_id)` oleh migrasi `030`. Sesi lama multi-mapel hasil ADR-016 dipecah menjadi sesi anak; lembar, soal, peserta, attempt, draft, flag, dan pelanggaran dipindah/diduplikasi sesuai mapelnya tanpa menghapus baris `tryout_submissions`. `tryout_sessions.mapel_id` tetap sebagai mirror legacy.
+- **Status turunan.** `terjadwal` bila `now() < starts_at`, `berlangsung` di dalam rentang, `selesai` bila `now() > ends_at`. Nilai dihitung server oleh `tryout_event_status(bigint)`/`v_tryout_events` dan dikembalikan di response API; **tidak ada kolom fisik `status`**. `is_active` tidak diubah otomatis agar constraint unik lama tetap aman.
+- **Gate `ends_at`.** Batas akhir induk mengunci login/refresh dan seluruh akses soal/attempt (termasuk autosave dan submit); presentation-service memeriksa `tryout_event_is_open(bigint)`. Setelah batas terlampaui, login ditolak 401 netral dan permintaan sesi aktif ditolak 410 dengan pesan batas akhir. Sesi yang sudah `submitted` tetap terkunci.
+- **Deadline efektif.** `cbt_duration_minutes` berlaku per sesi. Deadline attempt = `min(start_at sesi + durasi sesi, ends_at induk)` dan dikirim sebagai `effective_deadline_at` di samping `deadline_at`; autosave, flag, violation, dan finalize memakai deadline efektif yang sama.
+- **Alur tryout-agent per sesi.** Peserta login memakai slug induk, lalu `GET /api/v1/presentation/sessions` memberi daftar sesi yang terdaftar untuknya. Agen menampilkan tab sesi dan hanya memuat soal sesi yang dipilih (`session_id` dikirim ke `/tryout/questions`, `/presentation/questions`, dan endpoint CBT/submit-all). Setelah sesi selesai muncul `Lanjut sesi berikutnya` dan `Keluar`; peserta boleh login ulang dan melanjutkan sesi lain selama `now() <= ends_at` induk. Aset dimuat sebagai `app.js?v=19`.
+- **UI CMS.** Tidak ada opsi `jadikan sesi aktif`, tidak ada kolom `Lembar`, dan tidak ada kolom `Submission` pada tabel daftar tryout. Fieldset pemilih lembar soal di form tetap ada karena dipakai menyusun soal sesi; `submission_count` tetap dikembalikan API untuk laporan/internal saja.
 
 ## 9. Non-Fungsional dan Keamanan
 
@@ -168,3 +186,5 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 | 3 | Implementasi backend Node.js, frontend React, pengujian QA | Siap jalan |
 | 4 | Penyajian soal multi-versi & optimasi | Selesai (desain disederhanakan ADR-004) |
 | 6j | Penyederhanaan status soal & pagination | Dokumen aktif diselaraskan dengan ADR-004 |
+| 6t | Tryout multi-mapel & submit global per sesi | histori (ADR-016) |
+| 6u | Induk–sesi, status turunan, ekspor, dan lanjut sesi | Dokumen aktif diselaraskan dengan ADR-017; gate `REL-27` |
