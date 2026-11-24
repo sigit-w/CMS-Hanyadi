@@ -13,6 +13,8 @@ Menyusun checklist pengujian fungsional, memvalidasi data dan edge case, menguji
 | `checklists/api-ui.md` | Checklist uji API dan UI |
 | `test-cases/phase3.md` | Test case terstruktur Fase 3 |
 | `reports/release-gate.md` | Template laporan keputusan rilis |
+| `reports/phase6o-report.md` | Laporan QA Fase 6o: ADR-007, U-01..U-10, regresi 142/142 |
+| `reports/phase6o-release-gate.md` | Keputusan gate `REL-17` Fase 6o |
 
 ## Severity Bug
 

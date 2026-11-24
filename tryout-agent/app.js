@@ -103,7 +103,10 @@
       });
       await checkSession();
     } catch (error) {
-      showLogin(error.message);
+      const message = error.status === 401 || error.status === 403
+        ? 'Nama/email atau PIN/password salah.'
+        : error.message;
+      showLogin(message);
     } finally {
       elements.loginButton.disabled = false;
     }

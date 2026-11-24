@@ -11,7 +11,7 @@ const nowMeta = () => ({ ts: new Date().toISOString() });
 const manageParticipants = authorize('tryouts.manage');
 
 const PARTICIPANT_SELECT = `
-  SELECT p.id, p.nama, p.email, p.kelas, p.sekolah,
+  SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
          p.program_belajar_id, pb.name AS program_belajar_name, p.wa_orang_tua,
          p.is_active, p.created_at, p.updated_at,
          (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.participant_id = p.id) AS submission_count
@@ -27,9 +27,25 @@ async function loadParticipant(client, id) {
 function requireNama(value) {
   const nama = typeof value === 'string' ? value.trim() : '';
   if (!nama || nama.length > 128) {
-    throw new ApiError('VALIDATION_ERROR', 'Nama siswa wajib diisi maksimal 128 karakter');
+    throw new ApiError('VALIDATION_ERROR', 'Nama wajib diisi maksimal 128 karakter');
   }
   return nama;
+}
+
+function requireJenis(value) {
+  const jenis = typeof value === 'string' ? value.trim().toLowerCase() : 'siswa';
+  if (!['siswa', 'umum'].includes(jenis)) {
+    throw new ApiError('VALIDATION_ERROR', 'jenis harus siswa atau umum');
+  }
+  return jenis;
+}
+
+function requirePin(value) {
+  const pin = typeof value === 'string' ? value.trim() : '';
+  if (!/^\d{9}$/.test(pin)) {
+    throw new ApiError('VALIDATION_ERROR', 'PIN harus tepat 9 digit angka');
+  }
+  return pin;
 }
 
 function parseProgramBelajarId(value) {
@@ -37,8 +53,11 @@ function parseProgramBelajarId(value) {
   return parseId(value, 'program_belajar_id');
 }
 
-function parseWaOrangTua(value) {
-  if (value === undefined || value === null || value === '') return null;
+function parseWaOrangTua(value, required = false) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new ApiError('VALIDATION_ERROR', 'Nomor WA orang tua wajib diisi');
+    return null;
+  }
   const wa = typeof value === 'string' ? value.trim() : String(value).trim();
   if (wa.length > 20 || !/^\+?[0-9][0-9 -]{6,18}$/.test(wa)) {
     throw new ApiError('VALIDATION_ERROR', 'Nomor WA orang tua tidak valid (maksimal 20 karakter)');
@@ -103,35 +122,70 @@ async function findByEmail(client, email, excludeId = null) {
   return rows[0];
 }
 
+async function findByNamaUmum(client, nama, excludeId = null) {
+  const run = client?.query ? client.query.bind(client) : query;
+  const { rows } = await run(
+    `SELECT id FROM tryout_participants
+     WHERE jenis = 'umum' AND lower(nama) = lower($1) AND ($2::bigint IS NULL OR id <> $2)`,
+    [nama, excludeId]
+  );
+  return rows[0];
+}
+
+async function loadJenis(client, id) {
+  const { rows } = await client.query('SELECT id, jenis FROM tryout_participants WHERE id = $1', [id]);
+  return rows[0];
+}
+
 participantRouter.get('/participants', manageParticipants, asyncHandler(async (req, res) => {
   const { rows } = await query(`${PARTICIPANT_SELECT} ORDER BY p.id DESC`);
   res.json({ ok: true, data: { participants: rows }, meta: nowMeta() });
 }));
 
 participantRouter.post('/participants', manageParticipants, asyncHandler(async (req, res) => {
+  const jenis = requireJenis(req.body?.jenis);
   const nama = requireNama(req.body?.nama);
-  const email = requireEmail(req.body?.email);
-  const kelas = requireKelas(req.body?.kelas);
   const sekolah = requireSekolah(req.body?.sekolah);
-  const programBelajarId = parseProgramBelajarId(req.body?.program_belajar_id);
-  const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua);
-  const rawPassword = req.body?.password;
-  const password = typeof rawPassword === 'string' && rawPassword.trim()
-    ? rawPassword
-    : defaultParticipantPassword(nama);
-  const passwordHash = await hashPassword(requirePassword(password));
+
+  let email = null;
+  let kelas = 0;
+  let programBelajarId = null;
+  let passwordHash = null;
+  let pinHash = null;
+  let waOrangTua;
+
+  if (jenis === 'umum') {
+    pinHash = await hashPassword(requirePin(req.body?.pin));
+    waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua, true);
+  } else {
+    email = requireEmail(req.body?.email);
+    kelas = requireKelas(req.body?.kelas);
+    programBelajarId = parseProgramBelajarId(req.body?.program_belajar_id);
+    waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua);
+    const rawPassword = req.body?.password;
+    const password = typeof rawPassword === 'string' && rawPassword.trim()
+      ? rawPassword
+      : defaultParticipantPassword(nama);
+    passwordHash = await hashPassword(requirePassword(password));
+  }
 
   const participant = await withTransaction(async (client) => {
-    if (await findByEmail(client, email)) {
-      throw new ApiError('CONFLICT', 'Email siswa sudah digunakan', 409);
+    if (jenis === 'umum') {
+      if (await findByNamaUmum(client, nama)) {
+        throw new ApiError('CONFLICT', 'Nama Peserta Umum sudah digunakan', 409);
+      }
+    } else {
+      if (await findByEmail(client, email)) {
+        throw new ApiError('CONFLICT', 'Email siswa sudah digunakan', 409);
+      }
+      await ensureProgramBelajar(client, programBelajarId);
     }
-    await ensureProgramBelajar(client, programBelajarId);
     const { rows } = await client.query(
       `INSERT INTO tryout_participants
-         (nama, email, kelas, sekolah, program_belajar_id, wa_orang_tua, password_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (nama, jenis, email, kelas, sekolah, program_belajar_id, wa_orang_tua, password_hash, pin_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
-      [nama, email, kelas, sekolah, programBelajarId, waOrangTua, passwordHash]
+      [nama, jenis, email, kelas, sekolah, programBelajarId, waOrangTua, passwordHash, pinHash]
     );
     return loadParticipant(client, rows[0].id);
   });
@@ -141,35 +195,57 @@ participantRouter.post('/participants', manageParticipants, asyncHandler(async (
 
 participantRouter.put('/participants/:id', manageParticipants, asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
-  const nama = requireNama(req.body?.nama);
-  const email = requireEmail(req.body?.email);
-  const kelas = requireKelas(req.body?.kelas);
-  const sekolah = requireSekolah(req.body?.sekolah);
-  const programBelajarId = parseProgramBelajarId(req.body?.program_belajar_id);
-  const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua);
   const isActive = req.body?.is_active === undefined ? true : Boolean(req.body.is_active);
 
   const participant = await withTransaction(async (client) => {
-    if (await findByEmail(client, email, id)) {
-      throw new ApiError('CONFLICT', 'Email siswa sudah digunakan', 409);
+    const current = await loadJenis(client, id);
+    if (!current) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
+
+    const nama = requireNama(req.body?.nama);
+    const sekolah = requireSekolah(req.body?.sekolah);
+    let rows;
+
+    if (current.jenis === 'umum') {
+      if (await findByNamaUmum(client, nama, id)) {
+        throw new ApiError('CONFLICT', 'Nama Peserta Umum sudah digunakan', 409);
+      }
+      const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua, true);
+      const updated = await client.query(
+        `UPDATE tryout_participants
+         SET nama = $2, sekolah = $3, wa_orang_tua = $4, is_active = $5
+         WHERE id = $1 AND jenis = 'umum'
+         RETURNING id`,
+        [id, nama, sekolah, waOrangTua, isActive]
+      );
+      rows = updated.rows;
+    } else {
+      const email = requireEmail(req.body?.email);
+      const kelas = requireKelas(req.body?.kelas);
+      const programBelajarId = parseProgramBelajarId(req.body?.program_belajar_id);
+      const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua);
+      if (await findByEmail(client, email, id)) {
+        throw new ApiError('CONFLICT', 'Email siswa sudah digunakan', 409);
+      }
+      await ensureProgramBelajar(client, programBelajarId);
+      const updated = await client.query(
+        `UPDATE tryout_participants
+         SET nama = $2, email = $3, kelas = $4, sekolah = $5,
+             program_belajar_id = $6, wa_orang_tua = $7, is_active = $8
+         WHERE id = $1 AND jenis = 'siswa'
+         RETURNING id`,
+        [id, nama, email, kelas, sekolah, programBelajarId, waOrangTua, isActive]
+      );
+      rows = updated.rows;
     }
-    await ensureProgramBelajar(client, programBelajarId);
-    const { rows } = await client.query(
-      `UPDATE tryout_participants
-       SET nama = $2, email = $3, kelas = $4, sekolah = $5,
-           program_belajar_id = $6, wa_orang_tua = $7, is_active = $8
-       WHERE id = $1
-       RETURNING id`,
-      [id, nama, email, kelas, sekolah, programBelajarId, waOrangTua, isActive]
-    );
-    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Siswa tidak ditemukan', 404);
+
+    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
     if (!isActive) {
       await client.query(
         'UPDATE auth_sessions SET revoked_at = now() WHERE participant_id = $1 AND revoked_at IS NULL',
         [id]
       );
     }
-    return loadParticipant(client, rows[0].id);
+    return loadParticipant(client, id);
   });
 
   res.json({ ok: true, data: { participant }, meta: nowMeta() });
@@ -181,10 +257,10 @@ participantRouter.delete('/participants/:id', manageParticipants, asyncHandler(a
     const { rows } = await client.query(
       `UPDATE tryout_participants SET is_active = false
        WHERE id = $1
-       RETURNING id, nama, email, kelas, sekolah, is_active`,
+       RETURNING id, nama, jenis, email, kelas, sekolah, is_active`,
       [id]
     );
-    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Siswa tidak ditemukan', 404);
+    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
     await client.query(
       'UPDATE auth_sessions SET revoked_at = now() WHERE participant_id = $1 AND revoked_at IS NULL',
       [id]
@@ -199,14 +275,19 @@ participantRouter.put('/participants/:id/password', manageParticipants, asyncHan
   const passwordHash = await hashPassword(requirePassword(req.body?.password, req.body?.confirm_password));
 
   const participant = await withTransaction(async (client) => {
+    const current = await loadJenis(client, id);
+    if (!current) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan atau tidak aktif', 404);
+    if (current.jenis === 'umum') {
+      throw new ApiError('VALIDATION_ERROR', 'Peserta Umum memakai PIN; reset PIN belum tersedia');
+    }
     const { rows } = await client.query(
       `UPDATE tryout_participants
        SET password_hash = $2, failed_login_count = 0, locked_until = NULL
-       WHERE id = $1 AND is_active = true
+       WHERE id = $1 AND is_active = true AND jenis = 'siswa'
        RETURNING id, nama, email, kelas, sekolah`,
       [id, passwordHash]
     );
-    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Siswa tidak ditemukan atau tidak aktif', 404);
+    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan atau tidak aktif', 404);
     await client.query(
       'UPDATE auth_sessions SET revoked_at = now() WHERE participant_id = $1 AND revoked_at IS NULL',
       [id]

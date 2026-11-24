@@ -22,6 +22,11 @@ Memecah pekerjaan menjadi task, menentukan prioritas dan dependency, memantau pr
 | `tasks/handoff-BE31.md` | Serah terima PM→Backend Fase 6n: verifikasi kontrak & dokumentasi |
 | `tasks/handoff-FE28.md` | Serah terima PM→Frontend Fase 6n: grup/menu/rute Manajemen Bimbel |
 | `tasks/handoff-QA28.md` | Serah terima PM→QA Fase 6n: marker, skenario navigasi, regresi |
+| `tasks/phase6o-backlog.md` | Requirement, keputusan, & AC Fase 6o: alur Buat Tryout & Peserta Umum |
+| `tasks/handoff-BE32.md` | Serah terima PM→Backend Fase 6o: migrasi, participant umum, jadwal & lembar, auth |
+| `tasks/handoff-FE29.md` | Serah terima PM→Frontend Fase 6o: form Buat Tryout & popup Peserta Umum |
+| `tasks/handoff-TRY12.md` | Serah terima PM→Tryout Fase 6o: login Nama + PIN |
+| `tasks/handoff-QA29.md` | Serah terima PM→QA Fase 6o: review ADR, U-01..U-10, regresi, gate REL-17 |
 | `tasks/handoff-BE25-PRES02.md` | Serah terima PM→Backend/Presentation Fase 6j |
 | `tasks/handoff-FE21-TRY10.md` | Serah terima PM→Frontend/Tryout Fase 6j |
 | `tasks/handoff-QA22-REL10.md` | Serah terima PM→QA/PM Fase 6j |
@@ -31,8 +36,11 @@ Memecah pekerjaan menjadi task, menentukan prioritas dan dependency, memantau pr
 | `decisions/ADR-002-manajemen-tryout.md` | Keputusan model data & enforcement Manajemen Tryout |
 | `decisions/ADR-004-penyederhanaan-soal.md` | Keputusan status approved, versi nonaktif, dan pagination Fase 6j |
 | `decisions/ADR-006-manajemen-bimbel.md` | Keputusan grup menu, rute, dan permission Manajemen Bimbel Fase 6n |
+| `decisions/ADR-007-peserta-umum-tryout.md` | Keputusan alur Buat Tryout, lembar soal, Peserta Umum, PIN, dan login Fase 6o |
 
-Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
+Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
+
+Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`.
 
 ## Ritme Kerja
 

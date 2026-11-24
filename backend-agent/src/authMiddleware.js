@@ -13,7 +13,7 @@ async function loadAuth(req) {
   const session = await query(
     `SELECT s.id, s.user_id, s.participant_id,
             c.username, c.display_name,
-            tp.email AS participant_email, tp.nama AS participant_nama
+             coalesce(tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama
      FROM auth_sessions s
      LEFT JOIN contributors c ON c.id = s.user_id
      LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
@@ -25,12 +25,12 @@ async function loadAuth(req) {
 
   if (payload.account_type === ACCOUNT_TYPE_PARTICIPANT || found.participant_id) {
     if (!found.participant_id || Number(payload.sub) !== Number(found.participant_id)
-      || !found.participant_email) return null;
+      || !found.participant_username) return null;
     return {
       sessionId: found.id,
       user: {
         id: found.participant_id,
-        username: found.participant_email,
+        username: found.participant_username,
         display_name: found.participant_nama
       },
       roles: PARTICIPANT_ROLES,

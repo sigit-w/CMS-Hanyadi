@@ -32,10 +32,16 @@ paths:
               type: object
               required: [username, password]
               properties:
-                username: { type: string }
-                password: { type: string, format: password }
+                username:
+                  type: string
+                  description: 'Email untuk Siswa/CMS; Nama untuk Peserta Umum.'
+                password:
+                  type: string
+                  format: password
+                  description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
       responses:
         '200': { description: Login berhasil }
+        '400': { description: Username atau password kosong }
         '401': { description: Kredensial tidak valid }
         '429': { description: Akun dikunci sementara }
   /api/v1/auth/refresh:
@@ -176,50 +182,65 @@ paths:
         '200': { description: Daftar peserta }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
-      summary: Buat peserta tryout baru (tryouts.manage)
+      summary: Buat peserta tryout baru, Siswa atau Peserta Umum (tryouts.manage)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [nama, email, kelas, sekolah]
-              properties:
-                nama: { type: string, maxLength: 128 }
-                email: { type: string, format: email }
-                kelas: { type: integer, minimum: 1, maximum: 100 }
-                sekolah: { type: string, maxLength: 255 }
-                password:
-                  type: string
-                  format: password
-                  minLength: 6
-                  description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+              oneOf:
+                - type: object
+                  required: [jenis, nama, sekolah, pin, wa_orang_tua]
+                  properties:
+                    jenis: { type: string, enum: [umum] }
+                    nama: { type: string, maxLength: 128 }
+                    sekolah: { type: string, maxLength: 255 }
+                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
+                    wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
+                - type: object
+                  required: [nama, email, kelas, sekolah]
+                  properties:
+                    jenis: { type: string, enum: [siswa], default: siswa }
+                    nama: { type: string, maxLength: 128 }
+                    email: { type: string, format: email }
+                    kelas: { type: integer, minimum: 1, maximum: 100 }
+                    sekolah: { type: string, maxLength: 255 }
+                    program_belajar_id: { type: integer, nullable: true }
+                    wa_orang_tua: { type: string, maxLength: 20, nullable: true }
+                    password:
+                      type: string
+                      format: password
+                      minLength: 6
+                      description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
       responses:
         '201': { description: Peserta dibuat }
         '400': { description: Validasi gagal }
-        '409': { description: Email sudah digunakan }
+        '409': { description: Email/Nama Peserta Umum sudah digunakan }
   /api/v1/participants/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     put:
-      summary: Ubah nama, email, kelas, sekolah, atau status peserta (tryouts.manage)
+      summary: Ubah data peserta; jenis tidak dapat diubah (tryouts.manage)
+      description: 'Siswa memakai email/kelas/program; Peserta Umum memakai sekolah/WA. Nama dan PIN Umum tidak dapat diubah lewat endpoint password.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [nama, email, kelas, sekolah]
+              required: [nama, sekolah]
               properties:
                 nama: { type: string, maxLength: 128 }
-                email: { type: string, format: email }
-                kelas: { type: integer, minimum: 1, maximum: 100 }
                 sekolah: { type: string, maxLength: 255 }
+                email: { type: string, format: email, description: 'Wajib untuk Siswa, tidak dipakai Umum.' }
+                kelas: { type: integer, minimum: 1, maximum: 100, description: 'Wajib untuk Siswa, diabaikan Umum.' }
+                program_belajar_id: { type: integer, nullable: true }
+                wa_orang_tua: { type: string, maxLength: 20, nullable: true, description: 'Wajib untuk Umum.' }
                 is_active: { type: boolean, default: true }
       responses:
         '200': { description: Peserta diperbarui }
         '404': { description: Peserta tidak ditemukan }
-        '409': { description: Email sudah digunakan }
+        '409': { description: Email/Nama Peserta Umum sudah digunakan }
     delete:
       summary: Nonaktifkan peserta dan cabut sesinya (tryouts.manage)
       responses:
@@ -251,24 +272,31 @@ paths:
         '200': { description: Daftar tryout }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
-      summary: Buat Tryout baru dengan soal dan peserta terpilih (tryouts.manage)
+      summary: Buat Tryout baru dari lembar soal atau soal terpilih (tryouts.manage)
+      description: 'Alur baru memakai start_at/end_at/sheet_ids dan participant_ids opsional. Payload lama session_date/question_ids tetap diterima.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, session_date, mapel_code, question_ids, participant_ids]
+              required: [name, mapel_code]
+              oneOf:
+                - required: [start_at, end_at, sheet_ids]
+                - required: [session_date, question_ids]
               properties:
                 name: { type: string, maxLength: 128 }
-                session_date: { type: string, format: date }
+                session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
+                start_at: { type: string, format: date-time, description: 'Tanggal & jam mulai (Asia/Jakarta).' }
+                end_at: { type: string, format: date-time, description: 'Tanggal & jam selesai; wajib setelah start_at.' }
                 mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Kode mapel aktif dari /api/v1/mapels' }
-                question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200 }
-                participant_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID dari /api/v1/participants' }
+                sheet_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID lembar soal aktif dari /api/v1/question-sheets' }
+                question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'Kompatibilitas payload lama.' }
+                participant_ids: { type: array, items: { type: integer }, minItems: 0, maxItems: 200, description: 'Opsional; ID dari /api/v1/participants.' }
                 is_active: { type: boolean, default: false }
       responses:
-        '201': { description: Tryout dibuat beserta relasi soal dan peserta }
-        '400': { description: Validasi mapel, soal, atau peserta gagal }
+        '201': { description: Tryout dibuat beserta relasi lembar/soal dan peserta }
+        '400': { description: Validasi jadwal, mapel, lembar, soal, atau peserta gagal }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryouts/{id}:
     parameters:

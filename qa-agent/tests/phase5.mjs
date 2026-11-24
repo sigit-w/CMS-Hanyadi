@@ -194,6 +194,13 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
     '#/reports/tryout',
     'Simpan Hak Akses',
     'Simpan Tryout',
+    'Nama Tryout',
+    'Tanggal & Jam Mulai',
+    'Lembar Soal (',
+    'Tambah Peserta Tryout',
+    'Peserta Umum',
+    'PIN (9 digit)',
+    'Generate ulang',
     'Pilih semua',
     'Ubah Password'
   ]) {

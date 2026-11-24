@@ -40,7 +40,7 @@ function clearSessionCookies(res) {
 async function sessionPayload(account, sessionId) {
   if (account.type === ACCOUNT_TYPE_PARTICIPANT) {
     const participant = await query(
-      `SELECT id, email AS username, nama AS display_name
+      `SELECT id, coalesce(email, nama) AS username, nama AS display_name
        FROM tryout_participants WHERE id = $1 AND is_active = true`,
       [account.id]
     );
@@ -90,15 +90,25 @@ function accountTable(type) {
 }
 
 async function findLoginAccount(identity) {
-  const participant = await query(
+  const umum = await query(
+    `SELECT id, nama AS username, nama AS display_name, pin_hash AS password_hash,
+            failed_login_count, locked_until
+     FROM tryout_participants
+     WHERE is_active = true AND jenis = 'umum' AND lower(nama) = lower($1)`,
+    [identity]
+  );
+  if (umum.rows[0]) {
+    return { type: ACCOUNT_TYPE_PARTICIPANT, account: umum.rows[0] };
+  }
+  const siswa = await query(
     `SELECT id, email AS username, nama AS display_name, password_hash,
             failed_login_count, locked_until
      FROM tryout_participants
-     WHERE is_active = true AND lower(email) = lower($1)`,
+     WHERE is_active = true AND jenis = 'siswa' AND lower(email) = lower($1)`,
     [identity]
   );
-  if (participant.rows[0]) {
-    return { type: ACCOUNT_TYPE_PARTICIPANT, account: participant.rows[0] };
+  if (siswa.rows[0]) {
+    return { type: ACCOUNT_TYPE_PARTICIPANT, account: siswa.rows[0] };
   }
   const user = await query(
     `SELECT id, username, display_name, password_hash, failed_login_count, locked_until

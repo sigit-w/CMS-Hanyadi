@@ -22,6 +22,13 @@ function requireSessionDate(value) {
   return value;
 }
 
+function legacyRange(sessionDate) {
+  return {
+    startAt: new Date(`${sessionDate}T00:00:00+07:00`).toISOString(),
+    endAt: new Date(`${sessionDate}T23:59:00+07:00`).toISOString()
+  };
+}
+
 tryoutReportRouter.get('/tryout-sessions', authorize('tryout_reports.read'), asyncHandler(async (req, res) => {
   const { rows } = await query(
     `SELECT s.id, s.name, s.session_date, s.is_active, count(ts.id)::int AS submission_count
@@ -38,15 +45,16 @@ tryoutReportRouter.post('/tryout-sessions', authorize('tryout_reports.read'), as
   const sessionDate = requireSessionDate(req.body?.session_date);
   const activate = Boolean(req.body?.is_active);
 
+  const range = legacyRange(sessionDate);
   const session = await withTransaction(async (client) => {
     if (activate) {
       await client.query('UPDATE tryout_sessions SET is_active = false WHERE is_active');
     }
     const { rows } = await client.query(
-      `INSERT INTO tryout_sessions (name, session_date, is_active)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, session_date, is_active, created_at`,
-      [name, sessionDate, activate]
+      `INSERT INTO tryout_sessions (name, session_date, start_at, end_at, is_active)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, session_date, start_at, end_at, is_active, created_at`,
+      [name, sessionDate, range.startAt, range.endAt, activate]
     );
     return rows[0];
   });

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tryout Bank Soal</title>
-  <link rel="stylesheet" href="/styles.css?v=10">
+  <link rel="stylesheet" href="/styles.css?v=11">
 </head>
 <body>
   <div id="loginGate" class="login-gate">
@@ -19,13 +19,14 @@
         <p class="muted">Gunakan akun peserta yang diberikan administrator.</p>
         <p id="loginError" class="alert error" hidden></p>
         <label>
-          Email peserta
-          <input id="loginUsername" required type="email" autocomplete="username" placeholder="nama@domain.id">
+          Nama atau Email peserta
+          <input id="loginUsername" required type="text" autocomplete="username" placeholder="Nama Peserta Umum atau email Siswa">
         </label>
         <label>
-          Password
-          <input id="loginPassword" required type="password" autocomplete="current-password">
+          Password atau PIN
+          <input id="loginPassword" required type="password" autocomplete="current-password" placeholder="PIN 9 digit untuk Peserta Umum">
         </label>
+        <p class="muted">Peserta Umum login memakai Nama + PIN. Siswa tetap memakai Email + Password.</p>
         <button type="submit" id="loginButton">Masuk</button>
       </form>
     </div>
@@ -69,6 +70,6 @@
   </main>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app.js?v=11" defer></script>
+  <script src="/app.js?v=12" defer></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -266,3 +266,17 @@ Permintaan pemilik: pindahkan **Kelola Siswa** dari grup Manajemen Tryout dan **
 | FE-28 | Frontend | P1 | done | PM-16 | Grup `Manajemen Bimbel`, hash `#/bimbel/siswa` & `#/bimbel/program-belajar`, alias rute lama; bundle `index-CXNjTfX_.js` terdeploy |
 | QA-28 | QA | P1 | done | BE-31, FE-28 | Marker P5-14/A-12/S-17 diselaraskan; N-01..N-03; regresi 132/132, 0 bug P0/P1 |
 | REL-16 | PM | P1 | done | QA-28 | **GO** 2026-11-24; deploy frontend ke produksi, backend tidak direstart |
+
+## Fase 6o — Alur Buat Tryout & Peserta Umum — 2026-11-24
+
+Permintaan pemilik: ubah halaman Buat Tryout menjadi Nama Tryout (Camel/Title Case) → tanggal & jam mulai → tanggal & jam selesai → mapel → lembar soal sesuai mapel; tombol tambah peserta tidak wajib dengan pilihan `A. Peserta Didik` (ditunda) atau `B. Peserta Umum` (popup Nama, Sekolah, PIN 9 digit acak, WA orang tua). Nama + PIN dipakai login di halaman tryout. Keputusan lengkap di `pm-agent/decisions/ADR-007-peserta-umum-tryout.md`; requirement dan AC di `pm-agent/tasks/phase6o-backlog.md`. QA-29A wajib me-review desain dan rencana migrasi sebelum DDL diapply.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-17 | PM | P0 | done | - | ADR-007 accepted; backlog + handoff BE-32/FE-29/TRY-12/QA-29 diterbitkan |
+| QA-29A | QA | P0 | done | PM-17 | Review ADR-007 & rencana migrasi 020/021; catatan perbaikan ditindaklanjuti di 022 dan endpoint legacy |
+| BE-32 | Backend | P0 | done | QA-29A | Migrasi `020`/`021`/`022`, participant umum, jadwal & lembar soal, auth, OpenAPI; backend direstart |
+| FE-29 | Frontend | P0 | done | BE-32 (kontrak) | Urutan form baru, picker lembar soal, peserta opsional, popup Umum & generator PIN; bundle `index-BWwbQxdi.js` |
+| TRY-12 | Tryout | P0 | done | BE-32 (kontrak) | Login `Nama atau Email` / `Password atau PIN`, aset `?v=11`/`?v=12` terverifikasi |
+| QA-29 | QA | P0 | done | QA-29A, BE-32, FE-29, TRY-12 | U-01..U-10 lolos; regresi 142/142, 0 bug P0/P1 |
+| REL-17 | PM | P0 | done | QA-29 | **GO** 2026-11-24; terpisah dari `REL-15` yang masih partial |

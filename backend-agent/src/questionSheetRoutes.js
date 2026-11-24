@@ -15,7 +15,8 @@ const SHEET_SELECT = `
   SELECT sh.id, sh.name, sh.code, sh.description, sh.duration_minutes, sh.mapel_id,
          m.code AS mapel_code, m.name AS mapel_name,
          sh.archived, sh.archived_at, sh.created_at, sh.updated_at,
-         (SELECT count(*)::int FROM question_sheet_questions qsq WHERE qsq.sheet_id = sh.id) AS question_count
+          (SELECT count(*)::int FROM question_sheet_questions qsq WHERE qsq.sheet_id = sh.id) AS question_count,
+          (SELECT count(*) > 0 FROM tryout_session_sheets tss WHERE tss.sheet_id = sh.id) AS used_by_tryout
   FROM question_sheets sh
   JOIN mapels m ON m.id = sh.mapel_id
 `;
