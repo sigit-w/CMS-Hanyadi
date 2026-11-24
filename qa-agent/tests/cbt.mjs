@@ -8,8 +8,10 @@ import {
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { query, pool } from '../../backend-agent/src/db.js';
 
+const DIR = '/opt/virtual-office-bank-soal/tryout-agent';
 const BACKEND = API_BASE;
 const PRESENTATION = PRESENTATION_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
@@ -365,4 +367,30 @@ test('CBT-05 deadline terlewat menolak autosave dan finalize', async () => {
     headers: headersTwo
   });
   assert.equal(finalize.status, 409, JSON.stringify(finalize.body));
+});
+
+test('CBT-06 satu perpindahan fokus hanya mencatat satu pelanggaran', async () => {
+  const js = readFileSync(`${DIR}/app.js`, 'utf8');
+  const block = js.match(/  async function recordViolation\(type, detail = \{\}\) \{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(block, 'blok recordViolation tidak ditemukan');
+  const calls = [];
+  const localState = { cbtMode: true, locked: false, lastFocusLossAt: 0, attempt: { status: 'in_progress' } };
+  const sandbox = {
+    state: localState,
+    isCbt: () => localState.cbtMode,
+    api: async (_path, options) => {
+      calls.push(JSON.parse(options.body).violation_type);
+      return { status: 'in_progress' };
+    },
+    showLogin: () => {},
+    lockCbt: () => {},
+    toast: () => {},
+    SessionError: class SessionError extends Error {}
+  };
+  const recordViolation = new Function(
+    ...Object.keys(sandbox), `${block}\nreturn recordViolation;`
+  )(...Object.values(sandbox));
+  await recordViolation('tab_hidden', { hidden: true });
+  await recordViolation('window_blur', {});
+  assert.deepEqual(calls, ['tab_hidden']);
 });

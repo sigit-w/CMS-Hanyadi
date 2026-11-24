@@ -34,6 +34,20 @@ export function requireMapelCode(value) {
   return code;
 }
 
+export function requireMapelCodes(value) {
+  if (!Array.isArray(value)) {
+    throw new ApiError('VALIDATION_ERROR', 'mapel_codes harus berupa array kode mapel');
+  }
+  if (value.length < 1 || value.length > 10) {
+    throw new ApiError('VALIDATION_ERROR', 'mapel_codes wajib berisi 1 sampai 10 kode mapel');
+  }
+  const codes = value.map((item) => requireMapelCode(item));
+  if (new Set(codes).size !== codes.length) {
+    throw new ApiError('VALIDATION_ERROR', 'mapel_codes tidak boleh mengandung mapel ganda');
+  }
+  return codes;
+}
+
 export function parseId(value, field = 'id') {
   const id = Number(value);
   if (!Number.isSafeInteger(id) || id < 1) {

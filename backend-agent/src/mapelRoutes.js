@@ -13,7 +13,7 @@ const readMapels = authorizeAny('questions.read', 'mapels.manage');
 const MAPEL_SELECT = `
   SELECT m.id, m.code, m.name, m.description, m.is_active, m.created_at,
          (SELECT count(*)::int FROM questions q WHERE q.mapel_id = m.id AND q.status <> 'archived') AS question_count,
-         (SELECT count(*)::int FROM tryout_sessions s WHERE s.mapel_id = m.id) AS tryout_count
+         (SELECT count(*)::int FROM tryout_session_mapels tsm WHERE tsm.mapel_id = m.id) AS tryout_count
   FROM mapels m
 `;
 

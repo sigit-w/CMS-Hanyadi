@@ -81,8 +81,9 @@ Skema kanonik ada di `db/schema.sql`. Ringkasan entitas:
 | `presentation_versions` | Daftar versi penyajian (`v1`, `v2`, `v3`) — data historis nonaktif (ADR-004) |
 | `question_version_readiness` | Penanda kesiapan per soal per versi — data historis nonaktif (ADR-004) |
 | `v_question_catalog` | View ringkas untuk daftar soal (frontend & QA) |
+| `tryout_session_mapels` | Relasi banyak-ke-banyak sesi tryout–mapel; PK `(session_id, mapel_id)` menjamin mapel unik per sesi (ADR-016) |
 
-Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
+Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`, `tryout_sessions -> tryout_session_mapels -> mapels`. Kolom `tryout_sessions.mapel_id` tetap ada hanya untuk kompatibilitas klien lama (diisi mapel pertama); sumber kebenaran multi-mapel ada di junction. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
 
 ## 6. Kontrak REST API (Rancangan Fase 3, diselaraskan Fase 6j)
 
@@ -102,6 +103,10 @@ Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `que
 | ~~PATCH~~ | ~~`/api/v1/questions/:id/readiness`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/presentation-versions`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/questions/:id/variants`~~ | **Deprecated (404)** — presentation service membaca tabel inti |
+| POST | `/api/v1/tryouts` | Buat tryout; terima `mapel_codes[]` (1–10 unik), `sheet_ids`, `participant_ids`, dan konfigurasi CBT |
+| GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail tryout dengan `mapels[]` + field `mapel_code` legacy |
+| POST | `/api/v1/presentation/attempts/submit-all` | Submit seluruh jawaban non-CBT dalam satu transaksi; tanpa skor ke peserta |
+| POST | `/api/v1/presentation/cbt/attempt/violation` | Catat pelanggaran; response menyertakan `type`, `violation_count`, `max_violations` |
 | GET | `/health` | Status API & koneksi DB |
 
 Konvensi:
@@ -138,6 +143,13 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - Status soal langsung `approved` saat dibuat; `draft` dan `review` ditolak dan dimigrasikan oleh `015_simplify_question_status.sql`.
 - Backend dan presentation service membaca `questions` + `question_options` + `answer_keys`. Gate tampil tryout: `questions.status='approved'` dan bukan `archived`.
 - Stem soal dirender tanpa bold; daftar CMS memakai pagination `limit=20` dengan kontrol Prev/Next.
+
+## 8a. Fase 6t — Tryout Multi-Mapel & Alur Peserta (ADR-016)
+
+- Satu tryout dapat memuat 1–10 mapel aktif yang unik. Pilihan admin dikirim sebagai `mapel_codes[]`; duplikat dan mapel tidak aktif ditolak `400`.
+- Lembar soal dipilih per mapel; backend memastikan setiap `sheet_id` termasuk mapel terpilih dan mengexpand soal aktif dari seluruh lembar.
+- Peserta non-CBT mengirim seluruh jawaban sekali lewat `POST /api/v1/presentation/attempts/submit-all`; UI tidak lagi menyediakan submit per soal. Peserta CBT tetap memakai `finalize` attempt.
+- Setiap pelanggaran CBT memunculkan toast berisi jenis dan `n/m`. Debounce 750 ms dan batas pelanggaran tidak diubah.
 
 ## 9. Non-Fungsional dan Keamanan
 

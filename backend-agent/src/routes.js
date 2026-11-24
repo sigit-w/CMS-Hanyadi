@@ -275,14 +275,19 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
 
       if (mapelId !== null && Number(mapelId) !== Number(current.mapel_id)) {
         const previousSessions = await client.query(
-          `SELECT s.id, s.mapel_id
+          `SELECT s.id
            FROM tryout_sessions s
            JOIN tryout_session_questions tq ON tq.session_id = s.id
            WHERE s.is_active AND tq.question_id = $1`,
           [id]
         );
         for (const session of previousSessions.rows) {
-          if (Number(session.mapel_id) !== Number(mapelId)) {
+          const stillMatches = await client.query(
+            `SELECT 1 FROM tryout_session_mapels tsm
+             WHERE tsm.session_id = $1 AND tsm.mapel_id = $2`,
+            [session.id, mapelId]
+          );
+          if (!stillMatches.rows[0]) {
             await client.query(
               'DELETE FROM tryout_session_questions WHERE session_id = $1 AND question_id = $2',
               [session.id, id]
@@ -290,9 +295,11 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
           }
         }
         const targetSession = await client.query(
-          `SELECT id FROM tryout_sessions
-           WHERE is_active AND mapel_id = $1
-           ORDER BY id DESC LIMIT 1`,
+          `SELECT s.id
+           FROM tryout_sessions s
+           JOIN tryout_session_mapels tsm ON tsm.session_id = s.id
+           WHERE s.is_active AND tsm.mapel_id = $1
+           ORDER BY s.id DESC LIMIT 1`,
           [mapelId]
         );
         if (targetSession.rows[0]) {

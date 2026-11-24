@@ -11,14 +11,17 @@
     total: 0,
     activeId: null,
     answers: {},
-    submitted: {},
+    answerPayloads: {},
+    answerMeta: {},
+    activeDetail: null,
     cbtMode: false,
     attempt: null,
     flags: new Set(),
     locked: false,
     timerId: null,
     fullscreenArmed: false,
-    pendingSaves: new Set()
+    pendingSaves: new Set(),
+    lastFocusLossAt: 0
   };
 
   const elements = {
@@ -65,6 +68,11 @@
     elements.toast.hidden = false;
     window.clearTimeout(toast.timer);
     toast.timer = window.setTimeout(() => { elements.toast.hidden = true; }, 3500);
+  }
+
+  function renderFinalizeButton() {
+    elements.finalizeButton.textContent = isCbt() ? 'Selesai & Kumpulkan' : 'Kirim Semua Jawaban';
+    elements.finalizeButton.hidden = state.locked;
   }
 
   async function api(path, options = {}) {
@@ -115,7 +123,8 @@
       if (!cbtStarted) await loadQuestions(1);
       return true;
     } catch (error) {
-      showLogin(error instanceof SessionError ? sessionMessage(error) : error.message);
+      if (error instanceof SessionError && error.status === 401) showLogin();
+      else showLogin(error instanceof SessionError ? sessionMessage(error) : error.message);
       return false;
     }
   }
@@ -162,13 +171,16 @@
     state.total = 0;
     state.activeId = null;
     state.answers = {};
-    state.submitted = {};
+    state.answerPayloads = {};
+    state.answerMeta = {};
+    state.activeDetail = null;
     state.cbtMode = false;
     state.attempt = null;
     state.flags = new Set();
     state.locked = false;
     state.fullscreenArmed = false;
     state.pendingSaves = new Set();
+    state.lastFocusLossAt = 0;
     elements.timerDisplay.hidden = true;
     elements.finalizeButton.hidden = true;
     elements.fullscreenButton.hidden = true;
@@ -186,12 +198,15 @@
       state.questions = payload.questions;
       state.total = payload.questions.length;
       state.answers = payload.answers ?? {};
+      state.answerPayloads = {};
+      state.answerMeta = {};
+      state.activeDetail = null;
       state.flags = new Set(payload.flags ?? []);
       state.locked = payload.attempt.status !== 'in_progress';
       elements.loadMore.hidden = true;
       elements.timerDisplay.hidden = false;
       elements.cbtStatus.hidden = false;
-      elements.finalizeButton.hidden = state.locked;
+      renderFinalizeButton();
       elements.fullscreenButton.hidden = !payload.attempt.cbt_require_fullscreen || state.locked;
       renderList();
       updateTimer();
@@ -255,6 +270,7 @@
       state.total = data.pagination.total;
       state.page = page;
       renderList();
+      renderFinalizeButton();
     } catch (error) {
       if (error instanceof SessionError) {
         showLogin(sessionMessage(error));
@@ -263,13 +279,6 @@
       elements.listStatus.textContent = 'Gagal memuat daftar soal.';
       toast(error.message, true);
     }
-  }
-
-  function renderSavedNote() {
-    const note = document.createElement('p');
-    note.className = 'muted result';
-    note.textContent = isCbt() ? 'Jawaban tersimpan otomatis.' : 'Jawaban tersimpan.';
-    return note;
   }
 
   function renderNavigation(index) {
@@ -292,6 +301,7 @@
 
   async function openQuestion(id) {
     state.activeId = id;
+    state.activeDetail = null;
     renderList();
     elements.questionBody.className = 'question-body empty';
     elements.questionBody.textContent = 'Memuat soal…';
@@ -360,6 +370,16 @@
     return request;
   }
 
+  function rememberLocalAnswer(id, detail, collected) {
+    state.answers[String(id)] = collected.savedValue;
+    state.answerPayloads[String(id)] = collected.payload;
+    state.answerMeta[String(id)] = {
+      question_type: detail.question_type,
+      statement_count: Array.isArray(detail.statements) ? detail.statements.length : 0
+    };
+    renderList();
+  }
+
   async function flushDrafts() {
     await Promise.all([...state.pendingSaves]);
   }
@@ -386,6 +406,7 @@
   function renderQuestion(detail, index) {
     const body = elements.questionBody;
     const id = questionId(detail);
+    state.activeDetail = detail;
     body.className = 'question-body';
     body.replaceChildren();
 
@@ -487,55 +508,22 @@
       form.append(field);
     }
 
-    const submit = document.createElement('button');
-    submit.type = 'submit';
-    submit.textContent = isCbt() ? 'Simpan Jawaban' : 'Kirim Jawaban';
-    submit.disabled = state.locked;
-    form.append(submit);
-
-    if (isCbt() && !state.locked) {
+    form.addEventListener('submit', (event) => event.preventDefault());
+    if (!state.locked) {
       form.addEventListener('change', () => {
         const collected = collectPayload(form, detail, false);
         if (!collected) return;
-        saveDraft(id, collected.payload, collected.savedValue);
+        if (isCbt()) saveDraft(id, collected.payload, collected.savedValue);
+        else rememberLocalAnswer(id, detail, collected);
       });
-    }
-
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (state.locked) return;
-      const collected = collectPayload(form, detail, !isCbt());
-      if (!collected) return;
-      submit.disabled = true;
-      try {
-        if (isCbt()) {
-          await saveDraft(id, collected.payload, collected.savedValue);
-          form.querySelector('.result')?.remove();
-          form.append(renderSavedNote());
-          toast('Jawaban tersimpan.');
-        } else {
-          await api(`/presentation/questions/${id}/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(collected.payload)
-          });
-          state.submitted[String(id)] = true;
-          form.querySelector('.result')?.remove();
-          form.append(renderSavedNote());
-          toast('Jawaban tersimpan.');
-        }
-      } catch (error) {
-        if (error instanceof SessionError) {
-          showLogin(sessionMessage(error));
-          return;
-        }
-        toast(error.message, true);
-      } finally {
-        submit.disabled = false;
+      if (!isCbt()) {
+        form.addEventListener('input', (event) => {
+          if (event.target?.name !== 'answer_text') return;
+          const collected = collectPayload(form, detail, false);
+          if (collected) rememberLocalAnswer(id, detail, collected);
+        });
       }
-    });
-
-    if (state.submitted[String(id)]) form.append(renderSavedNote());
+    }
     body.append(form);
   }
 
@@ -587,6 +575,56 @@
     }
   }
 
+  function captureActiveAnswer() {
+    const detail = state.activeDetail;
+    if (!detail || state.locked || String(questionId(detail)) !== String(state.activeId)) return;
+    const form = elements.questionBody.querySelector('form.answer-form');
+    if (!form) return;
+    const collected = collectPayload(form, detail, false);
+    if (collected) rememberLocalAnswer(state.activeId, detail, collected);
+  }
+
+  function collectAllAnswers() {
+    return Object.keys(state.answers).flatMap((id) => {
+      const payload = state.answerPayloads[id];
+      if (!payload) return [];
+      const meta = state.answerMeta[id];
+      if (meta?.question_type === 'true_false'
+        && (!Array.isArray(payload.answers) || payload.answers.length !== meta.statement_count)) return [];
+      return [{ question_id: Number(id), ...payload }];
+    });
+  }
+
+  function lockAnswers() {
+    state.locked = true;
+    elements.finalizeButton.hidden = true;
+    document.querySelectorAll('.answer-form input, .answer-form textarea').forEach((element) => {
+      element.disabled = true;
+    });
+  }
+
+  async function submitAllAnswers() {
+    if (state.locked || isCbt()) return;
+    if (!window.confirm('Kirim semua jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
+    captureActiveAnswer();
+    const answers = collectAllAnswers();
+    elements.finalizeButton.disabled = true;
+    try {
+      await api('/presentation/attempts/submit-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers })
+      });
+      lockAnswers();
+      toast('Jawaban terkirim. Hasil dapat dilihat administrator.');
+    } catch (error) {
+      if (error instanceof SessionError) showLogin(sessionMessage(error));
+      else toast(error.message, true);
+    } finally {
+      elements.finalizeButton.disabled = false;
+    }
+  }
+
   async function enterFullscreen() {
     try {
       await document.documentElement.requestFullscreen();
@@ -597,18 +635,33 @@
 
   async function recordViolation(type, detail = {}) {
     if (!isCbt() || state.locked) return;
+    if (type === 'tab_hidden' || type === 'window_blur') {
+      if (Date.now() - state.lastFocusLossAt < 750) return;
+      state.lastFocusLossAt = Date.now();
+    }
+    const labels = {
+      tab_hidden: 'pindah tab',
+      window_blur: 'jendela kehilangan fokus',
+      fullscreen_exit: 'keluar fullscreen',
+      paste: 'tempel jawaban'
+    };
     try {
       const result = await api('/presentation/cbt/attempt/violation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ violation_type: type, detail })
       });
+      const count = result.violation_count;
+      const maxViolations = result.max_violations ?? result.limit ?? '∞';
+      const notice = `Pelanggaran tercatat: ${labels[type] ?? type} (${count}/${maxViolations})`;
       if (result.status !== 'in_progress') {
         state.attempt.status = result.status;
         lockCbt();
-        toast('Batas pelanggaran terlampaui. Jawaban dikumpulkan otomatis.', true);
+        toast(`${notice}. Attempt dikunci. Jawaban dikumpulkan otomatis.`, true);
+      } else {
+        toast(notice, true);
       }
-      elements.cbtStatus.textContent = `pelanggaran ${result.violation_count}/${result.limit || '∞'}`;
+      elements.cbtStatus.textContent = `pelanggaran ${count}/${maxViolations}`;
     } catch (error) {
       if (error instanceof SessionError) showLogin(sessionMessage(error));
     }
@@ -656,7 +709,10 @@
   elements.loadMore.addEventListener('click', () => loadQuestions(state.page + 1, true));
   elements.loginForm.addEventListener('submit', handleLogin);
   elements.logoutButton.addEventListener('click', handleLogout);
-  elements.finalizeButton.addEventListener('click', finishCbt);
+  elements.finalizeButton.addEventListener('click', () => {
+    if (isCbt()) finishCbt();
+    else submitAllAnswers();
+  });
   elements.fullscreenButton.addEventListener('click', enterFullscreen);
 
   const refreshOnVisible = () => {

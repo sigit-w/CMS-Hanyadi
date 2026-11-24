@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Bank Soal CMS API
   version: 0.3.0
-  description: Fase 6 — manajemen role & autentikasi — Virtual Office Software House
+  description: 'Fase 6 — manajemen role & autentikasi — Virtual Office Software House. Fase 6t: tryout multi-mapel lewat mapel_codes[] dan tabel tryout_session_mapels; tryout_sessions.mapel_id hanya kompatibilitas pembacaan.'
 security:
   - cookieAuth: []
 servers:
@@ -35,19 +35,19 @@ paths:
                 username:
                   type: string
                   description: 'Email untuk Siswa/CMS; Nama untuk Peserta Umum.'
-                 password:
-                   type: string
-                   format: password
-                   description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
-                 tryout_slug:
-                   type: string
-                   maxLength: 32
-                   pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$'
-                   description: 'Wajib untuk Peserta Umum/Siswa; slug dari URL /{slug} tryout.'
-       responses:
-         '200': { description: Login berhasil; participant memiliki tryout_session_id }
-         '400': { description: Username atau password kosong }
-         '401': { description: Kredensial tidak valid, slug tidak valid, atau peserta tidak terdaftar pada tryout }
+                password:
+                  type: string
+                  format: password
+                  description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
+                tryout_slug:
+                  type: string
+                  maxLength: 32
+                  pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$'
+                  description: 'Wajib untuk Peserta Umum/Siswa; slug dari URL /{slug} tryout.'
+      responses:
+        '200': { description: Login berhasil; participant memiliki tryout_session_id }
+        '400': { description: Username atau password kosong }
+        '401': { description: Kredensial tidak valid, slug tidak valid, atau peserta tidak terdaftar pada tryout }
 
         '429': { description: Akun dikunci sementara }
   /api/v1/auth/refresh:
@@ -212,7 +212,7 @@ paths:
                     jenis: { type: string, enum: [umum] }
                     nama: { type: string, maxLength: 128 }
                     sekolah: { type: string, maxLength: 255 }
-                     pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; hash dipakai login, plaintext tampil di endpoint detail.' }
+                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; hash dipakai login, plaintext tampil di endpoint detail.' }
                     wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
                     prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
@@ -348,31 +348,35 @@ paths:
         '404': { description: Peserta tidak ditemukan atau tidak aktif }
   /api/v1/tryouts:
     get:
-      summary: Daftar Tryout beserta mapel, jumlah soal, peserta, dan submission (tryouts.manage)
+      summary: Daftar Tryout beserta mapels[], jumlah soal, peserta, dan submission (tryouts.manage)
       responses:
         '200': { description: Daftar tryout }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
       summary: Buat Tryout baru dari lembar soal atau soal terpilih (tryouts.manage)
-      description: 'Alur baru memakai start_at/end_at/sheet_ids dan participant_ids opsional. Payload lama session_date/question_ids tetap diterima.'
+      description: 'Alur baru memakai start_at/end_at/sheet_ids dan participant_ids opsional. Kirim mapel_codes (1-10 kode unik mapel aktif); mapel_code lama tetap diterima sebagai array satu elemen dan boleh dikirim bersamaan bila nilainya sama. Payload lama session_date/question_ids tetap diterima. Respons memuat mapels[] dari junction dan mapel_code/mapel_id/mapel_name dari mapel pertama untuk kompatibilitas.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, mapel_code]
+              required: [name]
+              anyOf:
+                - required: [mapel_codes]
+                - required: [mapel_code]
               oneOf:
                 - required: [start_at, end_at, sheet_ids]
                 - required: [session_date, question_ids]
               properties:
-                 name: { type: string, maxLength: 128 }
-                 slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug URL unik. Di-generate dari nama + ID bila kosong.' }
-                 session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
+                name: { type: string, maxLength: 128 }
+                slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug URL unik. Di-generate dari nama + ID bila kosong.' }
+                session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
 
                 start_at: { type: string, format: date-time, description: 'Tanggal & jam mulai (Asia/Jakarta).' }
                 end_at: { type: string, format: date-time, description: 'Tanggal & jam selesai; wajib setelah start_at.' }
-                mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Kode mapel aktif dari /api/v1/mapels' }
+                mapel_codes: { type: array, items: { type: string, pattern: '^[A-Z0-9]{4}$' }, minItems: 1, maxItems: 10, uniqueItems: true, description: 'Kode mapel aktif dari /api/v1/mapels; urutan pertama dipakai untuk field legacy.' }
+                mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Field legacy; dipetakan ke [mapel_code]. Tolak bila berbeda dengan mapel_codes.' }
                 sheet_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'ID lembar soal aktif dari /api/v1/question-sheets' }
                 question_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 200, description: 'Kompatibilitas payload lama.' }
                 participant_ids: { type: array, items: { type: integer }, minItems: 0, maxItems: 200, description: 'Opsional; ID dari /api/v1/participants.' }
@@ -383,15 +387,15 @@ paths:
                 cbt_shuffle_options: { type: boolean, default: false }
                 cbt_require_fullscreen: { type: boolean, default: false }
                 cbt_max_violations: { type: integer, minimum: 0, maximum: 100, default: 0, description: '0 = tanpa batas.' }
-       responses:
-        '201': { description: Tryout dibuat beserta relasi lembar/soal dan peserta }
-        '400': { description: Validasi jadwal, mapel, lembar, soal, atau peserta gagal }
+      responses:
+        '201': { description: 'Tryout dibuat beserta relasi mapel (tryout_session_mapels), lembar/soal, dan peserta' }
+        '400': { description: 'Validasi jadwal, mapel (termasuk duplikat/konflik mapel_codes), lembar, soal, atau peserta gagal' }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryouts/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
-      summary: Detail Tryout termasuk daftar question_ids dan participant_ids (tryouts.manage)
+      summary: Detail Tryout termasuk mapels[], question_ids, dan participant_ids (tryouts.manage)
       responses:
         '200': { description: Detail tryout }
         '404': { description: Tryout tidak ditemukan }
@@ -571,7 +575,7 @@ paths:
         '404': { description: Lembar soal tidak ditemukan }
   /api/v1/mapels:
     get:
-      summary: Daftar mapel aktif (questions.read atau mapels.manage)
+      summary: Daftar mapel aktif dengan tryout_count dari tryout_session_mapels (questions.read atau mapels.manage)
       parameters:
         - { name: include_inactive, in: query, schema: { type: boolean, default: false }, description: 'Hanya untuk mapels.manage' }
       responses:

@@ -48,8 +48,17 @@ Memecah pekerjaan menjadi task, menentukan prioritas dan dependency, memantau pr
 | `tasks/handoff-FE31.md` | Serah terima PM→Frontend Fase 6q: hapus helper text & popup Kelola Peserta A/B |
 | `tasks/handoff-QA31.md` | Serah terima PM→QA Fase 6q: QP-01..QP-05, regresi, & gate REL-19 |
 | `decisions/ADR-009-kelola-peserta-tryout.md` | Keputusan popup Kelola Peserta, target draft/manage, & endpoint attach Fase 6q |
+| `tasks/phase6t-backlog.md` | Requirement, keputusan, & AC Fase 6t: tryout multi-mapel & alur peserta |
+| `tasks/handoff-BE39.md` | Serah terima PM→Backend Fase 6t: migrasi 029 & API multi-mapel |
+| `tasks/handoff-FE36.md` | Serah terima PM→Frontend Fase 6t: form mapel, lembar soal, & picker siswa |
+| `tasks/handoff-TRY18.md` | Serah terima PM→Tryout Fase 6t: toast violation & submit global |
+| `tasks/handoff-PRES06.md` | Serah terima PM→Presentasi Fase 6t: submit-all & payload violation |
+| `tasks/handoff-QA36.md` | Serah terima PM→QA Fase 6t: verifikasi R1–R5 & gate REL-26 |
+| `tasks/handoff-DOC07.md` | Serah terima PM→Dokumentasi Fase 6t: arsitektur multi-mapel |
+| `tasks/handoff-REL26.md` | Serah terima PM→Release Fase 6t: backup, deploy, & smoke test |
+| `decisions/ADR-016-tryout-multi-mapel-dan-alur-peserta.md` | Keputusan multi-mapel, lembar soal, notifikasi, submit global, & picker siswa |
 
-Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`; Fase 6p ada di `tasks/phase6p-backlog.md`; Fase 6q ada di `tasks/phase6q-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
+Sumber kebenaran backlog Fase 3 ada di `docs/phase3-tasks.md`; Fase 6 ada di `tasks/phase6-backlog.md`; Fase 6j ada di `tasks/phase6j-backlog.md`; Fase 6l ada di `tasks/phase6l-backlog.md`; Fase 6n ada di `tasks/phase6n-backlog.md`; Fase 6o ada di `tasks/phase6o-backlog.md`; Fase 6p ada di `tasks/phase6p-backlog.md`; Fase 6q ada di `tasks/phase6q-backlog.md`; Fase 6t ada di `tasks/phase6t-backlog.md`. File di direktori ini dipakai untuk mengoperasionalkan backlog tersebut.
 
 Fase 6o final 2026-11-24 dengan `REL-17` **GO**; bukti regresi dan keputusan rilis ada di `qa-agent/reports/phase6o-report.md` dan `qa-agent/reports/phase6o-release-gate.md`. Fase 6p final 2026-11-24 dengan `REL-18` **GO**; bukti regresi 150/150 dan keputusan rilis ada di `qa-agent/reports/phase6p-report.md` dan `qa-agent/reports/phase6p-release-gate.md`. Fase 6q final 2026-11-24 dengan `REL-19` **GO**; bukti regresi 155/155 dan keputusan rilis ada di `qa-agent/reports/phase6q-report.md` dan `qa-agent/reports/phase6q-release-gate.md`. Fase 6 ditutup 2026-11-24 dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, dan penutup tercatat di `pm-agent/progress/status-board.md`.
 

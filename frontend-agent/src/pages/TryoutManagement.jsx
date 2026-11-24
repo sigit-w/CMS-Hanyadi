@@ -24,7 +24,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
-import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const MAPEL_LABELS = {
@@ -38,6 +37,19 @@ function tryoutUrl(slug) {
   return slug ? `${TRYOUT_BASE_URL}/${slug}` : '—';
 }
 
+function mapelLabel(code, name) {
+  return MAPEL_LABELS[code] ?? name ?? code ?? '—';
+}
+
+function tryoutMapelText(tryout) {
+  const mapels = Array.isArray(tryout.mapels) ? tryout.mapels : [];
+  const labels = mapels.length > 0
+    ? mapels.map((mapel) => mapelLabel(mapel.code, mapel.name))
+    : [mapelLabel(tryout.mapel_code, tryout.mapel_name ?? tryout.mapel_code)];
+  if (mapels.length === 0 && !tryout.mapel_code && !tryout.mapel_name) return '—';
+  return [...new Set(labels.filter(Boolean))].join(', ') || '—';
+}
+
 function jakartaInputDate(offsetHours = 0) {
   const shifted = new Date(Date.now() + (7 + offsetHours) * 60 * 60 * 1000);
   return shifted.toISOString().slice(0, 16);
@@ -47,7 +59,7 @@ const emptyForm = () => ({
   name: '',
   start_at: jakartaInputDate(),
   end_at: jakartaInputDate(2),
-  mapel_code: '',
+  mapel_codes: [],
   is_active: true,
   cbt_enabled: false,
   cbt_duration_minutes: 90,
@@ -138,8 +150,9 @@ function ParticipantRows({ rows, onDetail, onRemove, emptyText }) {
 export default function TryoutManagement() {
   const [form, setForm] = useState(emptyForm);
   const [mapels, setMapels] = useState([]);
-  const [sheets, setSheets] = useState([]);
+  const [sheetsByMapel, setSheetsByMapel] = useState({});
   const [participants, setParticipants] = useState([]);
+  const [siswaLoading, setSiswaLoading] = useState(false);
   const [draftParticipants, setDraftParticipants] = useState([]);
   const [selectedSheets, setSelectedSheets] = useState([]);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
@@ -165,9 +178,23 @@ export default function TryoutManagement() {
   const draftParticipantRows = selectedParticipants
     .map((id) => draftParticipants.find((participant) => String(participant.id) === String(id)))
     .filter(Boolean);
+  const mapelOptions = Array.from(new Map(
+    mapels.filter((mapel) => mapel.code).map((mapel) => [mapel.code, mapel])
+  ).values());
+  const sheetMapelById = new Map();
+  Object.entries(sheetsByMapel).forEach(([code, list]) => {
+    list.forEach((sheet) => sheetMapelById.set(String(sheet.id), code));
+  });
+  const seenSheetIds = new Set();
+  const sheetOptions = form.mapel_codes.flatMap((code) => (sheetsByMapel[code] ?? [])
+    .map((sheet) => ({ ...sheet, id: String(sheet.id), sheetMapelCode: sheet.mapel_code ?? code }))
+    .filter((sheet) => {
+      if (!sheet.id || seenSheetIds.has(sheet.id)) return false;
+      seenSheetIds.add(sheet.id);
+      return true;
+    }));
   const siswaRows = participants.filter((participant) => (
-    participant.jenis === 'siswa'
-    && participant.nama.toLowerCase().includes(siswaSearch.trim().toLowerCase())
+    String(participant.nama ?? '').toLowerCase().includes(siswaSearch.trim().toLowerCase())
   ));
 
   const refreshTryouts = async () => {
@@ -198,20 +225,25 @@ export default function TryoutManagement() {
     return () => { active = false; };
   }, []);
 
+  const mapelCodesKey = form.mapel_codes.join('|');
+
   useEffect(() => {
     let active = true;
-    const mapel = form.mapel_code;
-    if (!mapel) {
-      setSheets([]);
+    const codes = mapelCodesKey ? mapelCodesKey.split('|') : [];
+    if (codes.length === 0) {
+      setSheetsByMapel({});
       setSelectedSheets([]);
       return undefined;
     }
     async function loadSheets() {
       try {
-        const data = await getQuestionSheets({ status: 'active', mapel, limit: 100 });
+        const results = await Promise.all(codes.map(async (code) => {
+          const data = await getQuestionSheets({ status: 'active', mapel: code, limit: 100 });
+          return [code, data.sheets];
+        }));
         if (!active) return;
-        setSheets(data.sheets);
-        const available = new Set(data.sheets.map((sheet) => String(sheet.id)));
+        setSheetsByMapel(Object.fromEntries(results));
+        const available = new Set(results.flatMap(([, list]) => list.map((sheet) => String(sheet.id))));
         setSelectedSheets((current) => current.filter((id) => available.has(id)));
       } catch (err) {
         if (active) setError(err.message);
@@ -226,7 +258,44 @@ export default function TryoutManagement() {
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [form.mapel_code]);
+  }, [mapelCodesKey]);
+
+  useEffect(() => {
+    if (pesertaDialog !== 'siswa') return undefined;
+    let active = true;
+    setSiswaLoading(true);
+    async function loadSiswa() {
+      try {
+        const data = await getSiswa();
+        if (!active) return;
+        setParticipants((data.siswa ?? []).filter((participant) => participant.is_active));
+        setError('');
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setSiswaLoading(false);
+      }
+    }
+    loadSiswa();
+    const refreshOnVisible = () => { if (!document.hidden) loadSiswa(); };
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    window.addEventListener('focus', refreshOnVisible);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+      window.removeEventListener('focus', refreshOnVisible);
+    };
+  }, [pesertaDialog]);
+
+  function toggleMapel(code) {
+    const nextMapels = form.mapel_codes.includes(code)
+      ? form.mapel_codes.filter((item) => item !== code)
+      : [...form.mapel_codes, code];
+    setForm({ ...form, mapel_codes: nextMapels });
+    if (nextMapels.length < form.mapel_codes.length) {
+      setSelectedSheets((current) => current.filter((id) => nextMapels.includes(sheetMapelById.get(id))));
+    }
+  }
 
   function toggleValue(value, setter) {
     setter((current) => current.includes(value)
@@ -398,9 +467,9 @@ export default function TryoutManagement() {
     event.preventDefault();
     setError('');
     setNotice('');
-    if (!form.name.trim() || !form.start_at || !form.end_at || !form.mapel_code
+    if (!form.name.trim() || !form.start_at || !form.end_at || form.mapel_codes.length === 0
       || selectedSheets.length === 0) {
-      setError('Lengkapi Nama Tryout, jadwal, mapel, dan minimal satu lembar soal.');
+      setError('Lengkapi Nama Tryout, jadwal, minimal satu mapel, dan minimal satu lembar soal.');
       return;
     }
     if (Date.parse(form.end_at) <= Date.parse(form.start_at)) {
@@ -418,8 +487,8 @@ export default function TryoutManagement() {
         name: form.name.trim(),
         start_at: form.start_at,
         end_at: form.end_at,
-        mapel_code: form.mapel_code,
-        sheet_ids: selectedSheets.map(Number),
+        mapel_codes: form.mapel_codes,
+        sheet_ids: [...new Set(selectedSheets.map(Number))],
         participant_ids: selectedParticipants.map(Number),
         is_active: form.is_active,
         cbt_enabled: form.cbt_enabled,
@@ -530,43 +599,46 @@ export default function TryoutManagement() {
                 <Input type="datetime-local" value={form.end_at}
                   onChange={(event) => setForm({ ...form, end_at: event.target.value })} />
               </div>
-              <div className="space-y-1.5">
-                <Label>Mapel</Label>
-                <SelectNative value={form.mapel_code}
-                  onChange={(event) => setForm({ ...form, mapel_code: event.target.value })}>
-                  <option value="">Pilih mapel</option>
-                  {mapels.map((mapel) => (
-                    <option key={mapel.id} value={mapel.code}>
-                      {MAPEL_LABELS[mapel.code] ?? mapel.name}
-                    </option>
-                  ))}
-                </SelectNative>
-              </div>
             </div>
 
             <fieldset className="rounded-lg border p-4">
+              <legend className="px-1 text-sm font-semibold">Mapel ({form.mapel_codes.length} dipilih)</legend>
+              {mapelOptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada mapel tersedia.</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {mapelOptions.map((mapel) => (
+                    <label className="flex items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={mapel.code}>
+                      <Checkbox className="mt-0.5" checked={form.mapel_codes.includes(mapel.code)}
+                        onChange={() => toggleMapel(mapel.code)} />
+                      <span>{mapelLabel(mapel.code, mapel.name)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">Pilih minimal satu mapel. Mapel yang sama tidak akan dihitung dua kali.</p>
+            </fieldset>
+
+            <fieldset className="rounded-lg border p-4">
               <legend className="px-1 text-sm font-semibold">Lembar Soal ({selectedSheets.length} dipilih)</legend>
-              {!form.mapel_code ? (
-                <p className="text-sm text-muted-foreground">Pilih mapel terlebih dahulu untuk memuat lembar soal.</p>
-              ) : sheets.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif pada mapel ini.</p>
+              {form.mapel_codes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Pilih minimal satu mapel terlebih dahulu untuk memuat lembar soal.</p>
+              ) : sheetOptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif pada mapel yang dipilih.</p>
               ) : (
                 <div className="max-h-56 space-y-2 overflow-y-auto">
-                  {sheets.map((sheet) => {
-                    const id = String(sheet.id);
-                    return (
-                      <label className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={id}>
-                        <Checkbox className="mt-0.5" checked={selectedSheets.includes(id)}
-                          onChange={() => toggleValue(id, setSelectedSheets)} />
-                        <span>
-                          <strong>{sheet.name}</strong> <span className="text-muted-foreground">({sheet.code})</span>
-                          <span className="block text-xs text-muted-foreground">
-                            {sheet.question_count} soal · {sheet.duration_minutes ? `${sheet.duration_minutes} menit` : 'durasi bebas'}
-                          </span>
+                  {sheetOptions.map((sheet) => (
+                    <label className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/40" key={sheet.id}>
+                      <Checkbox className="mt-0.5" checked={selectedSheets.includes(sheet.id)}
+                        onChange={() => toggleValue(sheet.id, setSelectedSheets)} />
+                      <span>
+                        <strong>{sheet.name}</strong> <span className="text-muted-foreground">({sheet.code})</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {mapelLabel(sheet.sheetMapelCode)} · {sheet.question_count} soal · {sheet.duration_minutes ? `${sheet.duration_minutes} menit` : 'durasi bebas'}
                         </span>
-                      </label>
-                    );
-                  })}
+                      </span>
+                    </label>
+                  ))}
                 </div>
               )}
             </fieldset>
@@ -667,8 +739,14 @@ export default function TryoutManagement() {
           onChange={(event) => setSiswaSearch(event.target.value)}
         />
         <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
-          {siswaRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Tidak ada siswa yang cocok.</p>
+          {siswaLoading && participants.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Memuat data siswa aktif…</p>
+          ) : siswaRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {participants.length === 0
+                ? 'Belum ada siswa aktif. Tambahkan siswa aktif di menu Kelola Siswa, lalu buka dialog ini lagi.'
+                : 'Tidak ada siswa yang cocok dengan pencarian.'}
+            </p>
           ) : siswaRows.map((participant) => (
             <div key={participant.id} className="flex items-center justify-between gap-3 rounded-md border p-2 text-sm">
               <span className="min-w-0">
@@ -859,7 +937,7 @@ export default function TryoutManagement() {
                     </TableCell>
                     <TableCell>{formatDateTime(tryout.start_at)}</TableCell>
                     <TableCell>{formatDateTime(tryout.end_at)}</TableCell>
-                    <TableCell>{MAPEL_LABELS[tryout.mapel_code] ?? tryout.mapel_name ?? '—'}</TableCell>
+                    <TableCell>{tryoutMapelText(tryout)}</TableCell>
                     <TableCell>{tryout.sheet_count ?? '—'}</TableCell>
                     <TableCell>{tryout.question_count}</TableCell>
                     <TableCell>{tryout.participant_count}</TableCell>

@@ -22,6 +22,8 @@ Merancang dan membangun REST API yang terhubung ke PostgreSQL `bank_soal_db`, te
 
 Seed awal: `MTKA`, `BIND`, `IPAS`. Kode mapel unik tepat 4 karakter `^[A-Z0-9]{4}$` dan langsung dipakai sebagai prefix kode lembar soal `LS-<KODE_MAPEL>-mmyy`. Endpoint CRUD memakai permission `mapels.manage` (default admin).
 
+Fase 6t (ADR-016): satu tryout dapat memuat 1–10 mapel aktif yang unik. `POST /api/v1/tryouts` menerima `mapel_codes: ["MTKA", "IPAS"]`; field lama `mapel_code` tetap diterima sebagai satu elemen dan harus sama bila keduanya dikirim. Relasi tersimpan di tabel `public.tryout_session_mapels(session_id, mapel_id)` (PK gabungan, FK cascade) yang di-backfill oleh migrasi `db/migrations/029_tryout_multi_mapel.sql`. Kolom lama `tryout_sessions.mapel_id` hanya untuk kompatibilitas pembacaan dan diisi mapel pertama. `GET /api/v1/tryouts` dan `GET /api/v1/tryouts/{id}` mengembalikan `mapels: [{ id, code, name }]` (urutan kode) beserta `mapel_id`, `mapel_code`, `mapel_name` legacy. `tryout_count` pada `GET /api/v1/mapels` dihitung dari junction. `sheet_ids` harus berasal dari mapel terpilih; soal yang dikirim langsung lewat `question_ids` harus `approved`.
+
 ## Hak Akses
 
 `GET /api/v1/permissions` mengembalikan 46 permission aktif dari tabel `permissions`. Permission `*.manage` lama tetap menjadi guard endpoint existing; permission CRUD baru (`questions.*`, `question_sheets.*`, `tryouts.*`, `participants.*`, `mapels.*`, `roles.*`, `users.*`, `program_belajar.*`) dipakai UI Kelola Role dan tidak mengubah kontrak guard lama. `admin` memiliki seluruh permission; `editor` memiliki CRUD soal, lembar soal, dan program belajar; `validator`, `viewer`, dan `peserta` tidak berubah.

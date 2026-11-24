@@ -73,7 +73,9 @@ test('T-02 logika peserta memuat alur jawaban tanpa feedback skor', () => {
   assert.match(js, /presentation\/questions/);
   assert.match(js, /\/submit/);
   assert.match(js, /IMAGE_ONLY_STEM/);
-  assert.match(js, /Kirim Jawaban/);
+  assert.match(js, /Kirim Semua Jawaban/);
+  assert.match(js, /presentation\/attempts\/submit-all/);
+  assert.doesNotMatch(js, /presentation\/questions\/\$\{[^}]+\}\/submit/);
   assert.doesNotMatch(js, /attempts\/summary/);
   assert.doesNotMatch(js, /score/);
   assert.doesNotMatch(js, /benar/);
@@ -92,6 +94,13 @@ test('T-06 halaman tryout memiliki gate login', () => {
   const js = readFileSync(`${DIR}/app.js`, 'utf8');
   assert.match(js, /checkSession/);
   assert.match(js, /credentials: 'include'/);
+});
+
+test('T-09 akses pertama tanpa sesi menampilkan gate login netral', () => {
+  const js = readFileSync(`${DIR}/app.js`, 'utf8');
+  const checkSession = js.match(/async function checkSession\(\)\s*\{[\s\S]*?\n  \}/);
+  assert.ok(checkSession);
+  assert.match(checkSession[0], /error\.status === 401\)\s*showLogin\(\)/);
 });
 
 test('T-07 data tryout ditolak tanpa sesi login', async () => {

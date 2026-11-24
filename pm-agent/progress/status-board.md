@@ -403,3 +403,20 @@ Permintaan pemilik: sejajarkan pencarian dan info jumlah data di Prospektus, ser
 | UI-LABEL | Frontend | done | prefiks nomor dihapus dari label Lembar Soal dan Program Belajar |
 | QA-UI | QA | done | regresi 179/179, build `index-BouF6F0x.js`, health 200, fixture dibersihkan |
 | REL-25 | PM | GO | 2026-11-24; perubahan di-commit dan di-push ke `origin/main` |
+
+## Fase 6t — Tryout Multi-Mapel & Alur Peserta — 2026-11-24
+
+Permintaan pemilik: (1) 1 tryout boleh berisi beberapa mapel dengan syarat tidak redundant (mis. 1 MTKA + 1 IPAS, bukan 2 MTKA), (2) flow pemilihan lembar soal disesuaikan, (3) setiap pelanggaran memunculkan notifikasi, (4) submit jawaban cukup sekali global, dan (5) picker siswa saat buat tryout tidak menampilkan data. Batasan: jumlah pelanggaran tidak diubah. Keputusan ada di `pm-agent/decisions/ADR-016-tryout-multi-mapel-dan-alur-peserta.md`; requirement, keputusan, dan AC ada di `pm-agent/tasks/phase6t-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-24 | PM | P0 | done | - | ADR-016 accepted; backlog + 7 handoff diterbitkan |
+| BE-39 | Backend | P0 | done | ADR-016 | Migrasi `029`, junction `tryout_session_mapels`, `mapel_codes[]`, validasi sheet-mapel; rekonsiliasi mapel soal di `routes.js` ikut junction |
+| FE-36 | Frontend | P0 | done | BE-39 (kontrak) | Form multi-mapel, sheet picker per mapel, picker siswa tanpa filter `jenis`, kolom daftar mapel; build sukses |
+| TRY-18 | Tryout | P0 | done | BE-39, PRES-06 | Toast violation, submit per soal dihapus, submit global, aset `app.js?v=18` |
+| PRES-06 | Presentation | P0 | done | BE-39 | `POST /attempts/submit-all`, payload `type/count/max` pada violation, tanpa skor ke peserta |
+| QA-36 | QA | P0 | done | BE-39, FE-36, TRY-18, PRES-06 | Q6T-01…06 + `T-09`/`CBT-06`: 21/21 lolos; fixture dibersihkan |
+| DOC-07 | PM/Docs | P1 | done | QA-36 | `docs/architecture.md`, `db/README.md`, `backend-agent/README.md`, OpenAPI tersinkron |
+| REL-26 | PM | P0 | GO | 2026-11-24; gate Fase 6t ditutup setelah QA 21/21, smoke bundle ter-serve, commit & push |
+
+Gate `REL-01…REL-25` tetap GO dan tidak dibuka ulang; `REL-26` kini GO. Backup pre-migrasi: `/tmp/opencode/bank_soal_db-pre029-2026-11-24.dump`. Sesi 271 tetap `cbt_max_violations=3`; regresi 21/21 dan baseline DB (`1|1|2|10|3`) terverifikasi. Bundle CMS `index-BrifSTIr.js` dan tryout `app.js?v=18` ter-serve; indentasi OpenAPI lama ikut diperbaiki. Seluruh perubahan Fase 6t telah di-commit dan di-push ke `origin/main`.

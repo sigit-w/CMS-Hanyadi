@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
-import { parseId, requireMapelCode } from './validate.js';
+import { parseId, requireMapelCode, requireMapelCodes } from './validate.js';
 import { authorize } from './authMiddleware.js';
 import { normalizeTryoutSlug, generateTryoutSlug } from './auth.js';
 
@@ -121,6 +121,40 @@ function optionalIds(value, field) {
   return [...new Set(value.map((item) => parseId(item, field)))];
 }
 
+function resolveMapelCodes(body) {
+  const hasCodes = body?.mapel_codes !== undefined && body?.mapel_codes !== null;
+  const hasLegacyCode = body?.mapel_code !== undefined && body?.mapel_code !== null;
+  const hasLegacyAlias = body?.mapel !== undefined && body?.mapel !== null;
+  const codes = hasCodes ? requireMapelCodes(body.mapel_codes) : null;
+
+  let legacyCodes = null;
+  if (hasLegacyCode && hasLegacyAlias) {
+    const first = requireMapelCode(body.mapel_code);
+    const second = requireMapelCode(body.mapel);
+    if (first !== second) {
+      throw new ApiError('VALIDATION_ERROR', 'mapel_code dan mapel_codes harus sama bila keduanya dikirim');
+    }
+    legacyCodes = [first];
+  } else if (hasLegacyCode || hasLegacyAlias) {
+    legacyCodes = requireMapelCodes([hasLegacyCode ? body.mapel_code : body.mapel]);
+  }
+
+  if (!codes && !legacyCodes) {
+    throw new ApiError('VALIDATION_ERROR', 'mapel_codes wajib berisi minimal satu kode mapel');
+  }
+  if (codes && legacyCodes && codes.join('|') !== legacyCodes.join('|')) {
+    throw new ApiError('VALIDATION_ERROR', 'mapel_code dan mapel_codes harus sama bila keduanya dikirim');
+  }
+  return codes ?? legacyCodes;
+}
+
+const tryoutMapelsJson = `(SELECT coalesce(jsonb_agg(jsonb_build_object(
+                                'id', jm.id, 'code', jm.code, 'name', jm.name
+                              ) ORDER BY jm.code), '[]'::jsonb)
+                            FROM tryout_session_mapels tsm
+                            JOIN mapels jm ON jm.id = tsm.mapel_id
+                            WHERE tsm.session_id = s.id) AS mapels`;
+
 async function loadTryout(client, id) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
@@ -128,7 +162,8 @@ async function loadTryout(client, id) {
              s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
              s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
              m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
-            (SELECT coalesce(array_agg(tq.question_id ORDER BY tq.position, tq.question_id), '{}'::bigint[])
+             ${tryoutMapelsJson},
+             (SELECT coalesce(array_agg(tq.question_id ORDER BY tq.position, tq.question_id), '{}'::bigint[])
              FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_ids,
             (SELECT coalesce(array_agg(tss.sheet_id ORDER BY tss.sheet_id), '{}'::bigint[])
              FROM tryout_session_sheets tss WHERE tss.session_id = s.id) AS sheet_ids,
@@ -149,6 +184,7 @@ tryoutRouter.get('/tryouts', adminOnly, asyncHandler(async (req, res) => {
              s.cbt_enabled, s.cbt_duration_minutes, s.cbt_shuffle_questions,
              s.cbt_shuffle_options, s.cbt_require_fullscreen, s.cbt_max_violations,
              m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
+             ${tryoutMapelsJson},
              (SELECT count(*)::int FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_count,
             (SELECT count(*)::int FROM tryout_session_sheets tss WHERE tss.session_id = s.id) AS sheet_count,
             (SELECT count(*)::int FROM tryout_session_participants tp WHERE tp.session_id = s.id) AS participant_count,
@@ -303,7 +339,7 @@ tryoutRouter.post('/tryouts/:id/participants', adminOnly, asyncHandler(async (re
 tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const name = requireName(req.body?.name);
   const requestedSlug = optionalSlug(req.body?.slug);
-  const mapelCode = requireMapelCode(req.body?.mapel_code ?? req.body?.mapel);
+  const mapelCodes = resolveMapelCodes(req.body);
   const hasSchedule = req.body?.start_at !== undefined || req.body?.end_at !== undefined;
 
   let sessionDate;
@@ -331,22 +367,25 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const cbt = normalizeCbtSettings(req.body);
 
   const tryout = await withTransaction(async (client) => {
-    const mapel = await client.query(
-      'SELECT id FROM mapels WHERE code = $1 AND is_active = true',
-      [mapelCode]
+    const mapels = await client.query(
+      `SELECT id, code FROM mapels
+       WHERE code = ANY($1::text[]) AND is_active = true`,
+      [mapelCodes]
     );
-    if (!mapel.rows[0]) {
+    if (mapels.rows.length !== mapelCodes.length) {
       throw new ApiError('VALIDATION_ERROR', 'Mapel tidak ditemukan atau tidak aktif');
     }
-    const mapelId = mapel.rows[0].id;
+    const mapelByIdCode = new Map(mapels.rows.map((row) => [row.code, Number(row.id)]));
+    const mapelIds = mapelCodes.map((code) => mapelByIdCode.get(code));
+    const mapelId = mapelIds[0];
 
     let resolvedQuestionIds = questionIds;
     if (hasSheets) {
       const sheets = await client.query(
         `SELECT sh.id FROM question_sheets sh
-         JOIN mapels m ON m.id = sh.mapel_id
-         WHERE sh.id = ANY($1::bigint[]) AND sh.archived = false AND m.code = $2`,
-        [sheetIds, mapelCode]
+         WHERE sh.id = ANY($1::bigint[]) AND sh.archived = false
+           AND sh.mapel_id = ANY($2::bigint[])`,
+        [sheetIds, mapelIds]
       );
       if (sheets.rows.length !== sheetIds.length) {
         throw new ApiError('VALIDATION_ERROR', 'Sebagian lembar soal tidak ditemukan, diarsipkan, atau bukan mapel terpilih');
@@ -366,11 +405,12 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
     } else {
       const questions = await client.query(
         `SELECT id FROM questions
-         WHERE id = ANY($1::bigint[]) AND mapel_id = $2 AND status <> 'archived'`,
-        [questionIds, mapelId]
+         WHERE id = ANY($1::bigint[]) AND status = 'approved'
+           AND mapel_id = ANY($2::bigint[])`,
+        [questionIds, mapelIds]
       );
       if (questions.rows.length !== questionIds.length) {
-        throw new ApiError('VALIDATION_ERROR', 'Sebagian soal tidak ditemukan, diarsipkan, atau bukan mapel terpilih');
+        throw new ApiError('VALIDATION_ERROR', 'Sebagian soal tidak ditemukan, tidak approved, atau bukan mapel terpilih');
       }
     }
 
@@ -409,6 +449,12 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       throw new ApiError('VALIDATION_ERROR', 'slug tryout sudah digunakan');
     }
     await client.query('UPDATE tryout_sessions SET slug = $2 WHERE id = $1', [tryoutId, resolvedSlug]);
+    await client.query(
+      `INSERT INTO tryout_session_mapels (session_id, mapel_id)
+       SELECT $1, item FROM unnest($2::bigint[]) AS t(item)
+       ON CONFLICT (session_id, mapel_id) DO NOTHING`,
+      [tryoutId, mapelIds]
+    );
 
     if (hasSheets) {
       await client.query(

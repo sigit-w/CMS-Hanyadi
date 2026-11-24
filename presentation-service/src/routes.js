@@ -50,6 +50,35 @@ async function assertTryoutAssignment(auth, questionId) {
   }
 }
 
+async function resolvePresentationSession(auth, client = pool) {
+  const boundSessionId = auth.accountType === 'participant' ? auth.tryoutSessionId : null;
+  if (auth.accountType === 'participant' && !boundSessionId) {
+    throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+  }
+  const { rows } = await client.query(
+    `SELECT s.id, s.cbt_enabled, s.is_active,
+            EXISTS (SELECT 1 FROM tryout_session_participants p
+                    WHERE p.session_id = s.id) AS has_participants,
+            EXISTS (SELECT 1 FROM tryout_session_participants p
+                    WHERE p.session_id = s.id AND p.participant_id = $1) AS is_participant
+       FROM tryout_sessions s
+      WHERE ($2::bigint IS NOT NULL AND s.id = $2)
+         OR ($2::bigint IS NULL AND s.is_active)
+      ORDER BY s.id DESC
+      LIMIT 1`,
+    [assignmentOwnerId(auth), boundSessionId]
+  );
+  const session = rows[0];
+  if (!session) {
+    if (boundSessionId) throw new ApiError('FORBIDDEN', 'Tryout yang terikat tidak ditemukan', 403);
+    throw new ApiError('FORBIDDEN', 'Tidak ada sesi tryout aktif', 403);
+  }
+  if (session.has_participants && !session.is_participant) {
+    throw new ApiError('FORBIDDEN', 'Akun tidak terdaftar sebagai peserta tryout aktif', 403);
+  }
+  return session;
+}
+
 async function approvedQuestion(id, client = pool) {
   const { rows } = await client.query(
     `SELECT q.id, q.stem, q.image_url, q.question_type, q.difficulty,
@@ -259,6 +288,48 @@ function gradeDraft(question, draft) {
   };
 }
 
+function gradeSubmissionPayload(question, payload) {
+  if (question.question_type === 'true_false') {
+    const graded = gradeStatements(question.statements ?? [], payload?.answers);
+    if (!graded) throw new ApiError('VALIDATION_ERROR', 'Jawaban pernyataan tidak valid');
+    const statementGrades = graded.details;
+    const wrongExplanations = statementGrades
+      .map((detail) => {
+        const statement = (question.statements ?? []).find((item) => String(item.id) === String(detail.statement_id));
+        return detail.is_correct ? null : statement?.explanation;
+      })
+      .filter(Boolean);
+    return {
+      correct: graded.correct,
+      answerValue: JSON.stringify(statementGrades.map((detail) => ({
+        statement_id: detail.statement_id,
+        value: detail.value
+      }))),
+      explanation: wrongExplanations.length
+        ? wrongExplanations.join(' ')
+        : question.explanation ?? null,
+      statementGrades
+    };
+  }
+  const rawAnswer = payload?.answer;
+  const answers = (Array.isArray(rawAnswer) ? rawAnswer : String(rawAnswer ?? '').split(','))
+    .map((key) => String(key).trim().toUpperCase())
+    .filter(Boolean);
+  const answerText = String(payload?.answer_text ?? '').trim();
+  const correctKeys = question.correct_keys?.length
+    ? question.correct_keys
+    : (question.correct_option_key ? [question.correct_option_key] : []);
+  return {
+    correct: gradeAnswer(
+      { correct_keys: correctKeys, answer_text: question.answer_text },
+      { answer: answers, answer_text: answerText }
+    ),
+    answerValue: answers.length ? answers.join(',') : answerText || null,
+    explanation: question.explanation ?? null,
+    statementGrades: null
+  };
+}
+
 async function writeSubmission(client, ownerId, isParticipant, sessionId, questionId, graded) {
   const submitted = await client.query(
     `INSERT INTO tryout_submissions (${isParticipant ? 'participant_id' : 'user_id'},
@@ -417,6 +488,83 @@ router.get('/health', asyncHandler(async (req, res) => {
   });
 }));
 
+router.get('/api/v1/presentation/questions', requireTryoutSession(), asyncHandler(async (req, res) => {
+  const session = await resolvePresentationSession(req.auth);
+  const assigned = await sessionQuestions(session.id);
+  const questions = await Promise.all(assigned.map(async (row) => {
+    const questionId = Number(row.question_id);
+    const question = await approvedQuestion(questionId);
+    return {
+      id: questionId,
+      question_id: questionId,
+      stem: question.stem,
+      image_url: question.image_url,
+      question_type: question.question_type,
+      difficulty: question.difficulty,
+      options: await questionOptions(questionId),
+      statements: publicStatements(question)
+    };
+  }));
+  res.json({ ok: true, data: { questions }, meta: nowMeta() });
+}));
+
+router.post('/api/v1/presentation/attempts/submit-all', requireTryoutSession(), asyncHandler(async (req, res) => {
+  const rawAnswers = req.body?.answers;
+  if (!Array.isArray(rawAnswers) || rawAnswers.length > 200) {
+    throw new ApiError('VALIDATION_ERROR', 'answers wajib berupa array maksimal 200 entri');
+  }
+  const seen = new Set();
+  const answers = rawAnswers.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new ApiError('VALIDATION_ERROR', 'Setiap jawaban wajib berupa objek');
+    }
+    const questionId = parseId(entry.question_id);
+    if (seen.has(questionId)) {
+      throw new ApiError('VALIDATION_ERROR', 'question_id tidak boleh duplikat');
+    }
+    seen.add(questionId);
+    return { questionId, payload: entry };
+  });
+
+  const session = await resolvePresentationSession(req.auth);
+  if (session.cbt_enabled) {
+    throw new ApiError('CONFLICT', 'Submit-all tidak tersedia untuk sesi CBT; gunakan finalize attempt', 409);
+  }
+
+  const isParticipant = req.auth.accountType === 'participant';
+  const ownerId = assignmentOwnerId(req.auth);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const { questionId, payload } of answers) {
+      const assigned = await client.query(
+        'SELECT 1 FROM tryout_session_questions WHERE session_id = $1 AND question_id = $2',
+        [session.id, questionId]
+      );
+      if (!assigned.rowCount) {
+        throw new ApiError('FORBIDDEN', 'Soal tidak termasuk daftar tryout aktif', 403);
+      }
+      const question = await approvedQuestion(questionId, client);
+      await writeSubmission(
+        client, ownerId, isParticipant, session.id, questionId,
+        gradeSubmissionPayload(question, payload)
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  res.json({
+    ok: true,
+    data: { submitted_count: answers.length, submitted_at: new Date().toISOString() },
+    meta: nowMeta()
+  });
+}));
+
 router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
   await assertTryoutAssignment(req.auth, id);
@@ -444,41 +592,8 @@ router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(),
   await assertTryoutAssignment(req.auth, id);
   const question = await approvedQuestion(id);
 
-  let correct;
-  let answerValue;
-  let statementGrades = null;
-  let explanation = question.explanation ?? null;
-  if (question.question_type === 'true_false') {
-    const graded = gradeStatements(question.statements ?? [], req.body?.answers);
-    if (!graded) throw new ApiError('VALIDATION_ERROR', 'Jawaban pernyataan tidak valid');
-    statementGrades = graded.details;
-    correct = graded.correct;
-    answerValue = JSON.stringify(statementGrades.map((detail) => ({
-      statement_id: detail.statement_id,
-      value: detail.value
-    })));
-    const wrongExplanations = statementGrades
-      .map((detail) => {
-        const statement = (question.statements ?? []).find((item) => String(item.id) === String(detail.statement_id));
-        return detail.is_correct ? null : statement?.explanation;
-      })
-      .filter(Boolean);
-    if (wrongExplanations.length) explanation = wrongExplanations.join(' ');
-  } else {
-    const rawAnswer = req.body?.answer;
-    const answers = (Array.isArray(rawAnswer) ? rawAnswer : String(rawAnswer ?? '').split(','))
-      .map((key) => String(key).trim().toUpperCase())
-      .filter(Boolean);
-    const text = String(req.body?.answer_text ?? '').trim();
-    const correctKeys = question.correct_keys?.length
-      ? question.correct_keys
-      : (question.correct_option_key ? [question.correct_option_key] : []);
-    correct = gradeAnswer(
-      { correct_keys: correctKeys, answer_text: question.answer_text },
-      { answer: answers, answer_text: text }
-    );
-    answerValue = answers.length ? answers.join(',') : text || null;
-  }
+  const graded = gradeSubmissionPayload(question, req.body);
+  const { correct, answerValue, explanation, statementGrades } = graded;
 
   const isParticipant = req.auth.accountType === 'participant';
   let sessionId = isParticipant ? req.auth.tryoutSessionId : null;
@@ -615,7 +730,13 @@ router.post('/api/v1/presentation/cbt/attempt/violation', requireTryoutSession()
   }
   res.json({
     ok: true,
-    data: { violation_count: violationCount, status, limit: session.cbt_max_violations },
+    data: {
+      type: violationType,
+      violation_count: violationCount,
+      max_violations: session.cbt_max_violations,
+      status,
+      limit: session.cbt_max_violations
+    },
     meta: nowMeta()
   });
 }));
