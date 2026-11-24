@@ -194,6 +194,14 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -f /opt/virtual-office-bank-soal/db/migrations/025_tryout_slug_login_scope.sql
 ```
 
+Pernyataan Benar/Salah ganda pada satu soal (ADR-012; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/026_true_false_statements.sql
+```
+
 Kredensial tersimpan di
 
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
@@ -220,9 +228,11 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 
 - `question_options.is_correct` menandai semua opsi benar; `answer_keys.correct_option_id` menunjuk opsi benar pertama agar tetap kompatibel dengan kunci tunggal. QA memeriksa konsistensi ini di task `QA-04`.
 - Soal berstatus `approved` wajib memiliki kunci jawaban: `correct_option_id` terisi untuk pilihan ganda/multi-jawaban, atau `answer_text` untuk esai/short answer. Soal `multiple_answer` wajib memiliki minimal satu opsi benar.
+- Untuk `question_type='true_false'`, sumber konten/kunci adalah `question_statements`, bukan `question_options`/`answer_keys`. Satu soal wajib memiliki 1–5 pernyataan dengan `position` unik; semua pernyataan benar membuat soal bernilai benar (all-or-nothing). `questions.stem`/`image_url` tetap menjadi cerita atau konteks bersama.
+- `submission_statement_answers` menyimpan jawaban dan status benar/salah per pernyataan untuk audit laporan; skor rekap tetap satu baris `tryout_submissions` = satu soal.
 - Status kanonik soal adalah `approved`; `draft` dan `review` dihapus oleh migrasi `015`. Soal baru (manual/import) otomatis `approved`, dengan `rejected` dan `archived` sebagai status penunjang.
 - `question_version_readiness`, `questions.is_multi_version_ready`, `presentation_versions`, dan `question_presentation_variants` adalah data historis nonaktif (ADR-004). Endpoint readiness, versi, dan varian tidak lagi diekspos (404).
-- Endpoint penyajian (`bank-soal-presentation.service` `:8083`) membaca `questions` + `question_options` + `answer_keys`; hanya soal `approved` dan bukan `archived` yang tampil di tryout.
+- Endpoint penyajian (`bank-soal-presentation.service` `:8083`) membaca `questions` + `question_options` + `answer_keys`, atau `questions` + `question_statements` untuk `true_false`; hanya soal `approved` dan bukan `archived` yang tampil di tryout. `is_correct` pernyataan tidak pernah dikirim ke peserta.
 - `question_sources.storage_path` disimpan relatif terhadap direktori upload aplikasi, bukan path absolut.
 - `questions.image_url` dan `question_presentation_variants.image_url` menyimpan URL relatif `/api/v1/uploads/<nama_file>`; file fisik berada di `UPLOAD_DIR` (default direktori `uploads/` backend).
 - `tryout_submissions` menyimpan satu baris per `(user_id, question_id, version)` dan memiliki `session_id` ke `tryout_sessions`; kolom `version` tetap diisi konstan `'v1'` secara internal untuk kompatibilitas histori (ADR-004). Skor rekap dihitung dari tabel ini, bukan dari state browser. Endpoint penyajian tidak mengirim `correct_key`, `correct_keys`, `answer_text`, `is_correct`, `correct`, atau `explanation` ke peserta.
@@ -240,7 +250,7 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - Permission `question_sheets.manage` mengontrol create/edit/archive lembar soal dan picker soal. Sejak Fase 6o (ADR-007), field `used_by_tryout` pada `GET /question-sheets` dihitung dari tabel `tryout_session_sheets`; lembar yang sudah dipakai tryout ditandai `true` (menggantikan pengecekan sementara `false` di ADR-005).
 - `program_belajar` menyimpan nama program, kelas 1–12, deskripsi, dan biaya; `program_belajar_schedules` menyimpan satu atau lebih jadwal per program (hari, jam mulai, jam selesai) dengan jam selesai wajib setelah jam mulai. Permission `program_belajar.manage` mengontrol CRUD halaman Kelola Program Belajar.
 - `siswa.program_belajar_id` dan `prospektus.program_belajar_id` menghubungkan peserta ke program belajar (`ON DELETE SET NULL`). `wa_orang_tua` maksimal 20 karakter dengan format opsional `+`, angka, spasi, atau tanda hubung; baris lama boleh NULL sampai diubah lewat UI.
-- View `v_question_catalog` dipakai frontend untuk daftar soal dan QA untuk audit cepat.
+- View `v_question_catalog` dipakai frontend untuk daftar soal dan QA untuk audit cepat; sejak `026` menyertakan `statement_count` dan `correct_statement_count`.
 
 ## Perubahan Schema
 

@@ -78,6 +78,10 @@ button,input,textarea { font: inherit; }
 }
 .option:hover { background: hsl(var(--accent)); }
 .option input { margin-top: 2px; accent-color: hsl(var(--primary)); }
+.statement-group { display: block; cursor: default; }
+.statement-group legend { padding: 0 2px 8px; font-weight: 500; line-height: 1.5; }
+.statement-option { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; cursor: pointer; font-size: 13px; color: hsl(var(--muted-foreground)); }
+.statement-option input { accent-color: hsl(var(--primary)); }
 textarea { width: 100%; resize: vertical; min-height: 110px; }
 
 button, .btn {

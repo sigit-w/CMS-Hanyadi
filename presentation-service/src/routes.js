@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool, databaseIsUp } from './db.js';
 import { ApiError, asyncHandler, parseId } from './errors.js';
 import { requireTryoutSession } from './auth.js';
-import { gradeAnswer } from './grading.js';
+import { gradeAnswer, gradeStatements } from './grading.js';
 
 export const router = Router();
 
@@ -54,9 +54,16 @@ async function approvedQuestion(id) {
     `SELECT q.id, q.stem, q.image_url, q.question_type, q.difficulty,
             ak.answer_text, ak.explanation,
             (SELECT o.option_key FROM question_options o WHERE o.id = ak.correct_option_id) AS correct_option_key,
-            (SELECT coalesce(jsonb_agg(o.option_key ORDER BY o.position) FILTER (WHERE o.is_correct), '[]'::jsonb)
-             FROM question_options o WHERE o.question_id = q.id) AS correct_keys
-     FROM questions q
+             (SELECT coalesce(jsonb_agg(o.option_key ORDER BY o.position) FILTER (WHERE o.is_correct), '[]'::jsonb)
+              FROM question_options o WHERE o.question_id = q.id) AS correct_keys,
+             (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'id', s.id, 'position', s.position,
+                'statement_text', s.statement_text,
+                'is_correct', s.is_correct, 'explanation', s.explanation
+              ) ORDER BY s.position), '[]'::jsonb)
+              FROM question_statements s WHERE s.question_id = q.id) AS statements
+      FROM questions q
+
      LEFT JOIN answer_keys ak ON ak.question_id = q.id
      WHERE q.id = $1 AND q.status = 'approved'`,
     [id]
@@ -71,6 +78,15 @@ async function questionOptions(id) {
     [id]
   );
   return rows.map((option) => ({ key: option.option_key, content: option.content }));
+}
+
+function publicStatements(question) {
+  if (question.question_type !== 'true_false') return [];
+  return (question.statements ?? []).map((statement) => ({
+    id: statement.id,
+    position: statement.position,
+    text: statement.statement_text
+  }));
 }
 
 router.get('/health', asyncHandler(async (req, res) => {
@@ -98,6 +114,7 @@ router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHa
       question_type: question.question_type,
       difficulty: question.difficulty,
       options,
+      statements: publicStatements(question),
       rendered_at: new Date().toISOString()
     },
     meta: nowMeta()
@@ -109,19 +126,41 @@ router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(),
   await assertTryoutAssignment(req.auth, id);
   const question = await approvedQuestion(id);
 
-  const rawAnswer = req.body?.answer;
-  const answers = (Array.isArray(rawAnswer) ? rawAnswer : String(rawAnswer ?? '').split(','))
-    .map((key) => String(key).trim().toUpperCase())
-    .filter(Boolean);
-  const text = String(req.body?.answer_text ?? '').trim();
-  const correctKeys = question.correct_keys?.length
-    ? question.correct_keys
-    : (question.correct_option_key ? [question.correct_option_key] : []);
-  const correct = gradeAnswer(
-    { correct_keys: correctKeys, answer_text: question.answer_text },
-    { answer: answers, answer_text: text }
-  );
-  const answerValue = answers.length ? answers.join(',') : text || null;
+  let correct;
+  let answerValue;
+  let statementGrades = null;
+  let explanation = question.explanation ?? null;
+  if (question.question_type === 'true_false') {
+    const graded = gradeStatements(question.statements ?? [], req.body?.answers);
+    if (!graded) throw new ApiError('VALIDATION_ERROR', 'Jawaban pernyataan tidak valid');
+    statementGrades = graded.details;
+    correct = graded.correct;
+    answerValue = JSON.stringify(statementGrades.map((detail) => ({
+      statement_id: detail.statement_id,
+      value: detail.value
+    })));
+    const wrongExplanations = statementGrades
+      .map((detail) => {
+        const statement = (question.statements ?? []).find((item) => String(item.id) === String(detail.statement_id));
+        return detail.is_correct ? null : statement?.explanation;
+      })
+      .filter(Boolean);
+    if (wrongExplanations.length) explanation = wrongExplanations.join(' ');
+  } else {
+    const rawAnswer = req.body?.answer;
+    const answers = (Array.isArray(rawAnswer) ? rawAnswer : String(rawAnswer ?? '').split(','))
+      .map((key) => String(key).trim().toUpperCase())
+      .filter(Boolean);
+    const text = String(req.body?.answer_text ?? '').trim();
+    const correctKeys = question.correct_keys?.length
+      ? question.correct_keys
+      : (question.correct_option_key ? [question.correct_option_key] : []);
+    correct = gradeAnswer(
+      { correct_keys: correctKeys, answer_text: question.answer_text },
+      { answer: answers, answer_text: text }
+    );
+    answerValue = answers.length ? answers.join(',') : text || null;
+  }
 
   const isParticipant = req.auth.accountType === 'participant';
   let sessionId = isParticipant ? req.auth.tryoutSessionId : null;
@@ -144,9 +183,20 @@ router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(),
        explanation = EXCLUDED.explanation,
        updated_at = now()
      RETURNING id, question_id, updated_at`,
-    [assignmentOwnerId(req.auth), id, sessionId, SUBMISSION_VERSION, answerValue, correct,
-      question.explanation ?? null]
+    [assignmentOwnerId(req.auth), id, sessionId, SUBMISSION_VERSION, answerValue, correct, explanation]
   );
+
+  if (statementGrades) {
+    const submissionId = submitted.rows[0].id;
+    await pool.query('DELETE FROM submission_statement_answers WHERE submission_id = $1', [submissionId]);
+    for (const detail of statementGrades) {
+      await pool.query(
+        `INSERT INTO submission_statement_answers (submission_id, statement_id, answer, is_correct)
+         VALUES ($1, $2, $3, $4)`,
+        [submissionId, detail.statement_id, detail.value, detail.is_correct]
+      );
+    }
+  }
 
   res.json({
     ok: true,

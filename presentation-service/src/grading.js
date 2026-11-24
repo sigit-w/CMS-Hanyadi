@@ -7,6 +7,34 @@ function normalizeKeys(value) {
   return raw.map((key) => String(key).trim().toUpperCase()).filter(Boolean);
 }
 
+export function gradeStatements(statements, answers) {
+  if (!Array.isArray(statements) || !Array.isArray(answers)) return null;
+  const byId = new Map(statements.map((statement) => [String(statement.id), statement]));
+  const seen = new Set();
+  const details = [];
+  for (const answer of answers) {
+    const id = String(answer?.statement_id ?? answer?.id ?? '');
+    const statement = byId.get(id);
+    if (!statement || seen.has(id)) return null;
+    seen.add(id);
+    const raw = answer.value;
+    let value;
+    if (typeof raw === 'boolean') value = raw;
+    else if (typeof raw === 'string' && ['true', 'false'].includes(raw.toLowerCase())) value = raw.toLowerCase() === 'true';
+    else return null;
+    details.push({
+      statement_id: statement.id,
+      value,
+      is_correct: value === statement.is_correct
+    });
+  }
+  if (details.length !== statements.length) return null;
+  return {
+    correct: details.every((detail) => detail.is_correct),
+    details
+  };
+}
+
 export function gradeAnswer(variant, payload) {
   const expectedKeys = normalizeKeys(variant?.correct_keys);
   const submittedKeys = normalizeKeys(payload?.answer);

@@ -15,6 +15,11 @@ export async function insertQuestion(client, data, sourceId = null, imageUrl = n
   );
   const question = rows[0];
 
+  if (data.question_type === 'true_false') {
+    await replaceStatements(client, question.id, data.statements);
+    return question;
+  }
+
   for (const option of data.options) {
     await client.query(
       `INSERT INTO question_options (question_id, option_key, content, is_correct, position)
@@ -48,12 +53,45 @@ export async function insertQuestion(client, data, sourceId = null, imageUrl = n
   return question;
 }
 
+export async function replaceStatements(client, questionId, statements) {
+  await client.query('DELETE FROM question_statements WHERE question_id = $1', [questionId]);
+  for (const statement of statements) {
+    await client.query(
+      `INSERT INTO question_statements (question_id, position, statement_text, is_correct, explanation)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [questionId, statement.position, statement.text, statement.is_correct, statement.explanation ?? null]
+    );
+  }
+}
+
+export async function fetchStatements(client, questionId, includeCorrect = false) {
+  const run = typeof client === 'function'
+    ? client
+    : (sql, params) => client.query(sql, params);
+  const { rows } = await run(
+    `SELECT id, position, statement_text, is_correct, explanation
+     FROM question_statements WHERE question_id = $1 ORDER BY position`,
+    [questionId]
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    position: row.position,
+    text: row.statement_text,
+    ...(includeCorrect
+      ? { is_correct: row.is_correct, explanation: row.explanation }
+      : {})
+  }));
+}
+
 export const QUESTION_SELECT = `
   SELECT q.id, q.stem, q.image_url, q.question_type, q.difficulty, q.status,
          m.code AS mapel_code, m.name AS mapel_name,
          st.code AS source_type, qs.label AS source_label,
          (ak.id IS NOT NULL) AS has_answer_key,
          (SELECT count(*) FROM question_options o WHERE o.question_id = q.id) AS option_count,
+         (SELECT count(*) FROM question_statements s WHERE s.question_id = q.id) AS statement_count,
+         (SELECT count(*) FROM question_statements s
+           WHERE s.question_id = q.id AND s.is_correct) AS correct_statement_count,
          q.created_at, q.updated_at
   FROM questions q
   JOIN mapels m ON m.id = q.mapel_id

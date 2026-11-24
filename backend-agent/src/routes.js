@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { query, withTransaction } from './db.js';
 import { config } from './config.js';
 import { ApiError, asyncHandler } from './errors.js';
-import { insertQuestion, QUESTION_SELECT } from './questions.js';
+import { insertQuestion, replaceStatements, fetchStatements, QUESTION_SELECT } from './questions.js';
 import { parseQuestions } from './importer.js';
 import {
   validateQuestionCreate,
@@ -221,11 +221,12 @@ router.get('/questions/:id', authorize('questions.read'), asyncHandler(async (re
   if (!rows[0]) throw new ApiError('NOT_FOUND', 'Soal tidak ditemukan', 404);
   const question = (await attachQuestionSheets(rows))[0];
 
-  const [options, answerKey] = await Promise.all([
+  const [options, answerKey, statements] = await Promise.all([
     query(`SELECT id, option_key, content, is_correct, position
            FROM question_options WHERE question_id = $1 ORDER BY position`, [id]),
     query(`SELECT id, correct_option_id, answer_text, explanation
-           FROM answer_keys WHERE question_id = $1`, [id])
+           FROM answer_keys WHERE question_id = $1`, [id]),
+    fetchStatements(query, id, true)
   ]);
 
   res.json({
@@ -233,6 +234,7 @@ router.get('/questions/:id', authorize('questions.read'), asyncHandler(async (re
     data: {
       ...question,
       options: options.rows,
+      statements,
       answer_key: answerKey.rows[0] ?? null
     },
     meta: nowMeta()
@@ -308,6 +310,15 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
             );
           }
         }
+      }
+
+      const effectiveQuestionType = changes.question_type ?? current.question_type;
+      if (effectiveQuestionType === 'true_false') {
+        if (changes.statements !== undefined) {
+          await replaceStatements(client, id, changes.statements);
+        }
+      } else if (current.question_type === 'true_false') {
+        await client.query('DELETE FROM question_statements WHERE question_id = $1', [id]);
       }
 
       if (changes.options !== undefined || changes.correct_keys !== undefined
@@ -405,8 +416,11 @@ router.put('/questions/:id/answer-key', authorize('questions.review'), asyncHand
     );
     if (!found.rows[0]) throw new ApiError('NOT_FOUND', 'Soal tidak ditemukan', 404);
     const questionType = found.rows[0].question_type;
+    if (questionType === 'true_false') {
+      throw new ApiError('VALIDATION_ERROR', 'Kunci soal Benar/Salah diubah lewat field statements pada endpoint questions');
+    }
     if (data.correct_keys.length) {
-      if ((questionType === 'multiple_choice' || questionType === 'true_false') && data.correct_keys.length !== 1) {
+      if (questionType === 'multiple_choice' && data.correct_keys.length !== 1) {
         throw new ApiError('VALIDATION_ERROR', 'Harus tepat satu opsi yang benar');
       }
     }

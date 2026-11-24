@@ -298,8 +298,8 @@ test('U-09 aturan login halaman tryout diperbarui', () => {
   const js = readFileSync(TRYOUT_JS, 'utf8');
   assert.match(html, /Nama atau Email peserta/);
   assert.match(html, /Password atau PIN/);
-  assert.match(html, /styles\.css\?v=12/);
-  assert.match(html, /app\.js\?v=13/);
+  assert.match(html, /styles\.css\?v=13/);
+  assert.match(html, /app\.js\?v=14/);
   assert.doesNotMatch(html, /type="email"/);
   assert.match(js, /Nama\/email atau PIN\/password salah/);
   assert.match(js, /username: elements\.loginUsername\.value/);

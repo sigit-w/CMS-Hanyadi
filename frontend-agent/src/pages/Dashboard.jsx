@@ -23,7 +23,11 @@ const QUESTION_TYPE_LABELS = {
 };
 const INITIAL_FILTERS = { mapel: '', status: 'approved', search: '', question_type: '' };
 const PAGE_SIZE = 20;
-const CHOICE_TYPES = ['multiple_choice', 'true_false', 'multiple_answer'];
+const CHOICE_TYPES = ['multiple_choice', 'multiple_answer'];
+const DEFAULT_STATEMENTS = [
+  { text: '', is_correct: true },
+  { text: '', is_correct: false }
+];
 
 function defaultOptions() {
   return ['A', 'B', 'C', 'D'].map((key) => ({ key, content: '', is_correct: key === 'A' }));
@@ -42,6 +46,10 @@ function toEditForm(question) {
     question_type: question.question_type ?? 'multiple_choice',
     difficulty: question.difficulty ?? 'medium',
     options: options.length ? options : defaultOptions(),
+    statements: (question.statements ?? []).map((statement) => ({
+      text: statement.text ?? statement.statement_text ?? '',
+      is_correct: Boolean(statement.is_correct)
+    })),
     correct_keys: correctKeys,
     correct_key: correctKeys[0] ?? 'A',
     answer_text: question.answer_key?.answer_text ?? '',
@@ -180,10 +188,14 @@ export default function Dashboard({ can, refreshKey = 0 }) {
     setEditForm((current) => {
       const isChoice = CHOICE_TYPES.includes(questionType);
       const keys = isChoice ? (current.correct_keys.length ? current.correct_keys : ['A']) : [];
+      const statements = questionType === 'true_false' && current.statements.length === 0
+        ? DEFAULT_STATEMENTS.map((statement) => ({ ...statement }))
+        : current.statements;
       return {
         ...current,
         question_type: questionType,
         options: isChoice ? (current.options.length ? current.options : defaultOptions()) : [],
+        statements,
         correct_keys: keys,
         correct_key: keys[0] ?? null
       };
@@ -208,8 +220,16 @@ export default function Dashboard({ can, refreshKey = 0 }) {
     setEditError(''); setDetailNotice(''); setEditSaving(true);
     try {
       const isChoice = CHOICE_TYPES.includes(editForm.question_type);
+      const isTrueFalse = editForm.question_type === 'true_false';
       let options = [];
       let correctKeys = [];
+      let statements = [];
+      if (isTrueFalse) {
+        statements = editForm.statements.map((statement) => ({ text: statement.text.trim(), is_correct: Boolean(statement.is_correct) }));
+        if (statements.length < 1 || statements.length > 5) { setEditError('Jumlah pernyataan harus 1–5'); return; }
+        if (statements.some((statement) => !statement.text)) { setEditError('Isi seluruh teks pernyataan'); return; }
+        if (!statements.some((statement) => statement.is_correct)) { setEditError('Pilih minimal satu pernyataan yang benar'); return; }
+      }
       if (isChoice) {
         options = editForm.options.filter((option) => option.content.trim());
         if (options.length < 2) { setEditError('Isi minimal dua opsi jawaban'); return; }
@@ -229,8 +249,9 @@ export default function Dashboard({ can, refreshKey = 0 }) {
         options: isChoice
           ? options.map((option) => ({ key: option.key, content: option.content, is_correct: correctKeys.includes(option.key) }))
           : [],
+        statements,
         correct_keys: correctKeys,
-        answer_text: isChoice ? null : editForm.answer_text || null,
+        answer_text: isChoice || isTrueFalse ? null : editForm.answer_text || null,
         explanation: editForm.explanation || null
       }, editImage);
       const data = await getQuestion(detail.id);
@@ -260,6 +281,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(Math.max(page, 1), totalPages);
   const editIsChoice = editForm ? CHOICE_TYPES.includes(editForm.question_type) : false;
+  const editIsTrueFalse = editForm?.question_type === 'true_false';
   const editIsMultiple = editForm?.question_type === 'multiple_answer';
 
   return (
@@ -502,7 +524,54 @@ export default function Dashboard({ can, refreshKey = 0 }) {
                 ))}
               </div>
             )}
-            {!editIsChoice && (
+            {editIsTrueFalse && (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold">Pernyataan Benar/Salah</Label>
+                  <span className="text-xs text-muted-foreground">{editForm.statements.length}/5 pernyataan</span>
+                </div>
+                {editForm.statements.map((statement, index) => (
+                  <div className="space-y-2 rounded-md border p-3" key={index}>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Pernyataan {index + 1}</Label>
+                      <Button type="button" variant="ghost" size="sm"
+                        disabled={editForm.statements.length <= 1}
+                        onClick={() => updateEditForm({
+                          statements: editForm.statements.filter((_, i) => i !== index)
+                        })}>Hapus</Button>
+                    </div>
+                    <Textarea rows="2" value={statement.text}
+                      onChange={(event) => updateEditForm({
+                        statements: editForm.statements.map((item, i) => i === index ? { ...item, text: event.target.value } : item)
+                      })} />
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name={`edit-statement-${index}`} className="accent-primary"
+                          checked={statement.is_correct}
+                          onChange={() => updateEditForm({
+                            statements: editForm.statements.map((item, i) => i === index ? { ...item, is_correct: true } : item)
+                          })} />Benar
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name={`edit-statement-${index}`} className="accent-primary"
+                          checked={!statement.is_correct}
+                          onChange={() => updateEditForm({
+                            statements: editForm.statements.map((item, i) => i === index ? { ...item, is_correct: false } : item)
+                          })} />Salah
+                      </label>
+                    </div>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm"
+                  disabled={editForm.statements.length >= 5}
+                  onClick={() => updateEditForm({
+                    statements: editForm.statements.length >= 5
+                      ? editForm.statements
+                      : [...editForm.statements, { text: '', is_correct: true }]
+                  })}>Tambah Pernyataan</Button>
+              </div>
+            )}
+            {!editIsChoice && !editIsTrueFalse && (
               <div className="space-y-2"><Label>Kunci / Jawaban Teks</Label>
                 <Textarea rows="2" value={editForm.answer_text}
                   onChange={(event) => updateEditForm({ answer_text: event.target.value })} />

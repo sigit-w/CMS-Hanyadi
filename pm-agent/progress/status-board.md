@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) final 2026-11-24 dengan `REL-15` **GO** setelah regresi penuh 169/169. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Fase 6q (Kelola Peserta dari Daftar Tryout) final 2026-11-24 dengan `REL-19` **GO**, regresi 155/155, bundle `index-D0au7v9d.js`. Fase 6r (Perubahan flow tryout: siswa/prospektus & kredensial) final 2026-11-24 dengan `REL-20` **GO**; regresi 162/162, migrasi `024` terpasang, bundle `index-B10Efnkg.js`. Fase 6s (tryout-scoped login & pemisahan peserta) final 2026-11-24 dengan `REL-21` **GO**; regresi 169/169, migrasi `025` terpasang, bundle `index-CwovVZBt.js`. **Fase 6 ditutup 2026-11-24** dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, dan commit `45b8daa`. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, `pm-agent/tasks/phase6r-backlog.md`, `pm-agent/tasks/phase6s-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) final 2026-11-24 dengan `REL-15` **GO** setelah regresi penuh 169/169. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Fase 6q (Kelola Peserta dari Daftar Tryout) final 2026-11-24 dengan `REL-19` **GO**, regresi 155/155, bundle `index-D0au7v9d.js`. Fase 6r (Perubahan flow tryout: siswa/prospektus & kredensial) final 2026-11-24 dengan `REL-20` **GO**; regresi 162/162, migrasi `024` terpasang, bundle `index-B10Efnkg.js`. Fase 6s (tryout-scoped login & pemisahan peserta) final 2026-11-24 dengan `REL-21` **GO**; regresi 169/169, migrasi `025` terpasang, bundle `index-CwovVZBt.js`. **Fase 6 ditutup 2026-11-24** dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, implementasi di commit `45b8daa`, dan penutup di commit `d3a7918`. Fitur True-False Multi-Pernyataan dikerjakan setelah penutup Fase 6 sebagai task PM-22 dengan gate `REL-22` dan regresi 174/174. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, `pm-agent/tasks/phase6r-backlog.md`, `pm-agent/tasks/phase6s-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -346,4 +346,19 @@ Fase 6 dinyatakan selesai. Seluruh sub-fase 6i–6s telah final dan seluruh gate
 | Gate | `REL-01…REL-21` **GO**, tidak ada gate partial |
 | Deploy | Migrasi `025` terpasang; CMS `index-CwovVZBt.js`/`index-D_wAgUtB.css`; tryout `styles.css?v=12`/`app.js?v=13`; health API, presentation, CMS, tryout 200 |
 | Dokumen | ADR-001…ADR-011, backlog Fase 6/6j/6n/6o/6p/6r/6s, QA report & release gate, status board, dan laporan sistem tersinkron |
-| VCS | Implementasi Fase 6s di commit `45b8daa`; penutup Fase 6 dicatat di commit terpisah |
+| VCS | Implementasi Fase 6s di commit `45b8daa`; penutup Fase 6 dicatat di commit `d3a7918` |
+
+## True-False Multi-Pernyataan — 2026-11-24
+
+Permintaan pemilik: tipe `true_false` existing dapat memuat beberapa pernyataan Benar/Salah per soal; soal benar hanya bila semua pernyataan benar; admin melihat hasil per butir; maksimal 5 pernyataan. Analisis dan keputusan ada di `pm-agent/decisions/ADR-012-true-false-multi-pernyataan.md`; requirement, breakdown, dan AC ada di `pm-agent/tasks/true-false-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-22 | PM | P0 | done | - | ADR-012 accepted; backlog + handoff TF-01 diterbitkan |
+| BE-37 | Backend | P0 | done | ADR-012 | Migrasi `026`, owner `bank_soal_user`, validasi `statements`, get/update questions, answer-key guard, laporan `statement_details`, OpenAPI/DB doc |
+| PRES-04 | Presentation | P0 | done | BE-37 | `gradeStatements`, payload peserta tanpa kunci, detail submission per butir |
+| FE-34 | Frontend | P0 | done | BE-37 (kontrak) | Repeater pernyataan di Buat Soal & Detail/Edit Soal |
+| TRY-16 | Tryout | P0 | done | BE-37, PRES-04 | Radio Benar/Salah per pernyataan, submit `answers`, aset `styles.css?v=13`/`app.js?v=14` |
+| QA-34 | QA | P0 | done | BE-37, FE-34, TRY-16, PRES-04 | TF-01…TF-05 lolos; regresi 174/174, 0 P0/P1; `true-false-report.md` |
+| DOC-06TF | PM/Docs | P1 | done | QA-34 | ADR-012, backlog, handoff, status board, laporan sistem, release gate |
+| REL-22 | PM | P0 | done | QA-34, DOC-06TF | **GO** 2026-11-24; migrasi/health/aset terverifikasi; commit & push ke `origin/main` |

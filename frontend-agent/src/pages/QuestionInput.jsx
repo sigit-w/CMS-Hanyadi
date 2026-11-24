@@ -9,10 +9,15 @@ import { Alert } from '@/components/ui/alert';
 import { SelectNative } from '@/components/ui/select-native';
 import { Separator } from '@/components/ui/separator';
 
-const CHOICE_TYPES = ['multiple_choice', 'true_false', 'multiple_answer'];
+const CHOICE_TYPES = ['multiple_choice', 'multiple_answer'];
+const DEFAULT_STATEMENTS = [
+  { text: '', is_correct: true },
+  { text: '', is_correct: false }
+];
 const EMPTY_FORM = {
   stem: '', mapel: 'MTKA', question_type: 'multiple_choice', difficulty: 'medium',
   options: [{ key: 'A', content: '' }, { key: 'B', content: '' }, { key: 'C', content: '' }, { key: 'D', content: '' }],
+  statements: DEFAULT_STATEMENTS.map((statement) => ({ ...statement })),
   correct_keys: ['A'], correct_key: 'A', answer_text: '', explanation: ''
 };
 const MAPEL_LABELS = { MTKA: 'Matematika', BIND: 'Bahasa Indonesia', IPAS: 'IPAS' };
@@ -39,7 +44,17 @@ export default function QuestionInput({ onCreated }) {
 
   const updateForm = (patch) => setForm((p) => ({ ...p, ...patch }));
   const updateOption = (index, content) => setForm((p) => ({ ...p, options: p.options.map((o, i) => i === index ? { ...o, content } : o) }));
+  const updateStatement = (index, patch) => setForm((p) => ({
+    ...p, statements: p.statements.map((s, i) => i === index ? { ...s, ...patch } : s)
+  }));
+  const addStatement = () => setForm((p) => p.statements.length >= 5
+    ? p
+    : { ...p, statements: [...p.statements, { text: '', is_correct: true }] });
+  const removeStatement = (index) => setForm((p) => p.statements.length <= 1
+    ? p
+    : { ...p, statements: p.statements.filter((_, i) => i !== index) });
   const isMultipleAnswer = form.question_type === 'multiple_answer';
+  const isTrueFalse = form.question_type === 'true_false';
   const withOptions = CHOICE_TYPES.includes(form.question_type);
 
   function handleTypeChange(questionType) {
@@ -48,7 +63,10 @@ export default function QuestionInput({ onCreated }) {
       const nextKeys = questionType === 'multiple_answer'
         ? [...new Set([...current, ...p.options.map((option) => option.key)])].slice(0, 1)
         : current.slice(0, 1);
-      return { ...p, question_type: questionType, correct_keys: nextKeys, correct_key: nextKeys[0] ?? null };
+      const statements = questionType === 'true_false' && p.statements.length === 0
+        ? DEFAULT_STATEMENTS.map((statement) => ({ ...statement }))
+        : p.statements;
+      return { ...p, question_type: questionType, statements, correct_keys: nextKeys, correct_key: nextKeys[0] ?? null };
     });
   }
 
@@ -68,7 +86,13 @@ export default function QuestionInput({ onCreated }) {
     event.preventDefault(); setError(''); setNotice('');
     try {
       if (!form.stem.trim() && !imageFile) { setError('Isi teks pertanyaan atau unggah gambar soal'); return; }
-      let options = []; let correctKeys = [];
+      let options = []; let correctKeys = []; let statements = [];
+      if (isTrueFalse) {
+        statements = form.statements.map((s) => ({ text: s.text.trim(), is_correct: Boolean(s.is_correct) }));
+        if (statements.length < 1 || statements.length > 5) { setError('Jumlah pernyataan harus 1–5'); return; }
+        if (statements.some((s) => !s.text)) { setError('Isi seluruh teks pernyataan'); return; }
+        if (!statements.some((s) => s.is_correct)) { setError('Pilih minimal satu pernyataan yang benar'); return; }
+      }
       if (withOptions) {
         options = form.options.filter((o) => o.content.trim());
         if (options.length < 2) { setError('Isi minimal dua opsi jawaban'); return; }
@@ -83,8 +107,10 @@ export default function QuestionInput({ onCreated }) {
       await createQuestion({
         stem: form.stem, mapel: form.mapel, question_type: form.question_type, difficulty: form.difficulty,
         options: withOptions ? options.map((o) => ({ key: o.key, content: o.content, is_correct: correctKeys.includes(o.key) })) : [],
+        statements,
         correct_keys: correctKeys, correct_key: correctKeys[0] ?? null,
-        answer_text: form.answer_text || null, explanation: form.explanation || null
+        answer_text: isTrueFalse || withOptions ? null : (form.answer_text || null),
+        explanation: form.explanation || null
       }, imageFile);
       event.target.reset(); setForm(EMPTY_FORM); setImageFile(null);
       onCreated?.();
@@ -172,7 +198,38 @@ export default function QuestionInput({ onCreated }) {
                 </div>
               )}
 
-              {!withOptions && (
+              {isTrueFalse && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold">Pernyataan Benar/Salah</Label>
+                    <span className="text-xs text-muted-foreground">{form.statements.length}/5 pernyataan</span>
+                  </div>
+                  {form.statements.map((statement, index) => (
+                    <div className="space-y-2 rounded-md border p-3" key={index}>
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>Pernyataan {index + 1}</Label>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeStatement(index)} disabled={form.statements.length <= 1}>Hapus</Button>
+                      </div>
+                      <Textarea rows="2" value={statement.text} placeholder="Contoh: Dari cerita tersebut, apakah tindakannya baik?"
+                        onChange={(e) => updateStatement(index, { text: e.target.value })} />
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="radio" name={`statement-${index}`} className="accent-primary"
+                            checked={statement.is_correct} onChange={() => updateStatement(index, { is_correct: true })} />Benar
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="radio" name={`statement-${index}`} className="accent-primary"
+                            checked={!statement.is_correct} onChange={() => updateStatement(index, { is_correct: false })} />Salah
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={addStatement} disabled={form.statements.length >= 5}>Tambah Pernyataan</Button>
+                  <p className="text-xs text-muted-foreground">Cerita/ringkasan ditulis di kolom Pertanyaan. Soal benar bila semua pernyataan benar.</p>
+                </div>
+              )}
+
+              {!withOptions && !isTrueFalse && (
                 <div className="space-y-2"><Label>Kunci / Jawaban Teks</Label>
                   <Textarea required rows="2" value={form.answer_text} onChange={(e) => updateForm({ answer_text: e.target.value })} /></div>
               )}

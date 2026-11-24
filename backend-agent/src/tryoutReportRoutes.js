@@ -125,13 +125,31 @@ tryoutReportRouter.get('/reports/tryout', authorize('tryout_reports.read'), asyn
             m.name AS mapel, q.id AS question_id,
            q.stem AS question, q.image_url,
            ts.answer AS user_answer,
+             coalesce(
+               nullif((SELECT string_agg(o.option_key, ',' ORDER BY o.position)
+                       FROM question_options o
+                       WHERE o.question_id = q.id AND o.is_correct), ''),
+               nullif((SELECT string_agg(s.statement_text, '; ' ORDER BY s.position)
+                       FROM question_statements s
+                       WHERE s.question_id = q.id AND s.is_correct), ''),
+               ak.answer_text
+             ) AS correct_answer,
             coalesce(
-              nullif((SELECT string_agg(o.option_key, ',' ORDER BY o.position)
-                      FROM question_options o
-                      WHERE o.question_id = q.id AND o.is_correct), ''),
-              ak.answer_text
-            ) AS correct_answer,
-           coalesce(ts.explanation, ak.explanation) AS explanation,
+              (SELECT jsonb_agg(jsonb_build_object(
+                 'statement_id', ssa.statement_id,
+                 'statement', s.statement_text,
+                 'position', s.position,
+                 'user_answer', ssa.answer,
+                 'correct_answer', s.is_correct,
+                 'is_correct', ssa.is_correct
+               ) ORDER BY s.position)
+               FROM submission_statement_answers ssa
+               JOIN question_statements s ON s.id = ssa.statement_id
+               WHERE ssa.submission_id = ts.id),
+              '[]'::jsonb
+            ) AS statement_details,
+            coalesce(ts.explanation, ak.explanation) AS explanation,
+
            ts.is_correct, ts.updated_at AS graded_at
     FROM tryout_submissions ts
     JOIN tryout_sessions s ON s.id = ts.session_id

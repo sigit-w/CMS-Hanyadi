@@ -627,6 +627,12 @@ paths:
                 mapel: { type: string, pattern: '^[A-Z0-9]{4}$' }
                 question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
                 difficulty: { type: string, enum: [easy, medium, hard], default: medium }
+                statements:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: { $ref: '#/components/schemas/TrueFalseStatement' }
+                  description: 'Wajib untuk true_false; stem/image_url menjadi cerita bersama'
                 options:
                   type: array
                   maxItems: 6
@@ -673,6 +679,12 @@ paths:
                 mapel: { type: string }
                 question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
                 difficulty: { type: string, enum: [easy, medium, hard] }
+                statements:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items: { $ref: '#/components/schemas/TrueFalseStatement' }
+                  description: 'Hanya untuk true_false; menggantikan seluruh pernyataan lama'
                 options:
                   type: array
                   items:
@@ -703,7 +715,7 @@ paths:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     put:
-      summary: Upsert kunci jawaban (correct_keys untuk multi-jawaban; correct_key untuk kompatibilitas lama)
+      summary: Upsert kunci jawaban (correct_keys untuk multi-jawaban; tidak dipakai untuk true_false yang memakai statements)
       requestBody:
         required: true
         content:
@@ -781,6 +793,13 @@ components:
       type: string
       enum: [approved, rejected, archived]
       description: approved adalah status publish; draft dan review tidak digunakan
+    TrueFalseStatement:
+      type: object
+      required: [text, is_correct]
+      properties:
+        text: { type: string, maxLength: 1000 }
+        is_correct: { type: boolean }
+        explanation: { type: string, nullable: true }
     QuestionSheetWrite:
       type: object
       required: [name, mapel_code, duration_minutes, question_ids]

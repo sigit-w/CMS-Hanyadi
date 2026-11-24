@@ -40,6 +40,8 @@ Fase 6s (ADR-011): `POST /api/v1/auth/login` untuk Siswa/Peserta Umum wajib meng
 
 `question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/TXT juga menerima `Jawaban: B,D`.
 
+Untuk `true_false`, kirim `statements: [{ "text": "...", "is_correct": true|false, "explanation": "..." }]` dengan 1–5 pernyataan; `stem`/`image_url` adalah cerita bersama. Tidak pakai `options`/`correct_keys`. Semua pernyataan benar membuat soal bernilai benar. Endpoint peserta tidak mengirim `is_correct`; submit memakai `answers: [{ "statement_id": 123, "value": true|false }]`. Laporan tryout menyertakan `statement_details` per submission.
+
 ## Aturan Implementasi
 
 - Kontrak API ditulis di `openapi/` sebelum endpoint diimplementasikan.

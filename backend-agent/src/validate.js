@@ -2,8 +2,9 @@ import { ApiError } from './errors.js';
 
 export const MAPELS = ['MTKA', 'BIND', 'IPAS', 'BING'];
 export const MAPEL_CODE_PATTERN = /^[A-Z0-9]{4}$/;
-export const CHOICE_TYPES = ['multiple_choice', 'true_false', 'multiple_answer'];
-export const QUESTION_TYPES = [...CHOICE_TYPES, 'short_answer', 'essay'];
+export const CHOICE_TYPES = ['multiple_choice', 'multiple_answer'];
+export const QUESTION_TYPES = ['multiple_choice', 'true_false', 'multiple_answer', 'short_answer', 'essay'];
+export const TRUE_FALSE_MAX_STATEMENTS = 5;
 export const DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const STATUSES = ['approved', 'rejected', 'archived'];
 export const IMAGE_ONLY_STEM = '[Gambar soal]';
@@ -84,6 +85,29 @@ export function normalizeOptions(options, questionType) {
   return result;
 }
 
+export function normalizeStatements(statements, questionType) {
+  if (questionType !== 'true_false') return [];
+  if (!Array.isArray(statements)) {
+    throw new ApiError('VALIDATION_ERROR', 'statements harus berupa array');
+  }
+  if (statements.length < 1) {
+    throw new ApiError('VALIDATION_ERROR', 'Soal Benar/Salah wajib memiliki minimal 1 pernyataan');
+  }
+  if (statements.length > TRUE_FALSE_MAX_STATEMENTS) {
+    throw new ApiError('VALIDATION_ERROR', `Jumlah pernyataan maksimal ${TRUE_FALSE_MAX_STATEMENTS}`);
+  }
+  const result = statements.map((statement, index) => ({
+    position: index + 1,
+    text: requireText(statement?.text ?? statement?.statement_text, `pernyataan ${index + 1}`, 1000),
+    is_correct: Boolean(statement?.is_correct ?? statement?.correct ?? false),
+    explanation: statement?.explanation ?? null
+  }));
+  if (!result.some((statement) => statement.is_correct)) {
+    throw new ApiError('VALIDATION_ERROR', 'Harus ada minimal satu pernyataan yang benar');
+  }
+  return result;
+}
+
 export function validateQuestionCreate(body, hasImage = false) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ApiError('VALIDATION_ERROR', 'Body harus berupa objek');
@@ -96,8 +120,13 @@ export function validateQuestionCreate(body, hasImage = false) {
   const mapel = requireMapelCode(body.mapel ?? body.mapel_code);
   const questionType = requireEnum(body.question_type ?? 'multiple_choice', QUESTION_TYPES, 'question_type');
   const difficulty = requireEnum(body.difficulty ?? 'medium', DIFFICULTIES, 'difficulty');
-  const options = normalizeOptions(body.options, questionType);
-  const declaredKeys = body.correct_keys !== undefined
+  const isTrueFalse = questionType === 'true_false';
+  if (isTrueFalse && (body.options !== undefined || body.correct_keys !== undefined || body.correct_key !== undefined)) {
+    throw new ApiError('VALIDATION_ERROR', 'Soal Benar/Salah memakai field statements, bukan options/correct_key');
+  }
+  const statements = normalizeStatements(body.statements, questionType);
+  const options = isTrueFalse ? [] : normalizeOptions(body.options, questionType);
+  const declaredKeys = isTrueFalse ? [] : body.correct_keys !== undefined
     ? normalizeCorrectKeys(body.correct_keys, 'correct_keys')
     : body.correct_key !== undefined
       ? normalizeCorrectKeys(body.correct_key, 'correct_key')
@@ -113,7 +142,7 @@ export function validateQuestionCreate(body, hasImage = false) {
       throw new ApiError('VALIDATION_ERROR', `Kunci jawaban ${key} tidak sesuai opsi mana pun`);
     }
   }
-  if ((questionType === 'multiple_choice' || questionType === 'true_false') && correctKeys.length !== 1) {
+  if (questionType === 'multiple_choice' && correctKeys.length !== 1) {
     throw new ApiError('VALIDATION_ERROR', 'Harus tepat satu opsi yang benar');
   }
   if (CHOICE_TYPES.includes(questionType) && correctKeys.length === 0) {
@@ -134,6 +163,7 @@ export function validateQuestionCreate(body, hasImage = false) {
     question_type: questionType,
     difficulty,
     options: normalizedOptions,
+    statements,
     correct_keys: correctKeys,
     correct_key: correctKeys[0] ?? null,
     answer_text: answerText,
@@ -161,20 +191,35 @@ export function validateQuestionUpdate(body, currentQuestionType = 'multiple_cho
   }
 
   const questionType = result.question_type ?? currentQuestionType;
-  const wantsContent = body.options !== undefined
+  const isTrueFalse = questionType === 'true_false';
+  if (isTrueFalse && (body.options !== undefined || body.correct_keys !== undefined || body.correct_key !== undefined)) {
+    throw new ApiError('VALIDATION_ERROR', 'Soal Benar/Salah memakai field statements, bukan options/correct_key');
+  }
+  if (!isTrueFalse && body.statements !== undefined) {
+    throw new ApiError('VALIDATION_ERROR', 'Field statements hanya untuk soal Benar/Salah');
+  }
+  if (result.question_type === 'true_false' && currentQuestionType !== 'true_false' && body.statements === undefined) {
+    throw new ApiError('VALIDATION_ERROR', 'Perubahan ke Benar/Salah wajib menyertakan statements');
+  }
+
+  const wantsContent = body.statements !== undefined
+    || body.options !== undefined
     || body.correct_keys !== undefined
     || body.correct_key !== undefined
     || body.answer_text !== undefined
     || body.explanation !== undefined;
 
+  if (body.statements !== undefined) {
+    result.statements = normalizeStatements(body.statements, questionType);
+  }
   if (body.options !== undefined) {
     result.options = normalizeOptions(body.options, questionType);
   }
 
   if (wantsContent) {
-    const hasKeysPayload = body.options !== undefined
+    const hasKeysPayload = !isTrueFalse && (body.options !== undefined
       || body.correct_keys !== undefined
-      || body.correct_key !== undefined;
+      || body.correct_key !== undefined);
 
     if (hasKeysPayload) {
       const declaredKeys = body.correct_keys !== undefined
@@ -193,7 +238,7 @@ export function validateQuestionUpdate(body, currentQuestionType = 'multiple_cho
           }
         }
       }
-      if ((questionType === 'multiple_choice' || questionType === 'true_false') && correctKeys.length !== 1) {
+      if (questionType === 'multiple_choice' && correctKeys.length !== 1) {
         throw new ApiError('VALIDATION_ERROR', 'Harus tepat satu opsi yang benar');
       }
       if (CHOICE_TYPES.includes(questionType) && correctKeys.length === 0) {

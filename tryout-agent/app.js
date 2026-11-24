@@ -254,13 +254,45 @@
     const form = document.createElement('form');
     form.className = 'answer-form';
     const options = Array.isArray(detail.options) ? detail.options : [];
+    const statements = Array.isArray(detail.statements) ? detail.statements : [];
+    const isTrueFalse = detail.question_type === 'true_false';
     const isMultipleAnswer = detail.question_type === 'multiple_answer';
     const savedAnswer = state.answers[detail.question_id];
-    const savedKeys = Array.isArray(savedAnswer)
+    const savedKeys = Array.isArray(savedAnswer) && !savedAnswer.some((item) => item && typeof item === 'object')
       ? savedAnswer
       : String(savedAnswer ?? '').split(',').map((key) => key.trim()).filter(Boolean);
+    const savedStatementValues = {};
+    if (Array.isArray(savedAnswer)) {
+      savedAnswer.forEach((item) => {
+        if (item && typeof item === 'object' && item.statement_id != null) {
+          savedStatementValues[item.statement_id] = String(item.value);
+        }
+      });
+    }
 
-    if (options.length) {
+    if (isTrueFalse && statements.length) {
+      statements.forEach((statement, index) => {
+        const group = document.createElement('fieldset');
+        group.className = 'option statement-group';
+        const legend = document.createElement('legend');
+        legend.textContent = `${index + 1}. ${statement.text ?? statement.statement_text ?? ''}`;
+        group.append(legend);
+        ['true', 'false'].forEach((value) => {
+          const row = document.createElement('label');
+          row.className = 'statement-option';
+          const input = document.createElement('input');
+          input.type = 'radio';
+          input.name = `statement-${statement.id}`;
+          input.value = value;
+          input.checked = savedStatementValues[statement.id] === value;
+          const text = document.createElement('span');
+          text.textContent = value === 'true' ? 'Benar' : 'Salah';
+          row.append(input, text);
+          group.append(row);
+        });
+        form.append(group);
+      });
+    } else if (options.length) {
       options.forEach((option) => {
         const row = document.createElement('label');
         row.className = 'option';
@@ -291,19 +323,33 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const data = new FormData(form);
-      const chosen = data.getAll('answer').map(String).filter(Boolean);
-      const text = String(data.get('answer_text') ?? '').trim();
-      const answer = chosen.length ? (isMultipleAnswer ? chosen : chosen[0]) : null;
-      state.answers[detail.question_id] = answer || text;
+      let payload;
+      let savedValue;
+      if (isTrueFalse && statements.length) {
+        const statementAnswers = statements.map((statement) => ({
+          statement_id: statement.id,
+          value: String(data.get(`statement-${statement.id}`) ?? '')
+        }));
+        if (statementAnswers.some((item) => !item.value)) {
+          toast('Pilih Benar atau Salah untuk setiap pernyataan.', true);
+          return;
+        }
+        savedValue = statementAnswers;
+        payload = { answers: statementAnswers };
+      } else {
+        const chosen = data.getAll('answer').map(String).filter(Boolean);
+        const text = String(data.get('answer_text') ?? '').trim();
+        const answer = chosen.length ? (isMultipleAnswer ? chosen : chosen[0]) : null;
+        savedValue = answer || text;
+        payload = { answer, answer_text: text || null };
+      }
+      state.answers[detail.question_id] = savedValue;
       submit.disabled = true;
       try {
         await api(`/presentation/questions/${detail.question_id}/submit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            answer,
-            answer_text: text || null
-          })
+          body: JSON.stringify(payload)
         });
         state.submitted[detail.question_id] = true;
         form.querySelector('.result')?.remove();
