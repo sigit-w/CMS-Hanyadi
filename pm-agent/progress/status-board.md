@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-23; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -254,3 +254,15 @@ Gejala: setelah mapel soal diubah dan disimpan, soal tidak muncul di `tryout.han
 | QA-27 | QA | P1 | partial | BE-30, FE-27, TRY-11, DATA-06M | Verifikasi statis (`node --check`), build frontend sukses, simulasi SQL transaksional dengan rollback, health API 200. Regresi 129 test belum dijalankan karena `QA_ADMIN_PASSWORD` tidak tersedia dan test tryout mengubah sesi aktif produksi |
 | DOC-06M | PM/Docs | P1 | done | QA-27 | Status board dan laporan sistem diperbarui dengan gejala, akar masalah, perbaikan, serta batasan verifikasi |
 | REL-15 | PM | P1 | partial | QA-27 | Deploy aktif 2026-11-23 (backend direstart, frontend/tryout ter-update); gate **GO** menunggu regresi QA penuh |
+
+## Fase 6n — Manajemen Bimbel — 2026-11-24
+
+Permintaan pemilik: pindahkan **Kelola Siswa** dari grup Manajemen Tryout dan **Kelola Program Belajar** dari grup Setting ke menu tersendiri bernama **Manajemen Bimbel**. Perubahan hanya navigasi CMS; tidak ada schema, endpoint, atau permission baru. Keputusan tercatat di `pm-agent/decisions/ADR-006-manajemen-bimbel.md`; requirement lengkap di `pm-agent/tasks/phase6n-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-16 | PM | P1 | done | - | ADR-006 accepted; backlog + handoff BE-31/FE-28/QA-28 diterbitkan |
+| BE-31 | Backend | P1 | done | PM-16 | Kontrak & permission terverifikasi (`401` tanpa cookie, guard source), tidak ada perubahan kode backend |
+| FE-28 | Frontend | P1 | done | PM-16 | Grup `Manajemen Bimbel`, hash `#/bimbel/siswa` & `#/bimbel/program-belajar`, alias rute lama; bundle `index-CXNjTfX_.js` terdeploy |
+| QA-28 | QA | P1 | done | BE-31, FE-28 | Marker P5-14/A-12/S-17 diselaraskan; N-01..N-03; regresi 132/132, 0 bug P0/P1 |
+| REL-16 | PM | P1 | done | QA-28 | **GO** 2026-11-24; deploy frontend ke produksi, backend tidak direstart |

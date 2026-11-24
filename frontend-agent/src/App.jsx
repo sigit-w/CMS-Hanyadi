@@ -46,19 +46,25 @@ const NAV_GROUPS = [
     label: 'Manajemen Tryout',
     items: [
       { path: '/tryouts', hash: '#/tryouts', label: 'Buat/Daftar Tryout', permission: 'tryouts.manage', icon: ClipboardList },
-      { path: '/tryouts/peserta', hash: '#/tryouts/peserta', label: 'Kelola Siswa', permission: 'tryouts.manage', icon: Users },
       { path: '/reports/tryout', hash: '#/reports/tryout', label: 'Laporan Tryout', permission: 'tryout_reports.read', icon: BarChart3 }
+    ]
+  },
+  {
+    key: 'manajemen-bimbel',
+    label: 'Manajemen Bimbel',
+    items: [
+      { path: '/bimbel/siswa', hash: '#/bimbel/siswa', label: 'Kelola Siswa', permission: 'tryouts.manage', icon: Users },
+      { path: '/bimbel/program-belajar', hash: '#/bimbel/program-belajar', label: 'Kelola Program Belajar', permission: 'program_belajar.manage', icon: GraduationCap }
     ]
   },
   {
     key: 'setting',
     label: 'Setting',
-      items: [
-        { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel', permission: 'mapels.manage', icon: BookOpen },
-        { path: '/program-belajar', hash: '#/program-belajar', label: 'Kelola Program Belajar', permission: 'program_belajar.manage', icon: GraduationCap },
-        { path: '/roles', hash: '#/roles', label: 'Kelola Role', permission: 'roles.manage', icon: Shield },
-        { path: '/reports/system', hash: '#/reports/system', label: 'Laporan Sistem', permission: 'reports.read', icon: FileText }
-      ]
+    items: [
+      { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel', permission: 'mapels.manage', icon: BookOpen },
+      { path: '/roles', hash: '#/roles', label: 'Kelola Role', permission: 'roles.manage', icon: Shield },
+      { path: '/reports/system', hash: '#/reports/system', label: 'Laporan Sistem', permission: 'reports.read', icon: FileText }
+    ]
   }
 ];
 
@@ -67,7 +73,7 @@ const NAV_STANDALONE = [
 ];
 
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((group) => group.items), ...NAV_STANDALONE];
-const ROUTE_ALIASES = { '/': '/questions', '/questions/new': '/questions' };
+const ROUTE_ALIASES = { '/': '/questions', '/questions/new': '/questions', '/tryouts/peserta': '/bimbel/siswa', '/program-belajar': '/bimbel/program-belajar' };
 
 function NavLink({ item, active, onNavigate }) {
   const Icon = item.icon;
@@ -150,11 +156,11 @@ export default function App() {
     page = <UserManagement can={can} />;
   } else if (activePath === '/tryouts') {
     page = <TryoutManagement />;
-  } else if (activePath === '/tryouts/peserta') {
+  } else if (activePath === '/bimbel/siswa') {
     page = <PesertaManagement />;
   } else if (activePath === '/mapels') {
     page = <MapelManagement />;
-  } else if (activePath === '/program-belajar') {
+  } else if (activePath === '/bimbel/program-belajar') {
     page = <ProgramBelajarManagement />;
   } else if (activePath === '/roles') {
     page = <RoleManagement />;

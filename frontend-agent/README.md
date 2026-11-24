@@ -23,6 +23,7 @@ Membangun dashboard CMS untuk input soal, upload/pengumpulan soal dari berbagai 
 - Upload file soal dan tampilan riwayat sumber (manual/upload/eksternal).
 - Filter mapel dinamis dari `/api/v1/mapels`, pencarian, pagination dengan `limit` default 20.
 - CRUD mapel di menu Setting (`#/mapels`) dengan permission `mapels.manage`.
+- CRUD siswa (`#/bimbel/siswa`, `tryouts.manage`) dan program belajar (`#/bimbel/program-belajar`, `program_belajar.manage`) berada di grup Manajemen Bimbel; hash lama tetap menjadi alias.
 - Form pendaftaran peserta mengisi otomatis password `nama depan@mmyy` yang masih bisa diganti.
 - Soal baru langsung `approved`; tidak ada pilihan versi/readiness atau status `draft`/`review` di UI.
 - State loading, empty, dan error yang jelas.

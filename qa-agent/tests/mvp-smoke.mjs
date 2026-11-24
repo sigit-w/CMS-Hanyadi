@@ -3,7 +3,7 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 const BASE = API_BASE;
-const UI_BASE = process.env.QA_UI_BASE || BASE;
+const UI_BASE = process.env.QA_UI_BASE || 'https://cms.hanyadi.web.id';
 
 async function api(path, options = {}) {
   const response = await fetch(`${BASE}${path}`, {
