@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
 import { parseId } from './validate.js';
 import { authorize } from './authMiddleware.js';
+import { generateTryoutSlug } from './auth.js';
 
 export const tryoutReportRouter = Router();
 
@@ -50,13 +52,20 @@ tryoutReportRouter.post('/tryout-sessions', authorize('tryout_reports.read'), as
     if (activate) {
       await client.query('UPDATE tryout_sessions SET is_active = false WHERE is_active');
     }
-    const { rows } = await client.query(
-      `INSERT INTO tryout_sessions (name, session_date, start_at, end_at, is_active)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, session_date, start_at, end_at, is_active, created_at`,
-      [name, sessionDate, range.startAt, range.endAt, activate]
+    const inserted = await client.query(
+      `INSERT INTO tryout_sessions (name, slug, session_date, start_at, end_at, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, slug, session_date, start_at, end_at, is_active, created_at`,
+      [name, `tmp-${crypto.randomBytes(12).toString('hex')}`, sessionDate, range.startAt, range.endAt, activate]
     );
-    return rows[0];
+    const session = inserted.rows[0];
+    const slug = generateTryoutSlug(name, session.id);
+    const updated = await client.query(
+      `UPDATE tryout_sessions SET slug = $2 WHERE id = $1
+       RETURNING id, name, slug, session_date, start_at, end_at, is_active, created_at`,
+      [session.id, slug]
+    );
+    return updated.rows[0];
   });
 
   res.status(201).json({ ok: true, data: { session }, meta: nowMeta() });

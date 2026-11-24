@@ -35,14 +35,20 @@ paths:
                 username:
                   type: string
                   description: 'Email untuk Siswa/CMS; Nama untuk Peserta Umum.'
-                password:
-                  type: string
-                  format: password
-                  description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
-      responses:
-        '200': { description: Login berhasil }
-        '400': { description: Username atau password kosong }
-        '401': { description: Kredensial tidak valid }
+                 password:
+                   type: string
+                   format: password
+                   description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
+                 tryout_slug:
+                   type: string
+                   maxLength: 32
+                   pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$'
+                   description: 'Wajib untuk Peserta Umum/Siswa; slug dari URL /{slug} tryout.'
+       responses:
+         '200': { description: Login berhasil; participant memiliki tryout_session_id }
+         '400': { description: Username atau password kosong }
+         '401': { description: Kredensial tidak valid, slug tidak valid, atau peserta tidak terdaftar pada tryout }
+
         '429': { description: Akun dikunci sementara }
   /api/v1/auth/refresh:
     post:
@@ -59,7 +65,7 @@ paths:
         '200': { description: Logout berhasil }
   /api/v1/auth/me:
     get:
-      summary: Data pengguna, role, dan permission aktif
+      summary: Data pengguna, role, permission, dan tryout_session_id aktif
       responses:
         '200': { description: Profil sesi }
         '401': { description: Sesi tidak valid }
@@ -175,6 +181,13 @@ paths:
       responses:
         '200': { description: Role dicabut }
         '409': { description: Admin terakhir tidak boleh dicabut }
+  /api/v1/siswa:
+    get:
+      summary: Daftar Siswa murni dari public.siswa (tryouts.manage)
+      description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus.'
+      responses:
+        '200': { description: Daftar siswa }
+        '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/participants:
     get:
       summary: Daftar peserta tryout beserta jumlah submission (tryouts.manage)
@@ -352,8 +365,10 @@ paths:
                 - required: [start_at, end_at, sheet_ids]
                 - required: [session_date, question_ids]
               properties:
-                name: { type: string, maxLength: 128 }
-                session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
+                 name: { type: string, maxLength: 128 }
+                 slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug URL unik. Di-generate dari nama + ID bila kosong.' }
+                 session_date: { type: string, format: date, description: 'Kompatibilitas payload lama; diturunkan dari start_at bila ada.' }
+
                 start_at: { type: string, format: date-time, description: 'Tanggal & jam mulai (Asia/Jakarta).' }
                 end_at: { type: string, format: date-time, description: 'Tanggal & jam selesai; wajib setelah start_at.' }
                 mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Kode mapel aktif dari /api/v1/mapels' }
@@ -381,6 +396,12 @@ paths:
   /api/v1/tryouts/{id}/participants:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Daftar peserta yang terlampir pada satu tryout (tryouts.manage)
+      responses:
+        '200': { description: Daftar peserta tryout }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+        '404': { description: Tryout tidak ditemukan }
     post:
       summary: Lampirkan peserta existing ke tryout tersimpan (tryouts.manage)
       description: 'Dipakai popup Kelola Peserta. Relasi yang sudah ada dilewati; peserta nonaktif atau prospek ditolak.'

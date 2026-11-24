@@ -1,4 +1,6 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -30,6 +32,8 @@ let siswaId;
 let umumId;
 let draftId;
 let tryoutId;
+let tryoutSlug;
+let qaTryout;
 let siswaBefore;
 
 function jakartaInput(offsetHours = 0) {
@@ -46,11 +50,7 @@ async function api(pathname, options = {}) {
 }
 
 async function login(username, password) {
-  const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
+  const response = await participantLogin(username, password, tryoutSlug ?? qaTryout.slug);
   return { status: response.status, body: await response.json().catch(() => ({})) };
 }
 
@@ -77,6 +77,7 @@ before(async () => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 200);
   }
+  qaTryout = await activeTryoutContext(query);
   const sheets = await query(
     `SELECT sh.id, m.code AS mapel_code
      FROM question_sheets sh
@@ -203,6 +204,7 @@ test('PR-04 hapus Umum dari tryout tersimpan masuk prospektus', async () => {
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   tryoutId = created.body.data.tryout.id;
+  tryoutSlug = created.body.data.tryout.slug;
 
   const removed = await api(`/api/v1/tryouts/${tryoutId}/participants/${umumId}`, { method: 'DELETE' });
   assert.equal(removed.status, 200, JSON.stringify(removed.body));
@@ -229,7 +231,7 @@ test('PR-04 hapus Umum dari tryout tersimpan masuk prospektus', async () => {
   assert.equal(relation.rows.length, 0);
 });
 
-test('PR-05 hapus Siswa hanya melepas relasi tryout', async () => {
+test('PR-05 hapus Siswa hanya melepas relasi tryout dan login scoped ditolak', async () => {
   const removed = await api(`/api/v1/tryouts/${tryoutId}/participants/${siswaId}`, { method: 'DELETE' });
   assert.equal(removed.status, 200, JSON.stringify(removed.body));
   assert.equal(removed.body.data.prospek, false);
@@ -240,8 +242,8 @@ test('PR-05 hapus Siswa hanya melepas relasi tryout', async () => {
   const prospektus = await api('/api/v1/prospektus');
   assert.equal(prospektus.body.data.prospektus.some((item) => item.id === siswaId), false);
 
-  const accepted = await login(siswaEmail, siswaPassword);
-  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  const denied = await login(siswaEmail, siswaPassword);
+  assert.equal(denied.status, 401, JSON.stringify(denied.body));
 
   const relation = await query(
     'SELECT 1 FROM tryout_session_participants WHERE session_id = $1 AND participant_id = $2',

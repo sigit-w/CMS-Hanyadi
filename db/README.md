@@ -183,10 +183,19 @@ Tabel fisik `siswa`, `prospektus`, kredensial peserta, dan view kompatibilitas (
 ```bash
 PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -U bank_soal_user -d bank_soal_db \
-  -f /opt/virtual-office-bank-soal/db/migrations/024_siswa_prospektus_kredensial.sql
+   -f /opt/virtual-office-bank-soal/db/migrations/024_siswa_prospektus_kredensial.sql
+```
+
+Marker URL tryout unik, binding login participant, dan rollback konversi Fase 6r (Fase 6s/ADR-011; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/025_tryout_slug_login_scope.sql
 ```
 
 Kredensial tersimpan di
+
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
 
 Verifikasi cepat:
@@ -217,11 +226,13 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - `question_sources.storage_path` disimpan relatif terhadap direktori upload aplikasi, bukan path absolut.
 - `questions.image_url` dan `question_presentation_variants.image_url` menyimpan URL relatif `/api/v1/uploads/<nama_file>`; file fisik berada di `UPLOAD_DIR` (default direktori `uploads/` backend).
 - `tryout_submissions` menyimpan satu baris per `(user_id, question_id, version)` dan memiliki `session_id` ke `tryout_sessions`; kolom `version` tetap diisi konstan `'v1'` secara internal untuk kompatibilitas histori (ADR-004). Skor rekap dihitung dari tabel ini, bukan dari state browser. Endpoint penyajian tidak mengirim `correct_key`, `correct_keys`, `answer_text`, `is_correct`, `correct`, atau `explanation` ke peserta.
-- `tryout_sessions` menyimpan `name`, `session_date`, `start_at`, `end_at`, dan `mapel_id`; `start_at`/`end_at` memakai `TIMESTAMPTZ` zona `Asia/Jakarta`, `end_at > start_at`, dan `session_date` tetap diturunkan dari `start_at` untuk kompatibilitas laporan. Hanya satu sesi yang boleh aktif. Submission baru otomatis memakai sesi aktif. Permission `tryout_reports.read` mengontrol halaman laporan yang menampilkan perbandingan jawaban dan kunci.
+- `tryout_sessions` menyimpan `name`, `slug`, `session_date`, `start_at`, `end_at`, dan `mapel_id`; `slug` unik maksimal 32 karakter menjadi penanda URL `https://tryout.hanyadi.web.id/{slug}`. `start_at`/`end_at` memakai `TIMESTAMPTZ` zona `Asia/Jakarta`, `end_at > start_at`, dan `session_date` tetap diturunkan dari `start_at` untuk kompatibilitas laporan. Hanya satu sesi yang boleh aktif. Submission participant memakai `tryout_session_id` dari sesi login, bukan sesi aktif global. Permission `tryout_reports.read` mengontrol halaman laporan yang menampilkan perbandingan jawaban dan kunci.
 - `tryout_session_sheets` menyimpan lembar soal yang dipakai sebuah TO; `tryout_session_questions` tetap diisi dengan turunan soal lembar tersebut agar presentation service tidak berubah. `tryout_session_participants` boleh kosong. Bila sesi aktif memiliki baris soal, daftar soal dan submission dibatasi sesuai daftar; sesi lama tanpa baris tetap memakai perilaku sebelumnya. Permission `tryouts.manage` mengontrol pembuatan TO dan CRUD peserta di CMS.
 - `siswa` menyimpan peserta dengan `jenis='siswa'`, `email` + `password_hash` + `password_plain` + `kelas`, login dengan email/password. `prospektus` menyimpan Peserta Umum dengan struktur kolom identik ditambah `bergabung`/`bergabung_at`; login dengan Nama + PIN (`pin_hash` scrypt, `pin_plain`), `email NULL`, `kelas=0`, WA wajib. Nama Umum unik case-insensitive. `tryout_participants` kini view `UNION ALL` kedua tabel untuk kompatibilitas query lama; seluruh penulisan langsung ke tabel fisik. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
 - Fase 6r (ADR-010): kredensial peserta boleh disimpan plaintext di `password_plain`/`pin_plain` dan hanya dikembalikan lewat endpoint detail; password user CMS tetap scrypt di `contributors.password_hash` dan tidak pernah ditampilkan. `POST /prospektus/{id}/daftar` menyalin data ke `siswa` dan menandai `bergabung=true` tanpa mencabut akun Umum. FK `participant_id` diganti trigger validasi/cascade karena satu kolom mereferensi dua tabel.
-- Fase 6p (ADR-008) menambahkan `prospek` dan `prospek_at`. Hanya Peserta Umum yang boleh ber-`prospek=true`. Mengeluarkan Umum dari tryout menandai barisnya sebagai prospek, menonaktifkannya, dan mencabut sesinya; data tetap dipakai halaman Prospektus dan histori submission. Mengeluarkan Siswa hanya menghapus baris `tryout_session_participants`, bukan data siswa.
+- Fase 6s (ADR-011): login participant wajib `tryout_slug` dan akun harus terdaftar di `tryout_session_participants`. `auth_sessions.tryout_session_id` mengikat access token/refresh token ke satu tryout; JWT memuat `tryout_session_id` dan `tryout_slug`. Endpoint `/api/v1/siswa` hanya membaca `public.siswa`, sedangkan `/api/v1/tryouts/{id}/participants` hanya peserta yang terlampir. Konversi `prospektus -> siswa` tetap eksplisit lewat tombol **Daftarkan Siswa** di Prospektus, bukan otomatis dari tryout.
+- Fase 6p (ADR-008) menambahkan `prospek` dan `prospek_at`.
+ Hanya Peserta Umum yang boleh ber-`prospek=true`. Mengeluarkan Umum dari tryout menandai barisnya sebagai prospek, menonaktifkannya, dan mencabut sesinya; data tetap dipakai halaman Prospektus dan histori submission. Mengeluarkan Siswa hanya menghapus baris `tryout_session_participants`, bukan data siswa.
 - `tryout_submissions` dan `auth_sessions` memakai `participant_id` untuk akun peserta dan `user_id` untuk akun CMS; tepat salah satu yang terisi. Baris lama milik user ber-role `peserta` sudah dipindahkan ke `participant_id` oleh migrasi `010`.
 - Daftar soal CMS memakai pagination server-side dengan `page` dan `limit` default 20; respons menyertakan `pagination: { page, limit, total }` (ADR-004).
 - `question_sheets` menyimpan satu lembar soal dengan tepat satu `mapel_id`, kode unik 12 karakter termasuk tanda hubung, `duration_minutes` positif, dan flag `archived` untuk soft delete. Kode generator = `LS-<KODE_MAPEL>-mmyy`, misalnya `LS-MTKA-mmyy`; kode mapel berasal langsung dari `mapels.code` tanpa pemetaan nama/fallback. Kode hasil edit hanya wajib memenuhi panjang 12 dan karakter `A-Z0-9-`.

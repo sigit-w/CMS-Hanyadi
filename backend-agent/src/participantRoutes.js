@@ -20,6 +20,15 @@ const PARTICIPANT_SELECT = `
   LEFT JOIN program_belajar pb ON pb.id = p.program_belajar_id
 `;
 
+const SISWA_SELECT = `
+  SELECT s.id, s.nama, s.email, s.kelas, s.sekolah,
+         s.program_belajar_id, pb.name AS program_belajar_name, s.wa_orang_tua,
+         s.is_active, s.created_at, s.updated_at,
+         (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.participant_id = s.id) AS submission_count
+  FROM siswa s
+  LEFT JOIN program_belajar pb ON pb.id = s.program_belajar_id
+ `;
+
 const PARTICIPANT_DETAIL_SELECT = `
   SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
          p.program_belajar_id, pb.name AS program_belajar_name, p.wa_orang_tua,
@@ -157,6 +166,11 @@ async function loadJenis(client, id) {
   const { rows } = await client.query('SELECT id, jenis FROM tryout_participants WHERE id = $1', [id]);
   return rows[0];
 }
+
+participantRouter.get('/siswa', manageParticipants, asyncHandler(async (req, res) => {
+  const { rows } = await query(`${SISWA_SELECT} WHERE s.jenis = 'siswa' ORDER BY s.id DESC`);
+  res.json({ ok: true, data: { siswa: rows }, meta: nowMeta() });
+}));
 
 participantRouter.get('/participants', manageParticipants, asyncHandler(async (req, res) => {
   const prospekFilter = req.query.prospek;

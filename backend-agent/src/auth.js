@@ -9,6 +9,30 @@ const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
 export const ACCOUNT_TYPE_PARTICIPANT = 'participant';
 export const PARTICIPANT_ROLES = ['peserta'];
 export const PARTICIPANT_PERMISSIONS = ['tryout.access', 'presentation.read'];
+export const TRYOUT_SLUG_RESERVED = new Set([
+  'api', 'assets', 'health', 'favicon-ico', 'favicon.ico', 'robots-txt', 'robots.txt',
+  'login', 'admin', 'tryout'
+]);
+
+export function normalizeTryoutSlug(value, field = 'tryout_slug') {
+  if (typeof value !== 'string') {
+    throw new Error(`${field} harus berupa teks`);
+  }
+  const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug || slug.length > 32 || TRYOUT_SLUG_RESERVED.has(slug)
+      || !/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(slug)) {
+    throw new Error(`${field} tidak valid`);
+  }
+  return slug;
+}
+
+export function generateTryoutSlug(name, id) {
+  const base = String(name ?? '')
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    || 'tryout';
+  const suffix = `-${id}`;
+  return `${base.slice(0, 32 - suffix.length)}${suffix}`;
+}
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);

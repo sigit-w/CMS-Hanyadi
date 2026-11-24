@@ -6,9 +6,10 @@ import {
   deleteTryout,
   getMapels,
   getParticipantDetail,
-  getParticipants,
   getQuestionSheets,
+  getSiswa,
   getTryout,
+  getTryoutParticipants,
   getTryouts,
   markParticipantProspek,
   removeTryoutParticipant
@@ -30,6 +31,11 @@ const MAPEL_LABELS = {
   BIND: 'Bahasa Indonesia',
   IPAS: 'IPAS'
 };
+const TRYOUT_BASE_URL = 'https://tryout.hanyadi.web.id';
+
+function tryoutUrl(slug) {
+  return slug ? `${TRYOUT_BASE_URL}/${slug}` : '—';
+}
 
 function jakartaInputDate(offsetHours = 0) {
   const shifted = new Date(Date.now() + (7 + offsetHours) * 60 * 60 * 1000);
@@ -118,6 +124,7 @@ export default function TryoutManagement() {
   const [mapels, setMapels] = useState([]);
   const [sheets, setSheets] = useState([]);
   const [participants, setParticipants] = useState([]);
+  const [draftParticipants, setDraftParticipants] = useState([]);
   const [selectedSheets, setSelectedSheets] = useState([]);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [detailParticipant, setDetailParticipant] = useState(null);
@@ -136,7 +143,7 @@ export default function TryoutManagement() {
   const [siswaSearch, setSiswaSearch] = useState('');
 
   const draftParticipantRows = selectedParticipants
-    .map((id) => participants.find((participant) => String(participant.id) === String(id)))
+    .map((id) => draftParticipants.find((participant) => String(participant.id) === String(id)))
     .filter(Boolean);
   const siswaRows = participants.filter((participant) => (
     participant.jenis === 'siswa'
@@ -155,12 +162,12 @@ export default function TryoutManagement() {
         setLoading(true);
         const [mapelData, participantData, tryoutData] = await Promise.all([
           getMapels(),
-          getParticipants(),
+          getSiswa(),
           getTryouts()
         ]);
         if (!active) return;
         setMapels(mapelData.mapels);
-        setParticipants(participantData.participants.filter((participant) => participant.is_active));
+        setParticipants(participantData.siswa.filter((participant) => participant.is_active));
         setTryouts(tryoutData.tryouts);
       } catch (err) {
         if (active) setError(err.message);
@@ -251,6 +258,10 @@ export default function TryoutManagement() {
     setSelectedParticipants((current) => (
       current.includes(String(participant.id)) ? current : [...current, String(participant.id)]
     ));
+    setDraftParticipants((current) => (
+      current.some((item) => String(item.id) === String(participant.id))
+        ? current : [participant, ...current]
+    ));
     setPesertaDialog(null);
     setNotice(`Siswa "${participant.nama}" ditambahkan ke tryout.`);
   }
@@ -266,6 +277,7 @@ export default function TryoutManagement() {
     try {
       if (isUmum) await markParticipantProspek(participant.id);
       setSelectedParticipants((current) => current.filter((id) => String(id) !== String(participant.id)));
+      setDraftParticipants((current) => current.filter((item) => String(item.id) !== String(participant.id)));
       setNotice(isUmum
         ? `Peserta Umum "${participant.nama}" dipindahkan ke Prospektus.`
         : `Siswa "${participant.nama}" dikeluarkan dari tryout. Data siswa tetap tersimpan.`);
@@ -275,12 +287,12 @@ export default function TryoutManagement() {
   }
 
   async function loadManagedParticipants(tryoutId) {
-    const [detail, participantData] = await Promise.all([getTryout(tryoutId), getParticipants()]);
-    const ids = detail.tryout.participant_ids.map(String);
+    const [detail, participantData] = await Promise.all([
+      getTryout(tryoutId),
+      getTryoutParticipants(tryoutId)
+    ]);
     setManagedTryoutId(detail.tryout.id);
-    setManagedParticipants(
-      participantData.participants.filter((participant) => ids.includes(String(participant.id)))
-    );
+    setManagedParticipants(participantData.participants);
   }
 
   function isAlreadySelected(participant) {
@@ -342,7 +354,7 @@ export default function TryoutManagement() {
         wa_orang_tua: umumForm.wa_orang_tua.trim()
       });
       const participant = created.participant;
-      setParticipants((current) => [participant, ...current.filter((item) => item.id !== participant.id)]);
+      setDraftParticipants((current) => [participant, ...current.filter((item) => item.id !== participant.id)]);
       if (participantTarget === 'manage') {
         await addTryoutParticipants(managedTryoutId, [participant.id]);
         await loadManagedParticipants(managedTryoutId);
@@ -386,10 +398,11 @@ export default function TryoutManagement() {
         participant_ids: selectedParticipants.map(Number),
         is_active: form.is_active
       });
-      setNotice(`Tryout "${created.tryout.name}" berhasil dibuat.`);
+      setNotice(`Tryout "${created.tryout.name}" berhasil dibuat. URL peserta: ${tryoutUrl(created.tryout.slug)}`);
       setForm(emptyForm());
       setSelectedSheets([]);
       setSelectedParticipants([]);
+      setDraftParticipants([]);
       await refreshTryouts();
     } catch (err) {
       setError(err.message);
@@ -408,6 +421,17 @@ export default function TryoutManagement() {
       await refreshTryouts();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleCopyUrl(tryout) {
+    const url = tryoutUrl(tryout.slug);
+    try {
+      await navigator.clipboard.writeText(url);
+      setError('');
+      setNotice(`URL tryout "${tryout.name}" disalin: ${url}`);
+    } catch (err) {
+      setError(`Gagal menyalin URL: ${err.message}`);
     }
   }
 
@@ -652,6 +676,7 @@ export default function TryoutManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
+                  <TableHead>URL Tryout</TableHead>
                   <TableHead>Mulai</TableHead>
                   <TableHead>Selesai</TableHead>
                   <TableHead>Mapel</TableHead>
@@ -667,6 +692,14 @@ export default function TryoutManagement() {
                 {tryouts.map((tryout) => (
                   <TableRow key={tryout.id}>
                     <TableCell>#{tryout.id} {tryout.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Input aria-label={`URL tryout ${tryout.name}`} value={tryoutUrl(tryout.slug)} readOnly className="h-8 w-56 text-xs" />
+                        <Button type="button" variant="outline" size="sm" onClick={() => handleCopyUrl(tryout)}>
+                          Salin
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell>{formatDateTime(tryout.start_at)}</TableCell>
                     <TableCell>{formatDateTime(tryout.end_at)}</TableCell>
                     <TableCell>{MAPEL_LABELS[tryout.mapel_code] ?? tryout.mapel_name ?? '—'}</TableCell>

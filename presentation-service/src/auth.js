@@ -52,11 +52,19 @@ export function requireTryoutSession(permission = 'presentation.read') {
       });
     }
     const isParticipant = payload.account_type === 'participant';
+    if (isParticipant && (!payload.tryout_session_id || !payload.tryout_slug)) {
+      return res.status(401).json({
+        ok: false,
+        error: { code: 'UNAUTHORIZED', message: 'Sesi tryout tidak valid. Masuk melalui tautan tryout.', status: 401 }
+      });
+    }
     req.auth = {
       userId: isParticipant ? null : payload.sub,
       participantId: isParticipant ? payload.sub : null,
       accountType: isParticipant ? 'participant' : 'user',
-      roles: payload.roles ?? []
+      roles: payload.roles ?? [],
+      tryoutSessionId: isParticipant ? Number(payload.tryout_session_id) : null,
+      tryoutSlug: isParticipant ? payload.tryout_slug : null
     };
     next();
   };

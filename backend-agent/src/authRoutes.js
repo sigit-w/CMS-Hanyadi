@@ -4,7 +4,7 @@ import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
 import {
   hashPassword, verifyPassword, signAccessToken, parseCookies,
-  serializeCookie, newRefreshToken, hashToken,
+  serializeCookie, newRefreshToken, hashToken, normalizeTryoutSlug,
   ACCOUNT_TYPE_PARTICIPANT, PARTICIPANT_ROLES, PARTICIPANT_PERMISSIONS
 } from './auth.js';
 import { authenticate } from './authMiddleware.js';
@@ -37,7 +37,7 @@ function clearSessionCookies(res) {
   res.append('Set-Cookie', serializeCookie('refresh_token', '', { clear: true }));
 }
 
-async function sessionPayload(account, sessionId) {
+async function sessionPayload(account, sessionId, tryoutSession = null) {
   if (account.type === ACCOUNT_TYPE_PARTICIPANT) {
     const participant = await query(
       `SELECT id, coalesce(email, nama) AS username, nama AS display_name
@@ -45,15 +45,25 @@ async function sessionPayload(account, sessionId) {
       [account.id]
     );
     if (!participant.rows[0]) throw new ApiError('UNAUTHORIZED', 'Akun peserta tidak aktif', 401);
+    if (!tryoutSession?.id || !tryoutSession?.slug) {
+      throw new ApiError('UNAUTHORIZED', 'Sesi peserta tidak memiliki tryout yang terikat', 401);
+    }
     return {
-      user: participant.rows[0],
+      user: {
+        ...participant.rows[0],
+        tryout_session_id: Number(tryoutSession.id),
+        tryout_slug: tryoutSession.slug,
+        tryout_name: tryoutSession.name ?? null
+      },
       roles: PARTICIPANT_ROLES,
       accessToken: signAccessToken({
         sub: account.id,
         sid: sessionId,
         roles: PARTICIPANT_ROLES,
         permissions: PARTICIPANT_PERMISSIONS,
-        account_type: ACCOUNT_TYPE_PARTICIPANT
+        account_type: ACCOUNT_TYPE_PARTICIPANT,
+        tryout_session_id: Number(tryoutSession.id),
+        tryout_slug: tryoutSession.slug
       })
     };
   }
@@ -121,6 +131,34 @@ async function findLoginAccount(identity) {
   return null;
 }
 
+async function loadTryoutForParticipant(client, rawSlug, participantId) {
+  if (!rawSlug) {
+    throw new ApiError('UNAUTHORIZED', 'Peserta wajib masuk melalui tautan tryout yang diberikan', 401);
+  }
+  let slug;
+  try {
+    slug = normalizeTryoutSlug(rawSlug);
+  } catch {
+    throw new ApiError('UNAUTHORIZED', 'Tautan tryout tidak valid', 401);
+  }
+  const run = client?.query ? client.query.bind(client) : query;
+  const { rows } = await run(
+    `SELECT s.id, s.slug, s.name,
+            EXISTS (
+              SELECT 1 FROM tryout_session_participants p
+              WHERE p.session_id = s.id AND p.participant_id = $2
+            ) AS is_participant
+     FROM tryout_sessions s
+     WHERE s.slug = $1`,
+    [slug, participantId]
+  );
+  const tryout = rows[0];
+  if (!tryout?.is_participant) {
+    throw new ApiError('UNAUTHORIZED', 'Akun tidak terdaftar pada tryout ini', 401);
+  }
+  return tryout;
+}
+
 async function registerFailedLogin(type, account) {
   const updated = await query(
     `UPDATE ${accountTable(type, account)} SET
@@ -142,6 +180,7 @@ async function registerFailedLogin(type, account) {
 publicAuthRouter.post('/login', asyncHandler(async (req, res) => {
   const identity = String(req.body?.username ?? '').trim();
   const password = String(req.body?.password ?? '');
+  const rawSlug = req.body?.tryout_slug ?? req.body?.slug;
   if (!identity || !password) {
     throw new ApiError('VALIDATION_ERROR', 'Username dan password wajib diisi');
   }
@@ -149,6 +188,9 @@ publicAuthRouter.post('/login', asyncHandler(async (req, res) => {
   const loginAccount = await findLoginAccount(identity);
   if (!loginAccount) throw new ApiError('UNAUTHORIZED', 'Kredensial tidak valid', 401);
   const { type, account } = loginAccount;
+  const tryout = type === ACCOUNT_TYPE_PARTICIPANT
+    ? await loadTryoutForParticipant(null, rawSlug, account.id)
+    : null;
 
   if (account.locked_until && new Date(account.locked_until) > new Date()) {
     throw new ApiError('TOO_MANY_REQUESTS', 'Akun dikunci sementara, coba lagi nanti', 429);
@@ -167,16 +209,17 @@ publicAuthRouter.post('/login', asyncHandler(async (req, res) => {
     const refreshToken = newRefreshToken();
     const isParticipant = type === ACCOUNT_TYPE_PARTICIPANT;
     const session = await client.query(
-      `INSERT INTO auth_sessions (user_id, participant_id, refresh_hash, expires_at, last_used_at)
-       VALUES ($1, $2, $3, now() + make_interval(days => $4), now())
+      `INSERT INTO auth_sessions
+         (user_id, participant_id, tryout_session_id, refresh_hash, expires_at, last_used_at)
+       VALUES ($1, $2, $3, $4, now() + make_interval(days => $5), now())
        RETURNING id`,
       [isParticipant ? null : account.id, isParticipant ? account.id : null,
-        hashToken(refreshToken), config.auth.refreshTtlDays]
+        isParticipant ? tryout.id : null, hashToken(refreshToken), config.auth.refreshTtlDays]
     );
     return { refreshToken, sessionId: session.rows[0].id };
   });
 
-  const payload = await sessionPayload({ type, id: account.id }, result.sessionId);
+  const payload = await sessionPayload({ type, id: account.id }, result.sessionId, tryout);
   setSessionCookies(res, payload.accessToken, result.refreshToken);
   res.json({
     ok: true,
@@ -192,14 +235,23 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
 
   const result = await withTransaction(async (client) => {
     const found = await client.query(
-        `SELECT s.id, s.user_id, s.participant_id, tp.jenis AS participant_jenis
+        `SELECT s.id, s.user_id, s.participant_id, s.tryout_session_id,
+              tp.jenis AS participant_jenis, ts.slug AS tryout_slug, ts.name AS tryout_name
          FROM auth_sessions s
          LEFT JOIN contributors c ON c.id = s.user_id
          LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
+         LEFT JOIN tryout_sessions ts ON ts.id = s.tryout_session_id
        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL
          AND s.expires_at > now()
          AND (s.user_id IS NULL OR c.is_active = true)
-         AND (s.participant_id IS NULL OR tp.is_active = true)`,
+         AND (s.participant_id IS NULL OR (
+           tp.is_active = true
+           AND s.tryout_session_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM tryout_session_participants p
+             WHERE p.session_id = s.tryout_session_id AND p.participant_id = s.participant_id
+           )
+         ))`,
       [hashToken(refreshToken)]
     );
     const session = found.rows[0];
@@ -220,12 +272,17 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
           ? (session.participant_jenis === 'umum' ? 'prospektus' : 'siswa')
           : null
       },
+      tryoutSession: isParticipant ? {
+        id: session.tryout_session_id,
+        slug: session.tryout_slug,
+        name: session.tryout_name
+      } : null,
       sessionId: session.id,
       refreshToken: nextRefresh
     };
   });
 
-  const payload = await sessionPayload(result.account, result.sessionId);
+  const payload = await sessionPayload(result.account, result.sessionId, result.tryoutSession);
   setSessionCookies(res, payload.accessToken, result.refreshToken);
   res.json({
     ok: true,
@@ -252,7 +309,10 @@ publicAuthRouter.get('/me', authenticate, asyncHandler(async (req, res) => {
     data: {
       user: req.auth.user,
       roles: req.auth.roles,
-      permissions: req.auth.permissions
+      permissions: req.auth.permissions,
+      tryout_session_id: req.auth.tryoutSessionId ?? null,
+      tryout_slug: req.auth.tryoutSlug ?? null,
+      tryout_name: req.auth.tryoutName ?? null
     },
     meta: nowMeta()
   });

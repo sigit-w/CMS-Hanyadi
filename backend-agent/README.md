@@ -34,6 +34,8 @@ Fase 6q (ADR-009) menambahkan `POST /api/v1/tryouts/{id}/participants` dengan pa
 
 Fase 6r (ADR-010) memindahkan seluruh Peserta Umum ke `public.prospektus` dan mengganti nama tabel lama menjadi `public.siswa`; view `tryout_participants` tetap tersedia untuk kompatibilitas. Endpoint `GET /api/v1/participants/{id}/detail` menampilkan `password_plain`/`pin_plain`, `GET /api/v1/prospektus/{id}` menampilkan detail prospektus, dan `POST /api/v1/prospektus/{id}/daftar` menyalin prospektus ke `siswa` lalu menandai `bergabung=true`. Password user CMS di `contributors.password_hash` tetap scrypt dan tidak pernah dikembalikan oleh API.
 
+Fase 6s (ADR-011): `POST /api/v1/auth/login` untuk Siswa/Peserta Umum wajib mengirim `tryout_slug` dari URL `/{slug}` dan akun harus terdaftar di tryout tersebut. Sesi dan JWT participant menyimpan `tryout_session_id`/`tryout_slug`; daftar soal serta submission dibatasi pada tryout yang terikat. `GET /api/v1/siswa` hanya mengembalikan `public.siswa`, `GET /api/v1/tryouts/{id}/participants` hanya peserta tryout, dan konversi prospektus tetap lewat `POST /api/v1/prospektus/{id}/daftar` yang dipicu eksplisit dari halaman Prospektus.
+
 ## Jenis Soal
 
 `question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/TXT juga menerima `Jawaban: B,D`.

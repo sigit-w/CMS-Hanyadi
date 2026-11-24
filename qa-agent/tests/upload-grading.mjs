@@ -1,4 +1,7 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants,
+  cookieHeader, participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -19,6 +22,9 @@ const png = Buffer.from(
 );
 
 let participantHeaders;
+let qaTryout;
+let gradingTryoutId;
+let participantId;
 let activeSessionIds = [];
 let imageQuestionId;
 let textQuestionId;
@@ -55,6 +61,7 @@ before(async () => {
     assert.equal(response.status, 200);
   }
 
+  qaTryout = await activeTryoutContext(query);
   const active = await query('SELECT id FROM tryout_sessions WHERE is_active');
   activeSessionIds = active.rows.map((row) => row.id);
   if (activeSessionIds.length) {
@@ -73,14 +80,12 @@ before(async () => {
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
+  participantId = created.body.data.participant.id;
+  await attachQaParticipants(query, qaTryout.id, [participantId]);
 
-  const logged = await request(MAIN, '/api/v1/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username: email, password })
-  });
-  assert.equal(logged.status, 200, JSON.stringify(logged.body));
-  const cookies = logged.headers.getSetCookie().map((item) => item.split(';')[0]).join('; ');
-  participantHeaders = { Cookie: cookies };
+  const logged = await participantLogin(email, password, qaTryout.slug);
+  assert.equal(logged.status, 200, JSON.stringify(await logged.json().catch(() => ({}))));
+  participantHeaders = { Cookie: cookieHeader(logged) };
 });
 
 after(async () => {
@@ -97,6 +102,10 @@ after(async () => {
     if (sourceIds.length) {
       await query('DELETE FROM question_sources WHERE id = ANY($1::bigint[])', [sourceIds]);
     }
+  }
+  if (gradingTryoutId) {
+    await query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [gradingTryoutId]);
+    await query('DELETE FROM tryout_sessions WHERE id = $1', [gradingTryoutId]);
   }
   await query('DELETE FROM tryout_participants WHERE email = $1', [email]);
   if (imageFilename) {
@@ -151,6 +160,27 @@ test('U-03 soal tanpa gambar dibuat untuk pengujian penilaian server', async () 
   textQuestionId = created.body.data.question.id;
   questionIds.push(textQuestionId);
   assert.equal(created.body.data.question.status, 'approved');
+
+  const tryout = await request(MAIN, '/api/v1/tryouts', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({
+      name: `QA Grading ${suffix}`,
+      start_at: new Date(Date.now() + 60_000).toISOString().slice(0, 16).replace('T', ' '),
+      end_at: new Date(Date.now() + 3_600_000).toISOString().slice(0, 16).replace('T', ' '),
+      mapel_code: 'MTKA',
+      question_ids: [imageQuestionId, textQuestionId],
+      participant_ids: [participantId],
+      is_active: false
+    })
+  });
+  assert.equal(tryout.status, 201, JSON.stringify(tryout.body));
+  gradingTryoutId = tryout.body.data.tryout.id;
+  qaTryout = tryout.body.data.tryout;
+
+  const relogged = await participantLogin(email, password, qaTryout.slug);
+  assert.equal(relogged.status, 200, JSON.stringify(await relogged.json().catch(() => ({}))));
+  participantHeaders = { Cookie: cookieHeader(relogged) };
 });
 
 test('U-04 detail tryout tidak mengirim kunci jawaban', async () => {

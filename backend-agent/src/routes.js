@@ -109,26 +109,41 @@ router.get('/tryout/questions', authorize('tryout.access'), asyncHandler(async (
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const offset = (page - 1) * limit;
+  const boundSessionId = req.auth.tryoutSessionId ?? null;
   const where = `
     WHERE ($1::text IS NULL OR m.code = $1)
       AND q.status = 'approved'
       AND (
-        NOT EXISTS (
-          SELECT 1 FROM tryout_session_questions tq
-          JOIN tryout_sessions ts ON ts.id = tq.session_id
-          WHERE ts.is_active
+        (
+          $4::bigint IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM tryout_session_questions tq
+            WHERE tq.session_id = $4 AND tq.question_id = q.id
+          )
         )
-        OR EXISTS (
-          SELECT 1 FROM tryout_session_questions tq
-          JOIN tryout_sessions ts ON ts.id = tq.session_id
-          WHERE ts.is_active AND tq.question_id = q.id
+        OR (
+          $4::bigint IS NULL
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM tryout_session_questions tq
+              JOIN tryout_sessions ts ON ts.id = tq.session_id
+              WHERE ts.is_active
+            )
+            OR EXISTS (
+              SELECT 1 FROM tryout_session_questions tq
+              JOIN tryout_sessions ts ON ts.id = tq.session_id
+              WHERE ts.is_active AND tq.question_id = q.id
+            )
+          )
         )
       )
   `;
+  const params = [mapel, limit, offset, boundSessionId];
+  const countWhere = where.replaceAll('$4', '$2');
   const [list, total] = await Promise.all([
-    query(`${TRYOUT_QUESTION_SELECT} ${where} ORDER BY q.id DESC LIMIT $2 OFFSET $3`, [mapel, limit, offset]),
-    query(`SELECT count(*)::int AS total FROM questions q JOIN mapels m ON m.id = q.mapel_id ${where}`,
-      [mapel])
+    query(`${TRYOUT_QUESTION_SELECT} ${where} ORDER BY q.id DESC LIMIT $2 OFFSET $3`, params),
+    query(`SELECT count(*)::int AS total FROM questions q JOIN mapels m ON m.id = q.mapel_id ${countWhere}`,
+      [mapel, boundSessionId])
   ]);
   res.json({
     ok: true,

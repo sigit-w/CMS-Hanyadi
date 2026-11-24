@@ -1,4 +1,7 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants,
+  cookieHeader, participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -18,6 +21,7 @@ const updatedSekolah = 'SMA Negeri 2 QA';
 
 let participantId;
 let participantCookie;
+let qaTryout;
 
 async function request(pathname, options = {}) {
   const response = await fetch(`${BACKEND}${pathname}`, {
@@ -33,10 +37,9 @@ function cookies(response) {
 }
 
 async function login(username, secret) {
-  return request('/api/v1/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password: secret })
-  });
+  const response = await participantLogin(username, secret, qaTryout.slug);
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status, body, headers: response.headers };
 }
 
 before(async () => {
@@ -44,6 +47,7 @@ before(async () => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 200);
   }
+  qaTryout = await activeTryoutContext(query);
 });
 
 after(async () => {
@@ -66,6 +70,7 @@ test('P-01 admin dapat membuat dan melihat peserta tryout', async () => {
   assert.equal(created.body.data.participant.sekolah, sekolah);
   assert.equal(created.body.data.participant.is_active, true);
   assert.ok(!('password_hash' in created.body.data.participant));
+  await attachQaParticipants(query, qaTryout.id, [created.body.data.participant.id]);
 
   const listed = await request('/api/v1/participants', { headers });
   assert.equal(listed.status, 200);
@@ -77,7 +82,7 @@ test('P-01 admin dapat membuat dan melihat peserta tryout', async () => {
 test('P-02 peserta dapat login dengan email dan menerima permission presentation', async () => {
   const logged = await login(email, password);
   assert.equal(logged.status, 200, JSON.stringify(logged.body));
-  participantCookie = { Cookie: cookies(logged) };
+  participantCookie = { Cookie: cookieHeader(logged) };
   assert.deepEqual(logged.body.data.roles, ['peserta']);
 
   const me = await request('/api/v1/auth/me', { headers: participantCookie });
@@ -108,7 +113,7 @@ test('P-03 admin dapat mengubah data peserta', async () => {
 
   const logged = await login(renamedEmail, password);
   assert.equal(logged.status, 200, JSON.stringify(logged.body));
-  participantCookie = { Cookie: cookies(logged) };
+  participantCookie = { Cookie: cookieHeader(logged) };
 });
 
 test('P-04 email duplikat ditolak', async () => {
@@ -215,6 +220,7 @@ test('P-09 password default nama depan@mmyy dipakai saat password kosong', async
     body: JSON.stringify({ nama: 'Budi Default', email: defaultEmail, kelas, sekolah })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
+  await attachQaParticipants(query, qaTryout.id, [created.body.data.participant.id]);
 
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');

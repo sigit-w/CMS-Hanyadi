@@ -1,4 +1,7 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants,
+  cookieHeader, participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -18,6 +21,8 @@ const sessionIds = [];
 let participantHeaders;
 let viewerHeaders;
 let sessionId;
+let qaTryout;
+let participantId;
 
 async function request(base, pathname, options = {}) {
   const response = await fetch(`${base}${pathname}`, {
@@ -87,6 +92,7 @@ before(async () => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 200);
   }
+  qaTryout = await activeTryoutContext(query);
   const participant = await request(BACKEND, '/api/v1/participants', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -99,8 +105,8 @@ before(async () => {
     })
   });
   assert.equal(participant.status, 201, JSON.stringify(participant.body));
+  participantId = participant.body.data.participant.id;
   await createUser(viewerUsername, 'viewer');
-  participantHeaders = await login(participantEmail);
   viewerHeaders = await login(viewerUsername);
   await createQuestion(`QA sesi benar ${suffix}`);
   await createQuestion(`QA sesi salah ${suffix}`);
@@ -113,6 +119,17 @@ before(async () => {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   sessionId = created.body.data.session.id;
   sessionIds.push(sessionId);
+  await attachQaParticipants(query, sessionId, [participantId]);
+  await query(
+    `INSERT INTO tryout_session_questions (session_id, question_id, position)
+     SELECT $1, item, ordinal - 1 FROM unnest($2::bigint[]) WITH ORDINALITY AS t(item, ordinal)`,
+    [sessionId, questionIds]
+  );
+  const participantLoginResult = await participantLogin(
+    participantEmail, password, created.body.data.session.slug
+  );
+  assert.equal(participantLoginResult.status, 200, JSON.stringify(created.body));
+  participantHeaders = { Cookie: cookieHeader(participantLoginResult) };
 });
 
 after(async () => {
@@ -128,6 +145,7 @@ after(async () => {
     }
   }
   if (sessionIds.length) {
+    await query('DELETE FROM auth_sessions WHERE tryout_session_id = ANY($1::bigint[])', [sessionIds]);
     await query('DELETE FROM tryout_sessions WHERE id = ANY($1::bigint[])', [sessionIds]);
   }
   await query(
@@ -311,61 +329,67 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
 });
 
 test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () => {
-  const users = await query('SELECT id FROM tryout_participants WHERE email = $1', [participantEmail]);
-  const participantId = users.rows[0].id;
-  await query(
-    'INSERT INTO tryout_session_questions (session_id, question_id, position) VALUES ($1, $2, 0)',
-    [sessionId, questionIds[0]]
+  const created = await request(BACKEND, '/api/v1/tryouts', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({
+      name: `TO aktif QA ${suffix}`,
+      session_date: sessionDate,
+      mapel_code: 'MTKA',
+      question_ids: [questionIds[0]],
+      participant_ids: [participantId],
+      is_active: true
+    })
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const activeTryout = created.body.data.tryout;
+  sessionIds.push(activeTryout.id);
+
+  const boundLogin = await participantLogin(
+    participantEmail, password, activeTryout.slug
   );
-  await query(
-    'INSERT INTO tryout_session_participants (session_id, participant_id) VALUES ($1, $2)',
-    [sessionId, participantId]
+  assert.equal(boundLogin.status, 200);
+  const boundHeaders = { Cookie: cookieHeader(boundLogin) };
+
+  const list = await request(BACKEND, '/api/v1/tryout/questions?limit=100', {
+    headers: boundHeaders
+  });
+  assert.equal(list.status, 200, JSON.stringify(list.body));
+  assert.ok(list.body.data, JSON.stringify(list.body));
+  const ids = list.body.data.questions.map((item) => String(item.id));
+  assert.ok(ids.includes(String(questionIds[0])));
+  assert.ok(!ids.includes(String(questionIds[1])));
+
+  const blockedQuestion = await request(
+    PRESENTATION,
+    `/api/v1/presentation/questions/${questionIds[1]}/submit`,
+    {
+      method: 'POST',
+      headers: boundHeaders,
+      body: JSON.stringify({ answer: 'B' })
+    }
   );
+  assert.equal(blockedQuestion.status, 403, JSON.stringify(blockedQuestion.body));
 
-  try {
-    const list = await request(BACKEND, '/api/v1/tryout/questions?limit=100', {
-      headers: participantHeaders
-    });
-    assert.equal(list.status, 200, JSON.stringify(list.body));
-    assert.ok(list.body.data, JSON.stringify(list.body));
-    const ids = list.body.data.questions.map((item) => String(item.id));
-    assert.ok(ids.includes(String(questionIds[0])));
-    assert.ok(!ids.includes(String(questionIds[1])));
+  const blockedUser = await request(
+    PRESENTATION,
+    `/api/v1/presentation/questions/${questionIds[0]}/submit`,
+    {
+      method: 'POST',
+      headers: viewerHeaders,
+      body: JSON.stringify({ answer: 'B' })
+    }
+  );
+  assert.equal(blockedUser.status, 403, JSON.stringify(blockedUser.body));
 
-    const blockedQuestion = await request(
-      PRESENTATION,
-      `/api/v1/presentation/questions/${questionIds[1]}/submit`,
-      {
-        method: 'POST',
-        headers: participantHeaders,
-        body: JSON.stringify({ answer: 'B' })
-      }
-    );
-    assert.equal(blockedQuestion.status, 403, JSON.stringify(blockedQuestion.body));
-
-    const blockedUser = await request(
-      PRESENTATION,
-      `/api/v1/presentation/questions/${questionIds[0]}/submit`,
-      {
-        method: 'POST',
-        headers: viewerHeaders,
-        body: JSON.stringify({ answer: 'B' })
-      }
-    );
-    assert.equal(blockedUser.status, 403, JSON.stringify(blockedUser.body));
-
-    const allowed = await request(
-      PRESENTATION,
-      `/api/v1/presentation/questions/${questionIds[0]}/submit`,
-      {
-        method: 'POST',
-        headers: participantHeaders,
-        body: JSON.stringify({ answer: 'B' })
-      }
-    );
-    assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
-  } finally {
-    await query('DELETE FROM tryout_session_questions WHERE session_id = $1', [sessionId]);
-    await query('DELETE FROM tryout_session_participants WHERE session_id = $1', [sessionId]);
-  }
+  const allowed = await request(
+    PRESENTATION,
+    `/api/v1/presentation/questions/${questionIds[0]}/submit`,
+    {
+      method: 'POST',
+      headers: boundHeaders,
+      body: JSON.stringify({ answer: 'B' })
+    }
+  );
+  assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
 });

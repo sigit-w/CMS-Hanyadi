@@ -11,12 +11,14 @@ async function loadAuth(req) {
   if (!payload?.sub || !payload?.sid) return null;
 
   const session = await query(
-    `SELECT s.id, s.user_id, s.participant_id,
+    `SELECT s.id, s.user_id, s.participant_id, s.tryout_session_id,
             c.username, c.display_name,
-             coalesce(tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama
+             coalesce(tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama,
+             ts.slug AS tryout_slug, ts.name AS tryout_name
      FROM auth_sessions s
      LEFT JOIN contributors c ON c.id = s.user_id
      LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
+     LEFT JOIN tryout_sessions ts ON ts.id = s.tryout_session_id
      WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`,
     [payload.sid]
   );
@@ -26,15 +28,30 @@ async function loadAuth(req) {
   if (payload.account_type === ACCOUNT_TYPE_PARTICIPANT || found.participant_id) {
     if (!found.participant_id || Number(payload.sub) !== Number(found.participant_id)
       || !found.participant_username) return null;
+    if (!found.tryout_session_id || !found.tryout_slug
+      || Number(payload.tryout_session_id) !== Number(found.tryout_session_id)
+      || payload.tryout_slug !== found.tryout_slug) return null;
+    const membership = await query(
+      `SELECT 1 FROM tryout_session_participants
+       WHERE session_id = $1 AND participant_id = $2`,
+      [found.tryout_session_id, found.participant_id]
+    );
+    if (!membership.rows[0]) return null;
     return {
       sessionId: found.id,
       user: {
         id: found.participant_id,
         username: found.participant_username,
-        display_name: found.participant_nama
+        display_name: found.participant_nama,
+        tryout_session_id: Number(found.tryout_session_id),
+        tryout_slug: found.tryout_slug,
+        tryout_name: found.tryout_name
       },
       roles: PARTICIPANT_ROLES,
-      permissions: PARTICIPANT_PERMISSIONS
+      permissions: PARTICIPANT_PERMISSIONS,
+      tryoutSessionId: Number(found.tryout_session_id),
+      tryoutSlug: found.tryout_slug,
+      tryoutName: found.tryout_name
     };
   }
 

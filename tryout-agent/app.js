@@ -1,6 +1,10 @@
 (() => {
   const API = '/api/v1';
   const IMAGE_ONLY_STEM = '[Gambar soal]';
+  const RESERVED_SLUGS = new Set([
+    'api', 'assets', 'health', 'favicon.ico', 'robots.txt', 'login', 'admin', 'tryout'
+  ]);
+  const TRYOUT_SLUG = resolveTryoutSlug();
   const state = {
     questions: [],
     page: 1,
@@ -22,12 +26,20 @@
     loginUsername: document.getElementById('loginUsername'),
     loginPassword: document.getElementById('loginPassword'),
     loginError: document.getElementById('loginError'),
+    tryoutSlugLabel: document.getElementById('tryoutSlugLabel'),
     loginButton: document.getElementById('loginButton'),
     appHeader: document.getElementById('appHeader'),
     appMain: document.getElementById('appMain'),
     userLabel: document.getElementById('userLabel'),
     logoutButton: document.getElementById('logoutButton')
   };
+
+  function resolveTryoutSlug() {
+    const first = window.location.pathname.split('/').filter(Boolean)[0] || '';
+    if (!first || RESERVED_SLUGS.has(first.toLowerCase())) return null;
+    const slug = first.toLowerCase();
+    return /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(slug) ? slug : null;
+  }
 
   class SessionError extends Error {
     constructor(message, status) {
@@ -73,7 +85,7 @@
     elements.loginGate.hidden = true;
     elements.appHeader.hidden = false;
     elements.appMain.hidden = false;
-    elements.userLabel.textContent = session.user.username;
+    elements.userLabel.textContent = `${session.user.username}${session.tryout_slug ? ` · ${session.tryout_slug}` : ''}`;
   }
 
   async function checkSession() {
@@ -96,16 +108,18 @@
       await api('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: elements.loginUsername.value,
-          password: elements.loginPassword.value
-        })
+          body: JSON.stringify({
+            username: elements.loginUsername.value,
+            password: elements.loginPassword.value,
+            tryout_slug: TRYOUT_SLUG
+          })
+
       });
       await checkSession();
     } catch (error) {
-      const message = error.status === 401 || error.status === 403
-        ? 'Nama/email atau PIN/password salah.'
-        : error.message;
+      const message = error instanceof SessionError
+        ? error.message
+        : 'Nama/email atau PIN/password salah.';
       showLogin(message);
     } finally {
       elements.loginButton.disabled = false;
@@ -310,6 +324,18 @@
       form.append(renderSavedNote());
     }
     body.append(form);
+  }
+
+  if (elements.tryoutSlugLabel) {
+    elements.tryoutSlugLabel.textContent = TRYOUT_SLUG
+      ? `Tryout: ${TRYOUT_SLUG}`
+      : 'Tautan tryout tidak valid';
+  }
+
+  if (!TRYOUT_SLUG) {
+    showLogin('Tautan tryout tidak valid. Gunakan URL yang dibagikan administrator.');
+    elements.loginForm.querySelector('button[type="submit"]').disabled = true;
+    return;
   }
 
   elements.loadMore.addEventListener('click', () => loadQuestions(state.page + 1, true));

@@ -1,4 +1,6 @@
-import { adminHeaders, API_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants, participantLogin
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -27,6 +29,7 @@ let umumId;
 let siswaId;
 let daftarId;
 let daftarSiswaId;
+let qaTryout;
 
 async function api(pathname, options = {}) {
   const response = await fetch(`${API_BASE}${pathname}`, {
@@ -38,11 +41,7 @@ async function api(pathname, options = {}) {
 }
 
 async function login(username, password) {
-  const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
+  const response = await participantLogin(username, password, qaTryout.slug);
   return { status: response.status, body: await response.json().catch(() => ({})) };
 }
 
@@ -58,6 +57,7 @@ async function createParticipant(payload) {
 before(async () => {
   const response = await fetch(`${API_BASE}/health`);
   assert.equal(response.status, 200);
+  qaTryout = await activeTryoutContext(query);
 });
 
 after(async () => {
@@ -90,6 +90,7 @@ test('PS-01 Peserta Umum dari form tryout tersimpan di prospektus dan tetap logi
   assert.equal(detail.status, 200, JSON.stringify(detail.body));
   assert.equal(detail.body.data.participant.pin_plain, umumPin);
 
+  await attachQaParticipants(query, qaTryout.id, [umumId]);
   const accepted = await login(umumNama, umumPin);
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
 });
@@ -154,6 +155,7 @@ test('PS-03 prospektus didaftarkan sebagai siswa dan ditandai bergabung', async 
   assert.equal(prospekRow.rows[0].bergabung, true);
   assert.ok(prospekRow.rows[0].bergabung_at);
 
+  await attachQaParticipants(query, qaTryout.id, [daftarSiswaId]);
   const accepted = await login(daftarEmail, daftarPassword);
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
 
@@ -188,9 +190,9 @@ test('PS-05 trigger integritas menolak participant_id tidak ditemukan', async ()
   const bogus = 987654321;
   await assert.rejects(
     query(
-      `INSERT INTO auth_sessions (participant_id, refresh_hash, expires_at, last_used_at)
-       VALUES ($1, $2, now() + interval '1 day', now())`,
-      [bogus, `qa6r-${suffix}`]
+      `INSERT INTO auth_sessions (participant_id, tryout_session_id, refresh_hash, expires_at, last_used_at)
+       VALUES ($1, $2, $3, now() + interval '1 day', now())`,
+      [bogus, qaTryout.id, `qa6r-${suffix}`]
     ),
     /participant_id/
   );

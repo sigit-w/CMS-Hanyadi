@@ -27,3 +27,39 @@ export async function adminHeaders(extra = {}) {
 export async function adminCookie() {
   return (await adminHeaders()).Cookie;
 }
+
+export async function activeTryoutContext(runQuery) {
+  const { rows } = await runQuery(
+    `SELECT id, slug FROM tryout_sessions
+     WHERE is_active AND slug IS NOT NULL
+     ORDER BY id DESC LIMIT 1`
+  );
+  if (!rows[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
+  return { id: rows[0].id, slug: rows[0].slug };
+}
+
+export async function attachQaParticipants(runQuery, tryoutId, participantIds) {
+  const ids = participantIds.filter(Boolean).map(Number);
+  if (!ids.length) return;
+  await runQuery(
+    `INSERT INTO tryout_session_participants (session_id, participant_id)
+     SELECT $1, item FROM unnest($2::bigint[]) AS t(item)
+     ON CONFLICT (session_id, participant_id) DO NOTHING`,
+    [tryoutId, ids]
+  );
+}
+
+export async function participantLogin(username, password, tryoutSlug) {
+  return fetch(`${BASE}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, tryout_slug: tryoutSlug })
+  });
+}
+
+export function cookieHeader(response) {
+  const cookies = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie')];
+  return cookies.filter(Boolean).map((item) => item.split(';')[0]).join('; ');
+}

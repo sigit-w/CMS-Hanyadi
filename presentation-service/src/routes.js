@@ -13,7 +13,12 @@ function assignmentOwnerId(auth) {
   return auth.accountType === 'participant' ? auth.participantId : auth.userId;
 }
 
-async function assertTryoutAssignment(userId, questionId) {
+async function assertTryoutAssignment(auth, questionId) {
+  const userId = assignmentOwnerId(auth);
+  const boundSessionId = auth.accountType === 'participant' ? auth.tryoutSessionId : null;
+  if (auth.accountType === 'participant' && !boundSessionId) {
+    throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+  }
   const { rows } = await pool.query(
     `SELECT
        EXISTS (SELECT 1 FROM tryout_session_participants p
@@ -25,13 +30,17 @@ async function assertTryoutAssignment(userId, questionId) {
        EXISTS (SELECT 1 FROM tryout_session_questions tq
                WHERE tq.session_id = s.id AND tq.question_id = $2) AS has_question
      FROM tryout_sessions s
-     WHERE s.is_active
+     WHERE ($3::bigint IS NOT NULL AND s.id = $3)
+        OR ($3::bigint IS NULL AND s.is_active)
      ORDER BY s.id DESC
      LIMIT 1`,
-    [userId, questionId]
+    [userId, questionId, boundSessionId]
   );
   const session = rows[0];
-  if (!session) return;
+  if (!session) {
+    if (boundSessionId) throw new ApiError('FORBIDDEN', 'Tryout yang terikat tidak ditemukan', 403);
+    return;
+  }
   if (session.has_participants && !session.is_participant) {
     throw new ApiError('FORBIDDEN', 'Akun tidak terdaftar sebagai peserta tryout aktif', 403);
   }
@@ -76,7 +85,7 @@ router.get('/health', asyncHandler(async (req, res) => {
 
 router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
-  await assertTryoutAssignment(assignmentOwnerId(req.auth), id);
+  await assertTryoutAssignment(req.auth, id);
   const question = await approvedQuestion(id);
   const options = await questionOptions(id);
 
@@ -97,7 +106,7 @@ router.get('/api/v1/presentation/questions/:id', requireTryoutSession(), asyncHa
 
 router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(), asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
-  await assertTryoutAssignment(assignmentOwnerId(req.auth), id);
+  await assertTryoutAssignment(req.auth, id);
   const question = await approvedQuestion(id);
 
   const rawAnswer = req.body?.answer;
@@ -114,12 +123,15 @@ router.post('/api/v1/presentation/questions/:id/submit', requireTryoutSession(),
   );
   const answerValue = answers.length ? answers.join(',') : text || null;
 
-  const activeSession = await pool.query(
-    'SELECT id FROM tryout_sessions WHERE is_active ORDER BY id DESC LIMIT 1'
-  );
-  const sessionId = activeSession.rows[0]?.id ?? null;
-
   const isParticipant = req.auth.accountType === 'participant';
+  let sessionId = isParticipant ? req.auth.tryoutSessionId : null;
+  if (!sessionId) {
+    const activeSession = await pool.query(
+      'SELECT id FROM tryout_sessions WHERE is_active ORDER BY id DESC LIMIT 1'
+    );
+    sessionId = activeSession.rows[0]?.id ?? null;
+  }
+
   const submitted = await pool.query(
     `INSERT INTO tryout_submissions (${isParticipant ? 'participant_id' : 'user_id'},
                                      question_id, session_id, version, answer, is_correct, explanation)

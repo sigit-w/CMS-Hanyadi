@@ -1,4 +1,7 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants,
+  cookieHeader, participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -41,19 +44,11 @@ before(async () => {
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
-  await query(
-    `INSERT INTO tryout_session_participants (session_id, participant_id)
-     SELECT id, $1 FROM tryout_sessions WHERE is_active ORDER BY id DESC LIMIT 1
-     ON CONFLICT (session_id, participant_id) DO NOTHING`,
-    [created.body.data.participant.id]
-  );
-  const logged = await request(MAIN, '/api/v1/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username: pesertaEmail, password: pesertaPassword })
-  });
-  assert.equal(logged.status, 200, JSON.stringify(logged.body));
-  const cookies = logged.headers.getSetCookie().map((item) => item.split(';')[0]).join('; ');
-  pesertaHeaders = { Cookie: cookies };
+  const qaTryout = await activeTryoutContext(query);
+  await attachQaParticipants(query, qaTryout.id, [created.body.data.participant.id]);
+  const logged = await participantLogin(pesertaEmail, pesertaPassword, qaTryout.slug);
+  assert.equal(logged.status, 200, JSON.stringify(await logged.json().catch(() => ({}))));
+  pesertaHeaders = { Cookie: cookieHeader(logged) };
 });
 
 after(async () => {

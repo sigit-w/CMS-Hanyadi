@@ -3,8 +3,8 @@ import {
   createParticipant,
   deleteParticipant,
   getParticipantDetail,
-  getParticipants,
   getProgramsBelajar,
+  getSiswa,
   updateParticipant,
   updateParticipantPassword
 } from '../api.js';
@@ -56,10 +56,10 @@ export default function PesertaManagement() {
 
   async function load() {
     const [participantData, programData] = await Promise.all([
-      getParticipants(),
+      getSiswa(),
       getProgramsBelajar()
     ]);
-    setParticipants(participantData.participants ?? []);
+    setParticipants(participantData.siswa ?? []);
     setPrograms(programData.programs ?? []);
   }
 

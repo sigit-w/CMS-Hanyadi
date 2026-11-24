@@ -1,4 +1,7 @@
-import { adminHeaders, API_BASE, PRESENTATION_BASE } from './auth-helper.mjs';
+import {
+  activeTryoutContext, adminHeaders, API_BASE, attachQaParticipants,
+  participantLogin, PRESENTATION_BASE
+} from './auth-helper.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -24,6 +27,7 @@ let mapelCode;
 let questionIds = [];
 let umumId;
 let lockedId;
+let qaTryout;
 const tryoutIds = [];
 
 function cookies(response) {
@@ -44,10 +48,8 @@ async function request(pathname, options = {}) {
 }
 
 async function login(username, password) {
-  return request('/api/v1/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password })
-  });
+  const response = await participantLogin(username, password, qaTryout.slug);
+  return { status: response.status, body: await response.json().catch(() => ({})), headers: response.headers };
 }
 
 before(async () => {
@@ -55,6 +57,7 @@ before(async () => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 200);
   }
+  qaTryout = await activeTryoutContext(query);
   const sheets = await query(
     `SELECT sh.id, m.code AS mapel_code
      FROM question_sheets sh
@@ -135,6 +138,7 @@ test('U-02 admin dapat membuat Peserta Umum dengan PIN 9 digit', async () => {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const participant = created.body.data.participant;
   umumId = participant.id;
+  await attachQaParticipants(query, qaTryout.id, [umumId]);
   assert.equal(participant.jenis, 'umum');
   assert.equal(participant.email, null);
   assert.equal(participant.kelas, 0);
@@ -205,9 +209,11 @@ test('U-05 PIN salah 5 kali mengunci akun Umum', async () => {
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
-  lockedId = created.body.data.participant.id;
+    lockedId = created.body.data.participant.id;
+  await attachQaParticipants(query, qaTryout.id, [lockedId]);
 
-  const wrongPin = String((Number(lockedPin) + 1) % 1_000_000_000).padStart(9, '0');
+  const wrongPin =
+ String((Number(lockedPin) + 1) % 1_000_000_000).padStart(9, '0');
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const failed = await login(lockedNama, wrongPin);
     assert.equal(failed.status, 401, JSON.stringify(failed.body));
@@ -292,8 +298,8 @@ test('U-09 aturan login halaman tryout diperbarui', () => {
   const js = readFileSync(TRYOUT_JS, 'utf8');
   assert.match(html, /Nama atau Email peserta/);
   assert.match(html, /Password atau PIN/);
-  assert.match(html, /styles\.css\?v=11/);
-  assert.match(html, /app\.js\?v=12/);
+  assert.match(html, /styles\.css\?v=12/);
+  assert.match(html, /app\.js\?v=13/);
   assert.doesNotMatch(html, /type="email"/);
   assert.match(js, /Nama\/email atau PIN\/password salah/);
   assert.match(js, /username: elements\.loginUsername\.value/);

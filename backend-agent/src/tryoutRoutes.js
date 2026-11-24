@@ -1,19 +1,34 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
 import { parseId, requireMapelCode } from './validate.js';
 import { authorize } from './authMiddleware.js';
+import { normalizeTryoutSlug, generateTryoutSlug } from './auth.js';
 
 export const tryoutRouter = Router();
 
 const nowMeta = () => ({ ts: new Date().toISOString() });
 const adminOnly = authorize('tryouts.manage');
 
+function temporarySlug() {
+  return `tmp-${crypto.randomBytes(12).toString('hex')}`;
+}
+
 function requireName(value) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > 128) {
     throw new ApiError('VALIDATION_ERROR', 'nama tryout wajib diisi maksimal 128 karakter');
   }
   return value.trim();
+}
+
+function optionalSlug(value) {
+  if (value === undefined || value === null || value === '') return null;
+  try {
+    return normalizeTryoutSlug(value, 'slug');
+  } catch {
+    throw new ApiError('VALIDATION_ERROR', 'slug tidak valid atau termasuk kata yang dicadangkan');
+  }
 }
 
 function requireDate(value) {
@@ -77,7 +92,7 @@ function optionalIds(value, field) {
 async function loadTryout(client, id) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
-    `SELECT s.id, s.name, s.session_date, s.start_at, s.end_at, s.is_active,
+    `SELECT s.id, s.name, s.slug, s.session_date, s.start_at, s.end_at, s.is_active,
             m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
             (SELECT coalesce(array_agg(tq.question_id ORDER BY tq.position, tq.question_id), '{}'::bigint[])
              FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_ids,
@@ -96,7 +111,7 @@ async function loadTryout(client, id) {
 
 tryoutRouter.get('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const { rows } = await query(
-    `SELECT s.id, s.name, s.session_date, s.start_at, s.end_at, s.is_active,
+    `SELECT s.id, s.name, s.slug, s.session_date, s.start_at, s.end_at, s.is_active,
             m.id AS mapel_id, m.code AS mapel_code, m.name AS mapel_name,
             (SELECT count(*)::int FROM tryout_session_questions tq WHERE tq.session_id = s.id) AS question_count,
             (SELECT count(*)::int FROM tryout_session_sheets tss WHERE tss.session_id = s.id) AS sheet_count,
@@ -117,11 +132,30 @@ tryoutRouter.get('/tryouts/:id', adminOnly, asyncHandler(async (req, res) => {
   res.json({ ok: true, data: { tryout }, meta: nowMeta() });
 }));
 
+tryoutRouter.get('/tryouts/:id/participants', adminOnly, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const found = await query('SELECT id FROM tryout_sessions WHERE id = $1', [id]);
+  if (!found.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+  const { rows } = await query(
+    `SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah, p.is_active,
+            p.created_at, p.updated_at,
+            (SELECT count(*)::int FROM tryout_submissions ts
+             WHERE ts.participant_id = p.id AND ts.session_id = $1) AS submission_count
+     FROM tryout_session_participants sp
+     JOIN tryout_participants p ON p.id = sp.participant_id
+     WHERE sp.session_id = $1
+     ORDER BY p.id DESC`,
+    [id]
+  );
+  res.json({ ok: true, data: { tryout_id: id, participants: rows }, meta: nowMeta() });
+}));
+
 tryoutRouter.delete('/tryouts/:id', adminOnly, asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
   await withTransaction(async (client) => {
     const found = await client.query('SELECT id FROM tryout_sessions WHERE id = $1', [id]);
     if (!found.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+    await client.query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [id]);
     await client.query('DELETE FROM tryout_sessions WHERE id = $1', [id]);
   });
   res.json({ ok: true, data: { tryout_id: id, deleted: true }, meta: nowMeta() });
@@ -215,6 +249,7 @@ tryoutRouter.post('/tryouts/:id/participants', adminOnly, asyncHandler(async (re
 
 tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const name = requireName(req.body?.name);
+  const requestedSlug = optionalSlug(req.body?.slug);
   const mapelCode = requireMapelCode(req.body?.mapel_code ?? req.body?.mapel);
   const hasSchedule = req.body?.start_at !== undefined || req.body?.end_at !== undefined;
 
@@ -300,12 +335,21 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       await client.query('UPDATE tryout_sessions SET is_active = false WHERE is_active');
     }
     const inserted = await client.query(
-      `INSERT INTO tryout_sessions (name, session_date, start_at, end_at, mapel_id, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO tryout_sessions (name, slug, session_date, start_at, end_at, mapel_id, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id`,
-      [name, sessionDate, startAt, endAt, mapelId, activate]
+      [name, temporarySlug(), sessionDate, startAt, endAt, mapelId, activate]
     );
     const tryoutId = inserted.rows[0].id;
+    const resolvedSlug = requestedSlug ?? generateTryoutSlug(name, tryoutId);
+    const slugTaken = await client.query(
+      'SELECT id FROM tryout_sessions WHERE slug = $1 AND id <> $2',
+      [resolvedSlug, tryoutId]
+    );
+    if (slugTaken.rows[0]) {
+      throw new ApiError('VALIDATION_ERROR', 'slug tryout sudah digunakan');
+    }
+    await client.query('UPDATE tryout_sessions SET slug = $2 WHERE id = $1', [tryoutId, resolvedSlug]);
 
     if (hasSheets) {
       await client.query(
