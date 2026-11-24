@@ -305,4 +305,4 @@ Permintaan pemilik: hapus helper text `Data siswa tidak ditampilkan sampai dipil
 | FE-31 | Frontend | P0 | done | BE-34 (kontrak) | Helper text hilang; popup Kelola Peserta A/B; target `draft`/`manage`; bundle `index-D0au7v9d.js` |
 | QA-31 | QA | P0 | done | BE-34, FE-31 | QP-01..QP-05 lolos; regresi 155/155; laporan & gate `REL-19 GO` |
 | DOC-06Q | PM/Docs | P1 | done | FE-31, QA-31 | `laporan-sistem/index.html` diperbarui ke Fase 6q, 155/155, REL-19 |
-| REL-19 | PM | P0 | review | QA-31, DOC-06Q | Deploy & verifikasi produksi selesai; commit/push menyusul |
+| REL-19 | PM | P0 | done | QA-31, DOC-06Q | **GO** 2026-11-24; deploy & verifikasi produksi selesai; commit `a143409` |

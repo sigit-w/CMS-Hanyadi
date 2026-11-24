@@ -35,6 +35,6 @@ Seluruh acceptance criteria Fase 6q terpenuhi. Helper text yang dilarang sudah h
 ## Catatan Rilis
 
 - Tidak ada perubahan skema DB; backend di-restart setelah perubahan source.
-- Perubahan menyentuh backend, CMS, OpenAPI, backend README, laporan sistem, QA, PM docs, dan akan di-commit ke `origin/main`.
+- Perubahan menyentuh backend, CMS, OpenAPI, backend README, laporan sistem, QA, dan PM docs; sudah di-commit sebagai `a143409` dan terdorong ke `origin/main`.
 - Rollback cepat UI: kembalikan bundle CMS ke `index-CIWSCIZ4.js` dan kode backend ke commit sebelumnya.
 - `REL-15` (Fase 6m) tetap partial; `REL-16`, `REL-17`, `REL-18`, dan `REL-19` GO.
