@@ -167,23 +167,23 @@ export default function ProgramBelajarManagement() {
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="program-name">1. Nama Program</Label>
+                <Label htmlFor="program-name">Nama Program</Label>
                 <Input id="program-name" required maxLength={128} placeholder="Contoh: Kelas Intensif Matematika"
                   value={form.name} onChange={(event) => updateForm({ name: event.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="program-kelas">2. Kelas (maks. 2 digit, maks. 12)</Label>
+                <Label htmlFor="program-kelas">Kelas (maks. 2 digit, maks. 12)</Label>
                 <Input id="program-kelas" required type="text" inputMode="numeric" pattern="[0-9]{1,2}" maxLength={2}
                   placeholder="Contoh: 03" value={form.kelas}
                   onChange={(event) => updateForm({ kelas: event.target.value.replace(/\D/g, '').slice(0, 2) })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="program-biaya">3. Biaya</Label>
+                <Label htmlFor="program-biaya">Biaya</Label>
                 <Input id="program-biaya" type="number" min="0" step="0.01" placeholder="Contoh: 150000"
                   value={form.biaya} onChange={(event) => updateForm({ biaya: event.target.value })} />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="program-description">4. Deskripsi Program</Label>
+                <Label htmlFor="program-description">Deskripsi Program</Label>
                 <Textarea id="program-description" maxLength={1000} rows={2} placeholder="Opsional"
                   value={form.description} onChange={(event) => updateForm({ description: event.target.value })} />
               </div>
@@ -192,7 +192,7 @@ export default function ProgramBelajarManagement() {
             <div className="space-y-3 rounded-md border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <Label>5. Jadwal</Label>
+                  <Label>Jadwal</Label>
                   <p className="text-xs text-muted-foreground">Bisa lebih dari satu jadwal dalam satu program.</p>
                 </div>
                 <div className="flex items-center gap-2">

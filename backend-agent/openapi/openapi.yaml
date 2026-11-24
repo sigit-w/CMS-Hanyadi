@@ -115,9 +115,10 @@ paths:
         '409': { description: Role admin tetap harus memiliki roles.manage }
   /api/v1/permissions:
     get:
-      summary: Daftar seluruh permission untuk checkbox RBAC (roles.manage)
+      summary: Daftar 46 permission untuk checkbox RBAC (roles.manage)
+      description: Mengembalikan seluruh kode permission aktif, termasuk opsi CRUD dan permission agregat *.manage yang tetap diterima guard backend.
       responses:
-        '200': { description: Daftar permission }
+        '200': { description: Daftar 46 permission }
   /api/v1/users:
     get:
       summary: Daftar pengguna beserta role (roles.manage)

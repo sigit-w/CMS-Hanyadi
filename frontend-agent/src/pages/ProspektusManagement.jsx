@@ -5,7 +5,7 @@ import {
   getProgramsBelajar,
   registerProspektus
 } from '../api.js';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -119,16 +119,10 @@ export default function ProspektusManagement() {
       {loading && <Alert>Memuat prospektus…</Alert>}
 
       <Card>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">Daftar Prospektus</CardTitle>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary">{items.length} data</Badge>
-            <Button type="button" variant="outline" size="sm" onClick={load}>Muat ulang</Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 max-w-sm">
-            <Input value={search} placeholder="Cari nama atau sekolah" onChange={(event) => setSearch(event.target.value)} />
+        <CardContent className="pt-6">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama atau sekolah" aria-label="Cari prospektus" onChange={(event) => setSearch(event.target.value)} />
+            <Badge variant="secondary" className="h-9 px-3">{visible.length} data</Badge>
           </div>
           {visible.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada Peserta Umum di prospektus.</p>

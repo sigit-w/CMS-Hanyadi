@@ -9,11 +9,22 @@ import { Alert } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
-const HIDDEN_PERMISSION_PREFIX = 'readiness.';
-const GROUP_LABELS = { cms: 'CMS', questions: 'Soal', question_sheets: 'Lembar Soal', mapels: 'Manajemen Mapel', roles: 'Manajemen Role', tryout: 'Tryout', tryouts: 'Manajemen Tryout', presentation: 'Penyajian', users: 'Pengguna', reports: 'Laporan', tryout_reports: 'Laporan Tryout' };
+const GROUP_LABELS = {
+  cms: 'CMS',
+  questions: 'Soal',
+  question_sheets: 'Lembar Soal',
+  mapels: 'Manajemen Mapel',
+  roles: 'Manajemen Role',
+  tryout: 'Tryout',
+  tryouts: 'Manajemen Tryout',
+  participants: 'Siswa & Peserta',
+  presentation: 'Penyajian',
+  users: 'Pengguna',
+  reports: 'Laporan',
+  tryout_reports: 'Laporan Tryout',
+  program_belajar: 'Program Belajar'
+};
 const permissionCodes = (role) => role?.permissions ?? [];
-const isHiddenPermission = (code) => code.startsWith(HIDDEN_PERMISSION_PREFIX);
-const hiddenCodesForRole = (role) => permissionCodes(role).filter(isHiddenPermission);
 
 export default function RoleManagement() {
   const [roles, setRoles] = useState([]);
@@ -25,7 +36,7 @@ export default function RoleManagement() {
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const visiblePermissions = permissions.filter((p) => !isHiddenPermission(p.code));
+  const visiblePermissions = permissions;
 
   async function load() {
     const [roleData, permissionData] = await Promise.all([getRoles(), getPermissions()]);
@@ -63,7 +74,7 @@ export default function RoleManagement() {
     e.preventDefault(); if (!selectedRole) return;
     setSaving(true); setError(''); setNotice('');
     try {
-      const payload = [...new Set([...checked, ...hiddenCodesForRole(selectedRole)])];
+      const payload = [...new Set(checked)];
       const saved = await updateRolePermissions(selectedRole.id, payload);
       setChecked(saved.permissions);
       const roleData = await load();
@@ -80,7 +91,7 @@ export default function RoleManagement() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Kelola Role & Hak Akses</h1>
-        <p className="text-sm text-muted-foreground">Atur permission per role. Perubahan berlaku langsung.</p>
+        <p className="text-sm text-muted-foreground">Atur semua opsi CRUD per role. Perubahan berlaku langsung.</p>
       </div>
       {error && <Alert variant="destructive">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
@@ -121,7 +132,7 @@ export default function RoleManagement() {
             {!selectedRole ? <p className="text-sm text-muted-foreground">Pilih role untuk mengatur permission.</p> : (
               <form className="space-y-5" onSubmit={handleSave}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setChecked([...visiblePermissions.map((p) => p.code), ...hiddenCodesForRole(selectedRole)])}>Pilih semua</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setChecked(visiblePermissions.map((p) => p.code))}>Pilih semua</Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => setChecked([])}>Kosongkan</Button>
                   <span className="text-xs text-muted-foreground ml-auto">{visiblePermissions.filter((p) => checked.includes(p.code)).length}/{visiblePermissions.length} dipilih</span>
                 </div>

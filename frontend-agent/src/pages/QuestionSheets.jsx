@@ -293,19 +293,19 @@ export default function QuestionSheets() {
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="sheet-name">1. Nama Lembar Soal</Label>
+                <Label htmlFor="sheet-name">Nama Lembar Soal</Label>
                 <Input id="sheet-name" required maxLength={128} placeholder="Contoh: Tryout Matematika Genap"
                   value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sheet-mapel">2. Mapel</Label>
+                <Label htmlFor="sheet-mapel">Mapel</Label>
                 <SelectNative id="sheet-mapel" required value={form.mapel_code} onChange={handleMapelChange}>
                   <option value="">Pilih mapel terlebih dahulu</option>
                   {mapels.map((mapel) => <option key={mapel.id} value={mapel.code}>{mapel.name}</option>)}
                 </SelectNative>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sheet-code">3. Kode Lembar Soal</Label>
+                <Label htmlFor="sheet-code">Kode Lembar Soal</Label>
                 <Input id="sheet-code" required maxLength={12} pattern="[A-Z0-9-]{12}" className="font-mono"
                   placeholder="Otomatis setelah mapel dipilih" disabled={!form.mapel_code}
                   value={form.code}
@@ -335,7 +335,7 @@ export default function QuestionSheets() {
                 <>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="min-w-[220px] flex-1 space-y-2">
-                      <Label htmlFor="picker-search">6. Cari Soal pada Mapel Ini</Label>
+                      <Label htmlFor="picker-search">Cari Soal pada Mapel Ini</Label>
                       <Input id="picker-search" placeholder="Kata kunci pada teks soal"
                         value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
                     </div>

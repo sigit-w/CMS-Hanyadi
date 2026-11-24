@@ -210,6 +210,14 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -f /opt/virtual-office-bank-soal/db/migrations/027_cbt_exam_mode.sql
 ```
 
+Opsi CRUD RBAC (ADR-014; idempotent, dijalankan setelah `027`):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -1 -f /opt/virtual-office-bank-soal/db/migrations/028_crud_permissions.sql
+```
+
 Kredensial tersimpan di
 
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
@@ -262,6 +270,8 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - Semua sesi `tryout_sessions` kini memiliki pengaturan CBT: `cbt_enabled`, `cbt_duration_minutes` (1–600 saat aktif), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0 = tanpa batas, maksimal 100). Sesi lama tetap `cbt_enabled=false` dan memakai alur tryout sebelumnya.
 - `tryout_attempts` menyimpan satu attempt per `(session_id, participant_id)` dengan `seed` deterministik, `started_at`, `deadline_at`, `status` (`in_progress`/`submitted`/`expired`), dan `violation_count`. `tryout_cbt_drafts` menyimpan autosave jawaban, `tryout_cbt_flags` menyimpan tanda ragu-ragu, dan `tryout_cbt_violations` menyimpan log pelanggaran fullscreen/tab.
 - Acak soal dan opsi memakai `seed` attempt. Opsi tetap menyimpan `key` asli di database dan dikirim bersama `label` tampilan yang sudah diacak; peserta mengirim `key` asli sehingga penilaian tidak berubah. Skor tidak pernah dikembalikan ke peserta; `v_cbt_attempt_report` dipakai laporan admin.
+- Migrasi `028` menambah 30 permission CRUD untuk `questions`, `question_sheets`, `tryouts`, `participants`, `mapels`, `roles`, `users`, dan `program_belajar`. Total permission 46 dengan 76 pemetaan role-permission. Permission `*.manage` lama tetap dipakai guard backend; `admin` mendapat semua permission baru, `editor` mendapat CRUD soal/lembar soal/program belajar, role lain tidak berubah.
+- Purge operasional 2026-11-24 menghapus soal, opsi, kunci, pernyataan, varian, sumber soal, lembar soal, sesi/relasi/submission/draft/flag/violation tryout, `siswa`, `prospektus`, dan sesi peserta. User admin, 5 role, 46 permission, 3 mapel, 3 `source_types`, dan 3 `presentation_versions` dipertahankan. Backup: `/tmp/opencode/bank_soal_db-pre-purge-20261124-140728.dump` dan `/tmp/opencode/uploads-pre-purge-20261124-140728.tar.gz`.
 
 ## Perubahan Schema
 

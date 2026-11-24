@@ -22,6 +22,10 @@ Merancang dan membangun REST API yang terhubung ke PostgreSQL `bank_soal_db`, te
 
 Seed awal: `MTKA`, `BIND`, `IPAS`. Kode mapel unik tepat 4 karakter `^[A-Z0-9]{4}$` dan langsung dipakai sebagai prefix kode lembar soal `LS-<KODE_MAPEL>-mmyy`. Endpoint CRUD memakai permission `mapels.manage` (default admin).
 
+## Hak Akses
+
+`GET /api/v1/permissions` mengembalikan 46 permission aktif dari tabel `permissions`. Permission `*.manage` lama tetap menjadi guard endpoint existing; permission CRUD baru (`questions.*`, `question_sheets.*`, `tryouts.*`, `participants.*`, `mapels.*`, `roles.*`, `users.*`, `program_belajar.*`) dipakai UI Kelola Role dan tidak mengubah kontrak guard lama. `admin` memiliki seluruh permission; `editor` memiliki CRUD soal, lembar soal, dan program belajar; `validator`, `viewer`, dan `peserta` tidak berubah.
+
 ## Peserta Tryout
 
 Saat membuat peserta Siswa (`jenis='siswa'`), `password` opsional. Jika kosong, sistem memakai default `nama depan@mmyy` (misalnya `Budi@1126`). Password dapat diganti saat pendaftaran maupun lewat reset; minimal 6 karakter.

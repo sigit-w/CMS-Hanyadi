@@ -377,3 +377,29 @@ Permintaan pemilik: tryout dapat dijalankan sebagai ujian berbasis komputer leng
 | QA-35 | QA | P0 | done | BE-38, FE-35, TRY-17, PRES-05 | CBT-01…CBT-05 lolos; regresi 179/179, 0 P0/P1; `cbt-report.md` |
 | DOC-06CBT | PM/Docs | P1 | done | QA-35 | ADR-013, backlog, handoff, status board, laporan sistem, release gate |
 | REL-23 | PM | P0 | done | QA-35, DOC-06CBT | **GO** 2026-11-24; health/aset terverifikasi; commit & push ke `origin/main` |
+
+## Purge Data & RBAC CRUD — 2026-11-24
+
+Permintaan pemilik: hapus data soal, lembar soal, tryout, siswa, dan peserta beserta file upload; pertahankan admin dan RBAC; tampilkan semua opsi CRUD di Kelola Role dengan permission lama tetap diterima. Keputusan ada di `pm-agent/decisions/ADR-014-opsi-crud-rbac.md`; bukti ada di `qa-agent/reports/rbac-crud-report.md` dan `rbac-crud-release-gate.md`.
+
+| Item | Owner | Status | Catatan |
+|---|---|---|---|
+| ADR-014 | PM | done | accepted; Fase 7 tetap dibatalkan |
+| DATA-PURGE | Ops/Backend | done | backup DB + upload, `DELETE` transaksional, upload dikosongkan, admin/RBAC/master utuh |
+| RBAC-CRUD | Backend/Frontend | done | migrasi `028`, 46 permission, 76 mapping, hidden `readiness.` dihapus, grup label ditambah |
+| QA-RBAC-CRUD | QA | done | regresi 179/179, A-12 46 kode, build `index-Bba7nOMD.js`, health 200 |
+| REL-24 | PM | GO | 2026-11-24; perubahan di-commit dan di-push ke `origin/main` |
+
+Gate `REL-01…REL-23` tetap GO dan tidak dibuka ulang.
+
+## Revisi Tampilan Prospektus & Label — 2026-11-24
+
+Permintaan pemilik: sejajarkan pencarian dan info jumlah data di Prospektus, serta hapus nomor di depan label form seperti `1. Nama Lembar Soal`. Keputusan ada di `pm-agent/decisions/ADR-015-revisi-tampilan-prospektus-label.md`.
+
+| Item | Owner | Status | Catatan |
+|---|---|---|---|
+| ADR-015 | PM | done | accepted; tidak ada perubahan skema/API/RBAC |
+| UI-PROSPEKTUS | Frontend | done | input pencarian dan badge `visible.length` satu baris; judul kartu dan tombol muat ulang dihapus |
+| UI-LABEL | Frontend | done | prefiks nomor dihapus dari label Lembar Soal dan Program Belajar |
+| QA-UI | QA | done | regresi 179/179, build `index-BouF6F0x.js`, health 200, fixture dibersihkan |
+| REL-25 | PM | GO | 2026-11-24; perubahan di-commit dan di-push ke `origin/main` |
