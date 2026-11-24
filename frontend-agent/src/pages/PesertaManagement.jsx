@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   createParticipant,
   deleteParticipant,
+  getParticipantDetail,
   getParticipants,
   getProgramsBelajar,
   updateParticipant,
@@ -14,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { SelectNative } from '@/components/ui/select-native';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Dialog } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const EMPTY_FORM = {
@@ -47,6 +49,7 @@ export default function PesertaManagement() {
   const [editValues, setEditValues] = useState(EMPTY_EDIT_VALUES);
   const [passwordId, setPasswordId] = useState(null);
   const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
+  const [detailParticipant, setDetailParticipant] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
@@ -103,6 +106,16 @@ export default function PesertaManagement() {
       setPasswordId(null);
       setPasswordForm(EMPTY_PASSWORD_FORM);
     }, `Data ${editValues.nama} diperbarui`);
+  }
+
+  async function openDetail(participant) {
+    setError('');
+    try {
+      const data = await getParticipantDetail(participant.id);
+      setDetailParticipant(data.participant);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function handleDelete(participant) {
@@ -331,6 +344,8 @@ export default function PesertaManagement() {
                         ) : (
                           <>
                             <Button type="button" size="sm" variant="outline"
+                              onClick={() => openDetail(participant)}>Detail</Button>
+                            <Button type="button" size="sm" variant="outline"
                               onClick={() => {
                                 setEditingId(participant.id);
                                 setPasswordId(null);
@@ -364,6 +379,20 @@ export default function PesertaManagement() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(detailParticipant)} onClose={() => setDetailParticipant(null)} title="Detail Siswa">
+        {detailParticipant && (
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detailParticipant.nama}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span>{detailParticipant.email || '—'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Kelas</span><span>{detailParticipant.kelas || '—'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detailParticipant.sekolah || '—'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Program Belajar</span><span>{detailParticipant.program_belajar_name || '—'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detailParticipant.wa_orang_tua || '—'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Password</span><strong>{detailParticipant.password_plain || '—'}</strong></div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

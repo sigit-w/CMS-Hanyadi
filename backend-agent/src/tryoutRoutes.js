@@ -154,7 +154,7 @@ tryoutRouter.delete('/tryouts/:id/participants/:participantId', adminOnly, async
     let prospek = false;
     if (participant.jenis === 'umum') {
       await client.query(
-        `UPDATE tryout_participants
+        `UPDATE prospektus
          SET is_active = false, prospek = true, prospek_at = now()
          WHERE id = $1`,
         [participantId]

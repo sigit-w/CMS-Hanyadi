@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Fase 6q (Kelola Peserta dari Daftar Tryout) final 2026-11-24 dengan `REL-19` **GO**, regresi 155/155, bundle `index-D0au7v9d.js`. Fase 6r (Perubahan flow tryout: siswa/prospektus & kredensial) final 2026-11-24 dengan `REL-20` **GO**; regresi 162/162, migrasi `024` terpasang, bundle `index-B10Efnkg.js`. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, `pm-agent/tasks/phase6r-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -306,3 +306,17 @@ Permintaan pemilik: hapus helper text `Data siswa tidak ditampilkan sampai dipil
 | QA-31 | QA | P0 | done | BE-34, FE-31 | QP-01..QP-05 lolos; regresi 155/155; laporan & gate `REL-19 GO` |
 | DOC-06Q | PM/Docs | P1 | done | FE-31, QA-31 | `laporan-sistem/index.html` diperbarui ke Fase 6q, 155/155, REL-19 |
 | REL-19 | PM | P0 | done | QA-31, DOC-06Q | **GO** 2026-11-24; deploy & verifikasi produksi selesai; commit `a143409` |
+
+## Fase 6r — Perubahan Flow Tryout: Siswa/Prospektus & Kredensial — 2026-11-24
+
+Permintaan pemilik: (1) pilihan `B. Peserta Umum` di halaman Buat Tryout menyimpan ke tabel `prospektus` dengan struktur sama seperti `siswa`; (2) popup/detail siswa atau peserta menampilkan password/PIN; (3) baris Prospektus diklik menampilkan detail dan tombol `Daftarkan sebagai Siswa`, lalu data disimpan ke `siswa` dan prospektus ditandai `bergabung`. Pemilik mengonfirmasi refactor penuh, kredensial peserta plaintext, dan Umum tetap bisa login. Keputusan lengkap di `pm-agent/decisions/ADR-010-siswa-prospektus-kredensial.md`; requirement dan AC di `pm-agent/tasks/phase6r-backlog.md`.
+
+| Task ID | Owner | Prioritas | Status | Dependency | Catatan |
+|---|---|---|---|---|---|
+| PM-20 | PM | P0 | done | - | ADR-010 accepted; backlog + handoff BE-35/FE-32/TRY-14/QA-32 diterbitkan |
+| BE-35 | Backend | P0 | done | PM-20 | Migrasi `024`, rename `siswa`, tabel `prospektus`, view kompatibilitas, trigger FK, endpoint detail & daftar; OpenAPI/DB doc; health 200 |
+| FE-32 | Frontend | P0 | done | BE-35 (kontrak) | Detail peserta di Buat Tryout & Kelola Siswa, halaman Prospektus interaktif, tombol `Daftarkan sebagai Siswa`; bundle `index-B10Efnkg.js` |
+| TRY-14 | Tryout | P1 | done | BE-35 (kontrak) | Tanpa perubahan kode; login Umum & Siswa tetap lolos lewat view/kredensial baru |
+| QA-32 | QA | P0 | done | BE-35, FE-32, TRY-14 | PS-01..PS-07 lolos; regresi 162/162; bug 500 detail diperbaiki; laporan & gate `REL-20 GO` |
+| DOC-06R | PM/Docs | P1 | done | FE-32, QA-32 | Status board, laporan sistem, backend README, DB README, QA/PM docs diselaraskan |
+| REL-20 | PM | P0 | done | QA-32, DOC-06R | **GO** 2026-11-24; backend direstart, bundle CMS terdeploy, commit & push ke `origin/main` |

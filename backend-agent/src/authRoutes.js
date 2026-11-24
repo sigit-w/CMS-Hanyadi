@@ -85,30 +85,31 @@ async function sessionPayload(account, sessionId) {
   };
 }
 
-function accountTable(type) {
-  return type === ACCOUNT_TYPE_PARTICIPANT ? 'tryout_participants' : 'contributors';
+function accountTable(type, account) {
+  if (type !== ACCOUNT_TYPE_PARTICIPANT) return 'contributors';
+  return account?.table ?? 'siswa';
 }
 
 async function findLoginAccount(identity) {
   const umum = await query(
     `SELECT id, nama AS username, nama AS display_name, pin_hash AS password_hash,
             failed_login_count, locked_until
-     FROM tryout_participants
+     FROM prospektus
      WHERE is_active = true AND jenis = 'umum' AND lower(nama) = lower($1)`,
     [identity]
   );
   if (umum.rows[0]) {
-    return { type: ACCOUNT_TYPE_PARTICIPANT, account: umum.rows[0] };
+    return { type: ACCOUNT_TYPE_PARTICIPANT, account: { ...umum.rows[0], table: 'prospektus' } };
   }
   const siswa = await query(
     `SELECT id, email AS username, nama AS display_name, password_hash,
             failed_login_count, locked_until
-     FROM tryout_participants
+     FROM siswa
      WHERE is_active = true AND jenis = 'siswa' AND lower(email) = lower($1)`,
     [identity]
   );
   if (siswa.rows[0]) {
-    return { type: ACCOUNT_TYPE_PARTICIPANT, account: siswa.rows[0] };
+    return { type: ACCOUNT_TYPE_PARTICIPANT, account: { ...siswa.rows[0], table: 'siswa' } };
   }
   const user = await query(
     `SELECT id, username, display_name, password_hash, failed_login_count, locked_until
@@ -122,7 +123,7 @@ async function findLoginAccount(identity) {
 
 async function registerFailedLogin(type, account) {
   const updated = await query(
-    `UPDATE ${accountTable(type)} SET
+    `UPDATE ${accountTable(type, account)} SET
        failed_login_count = failed_login_count + 1,
        locked_until = CASE
          WHEN failed_login_count + 1 >= $2
@@ -158,7 +159,7 @@ publicAuthRouter.post('/login', asyncHandler(async (req, res) => {
 
   const result = await withTransaction(async (client) => {
     await client.query(
-      `UPDATE ${accountTable(type)}
+      `UPDATE ${accountTable(type, account)}
        SET failed_login_count = 0, locked_until = NULL, last_login_at = now()
        WHERE id = $1`,
       [account.id]
@@ -191,9 +192,10 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
 
   const result = await withTransaction(async (client) => {
     const found = await client.query(
-      `SELECT s.id, s.user_id, s.participant_id FROM auth_sessions s
-       LEFT JOIN contributors c ON c.id = s.user_id
-       LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
+        `SELECT s.id, s.user_id, s.participant_id, tp.jenis AS participant_jenis
+         FROM auth_sessions s
+         LEFT JOIN contributors c ON c.id = s.user_id
+         LEFT JOIN tryout_participants tp ON tp.id = s.participant_id
        WHERE s.refresh_hash = $1 AND s.revoked_at IS NULL
          AND s.expires_at > now()
          AND (s.user_id IS NULL OR c.is_active = true)
@@ -213,7 +215,10 @@ publicAuthRouter.post('/refresh', asyncHandler(async (req, res) => {
     return {
       account: {
         type: isParticipant ? ACCOUNT_TYPE_PARTICIPANT : 'user',
-        id: isParticipant ? session.participant_id : session.user_id
+        id: isParticipant ? session.participant_id : session.user_id,
+        table: isParticipant
+          ? (session.participant_jenis === 'umum' ? 'prospektus' : 'siswa')
+          : null
       },
       sessionId: session.id,
       refreshToken: nextRefresh

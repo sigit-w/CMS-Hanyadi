@@ -276,7 +276,7 @@ test('PR-06 prospek draft Umum dan menu Prospektus benar', async () => {
 
   const prospektusPage = readFileSync(PROSPEKTUS_PAGE, 'utf8');
   assert.ok(prospektusPage.includes('getProspektus'));
-  assert.ok(prospektusPage.includes('Data Peserta Umum yang dikeluarkan dari tryout'));
+  assert.ok(prospektusPage.includes('Data Peserta Umum tersimpan di tabel prospektus'));
 
   const siswaPage = readFileSync(SISWA_PAGE, 'utf8');
   assert.ok(siswaPage.includes('Kelola Siswa'));

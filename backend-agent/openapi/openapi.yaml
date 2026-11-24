@@ -198,7 +198,7 @@ paths:
                     jenis: { type: string, enum: [umum] }
                     nama: { type: string, maxLength: 128 }
                     sekolah: { type: string, maxLength: 255 }
-                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; disimpan sebagai hash.' }
+                     pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; hash dipakai login, plaintext tampil di endpoint detail.' }
                     wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
                     prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
@@ -223,12 +223,56 @@ paths:
         '201': { description: Peserta dibuat }
         '400': { description: Validasi gagal }
         '409': { description: Email/Nama Peserta Umum sudah digunakan }
+  /api/v1/participants/{id}/detail:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail peserta beserta password/PIN plaintext (tryouts.manage)
+      description: 'Kredensial hanya tersedia di endpoint detail; endpoint list tidak mengembalikan hash maupun plaintext.'
+      responses:
+        '200': { description: Detail peserta }
+        '404': { description: Peserta tidak ditemukan }
+        '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/prospektus:
     get:
-      summary: Daftar Peserta Umum yang dikeluarkan dari tryout (tryouts.manage)
+      summary: Daftar Peserta Umum di tabel prospektus, termasuk status bergabung (tryouts.manage)
       responses:
         '200': { description: Daftar prospektus }
         '403': { description: Tidak memiliki permission tryouts.manage }
+  /api/v1/prospektus/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail prospektus beserta PIN plaintext (tryouts.manage)
+      responses:
+        '200': { description: Detail prospektus }
+        '404': { description: Prospektus tidak ditemukan }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+  /api/v1/prospektus/{id}/daftar:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: Daftarkan prospektus sebagai siswa dan tandai bergabung (tryouts.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, kelas]
+              properties:
+                email: { type: string, format: email }
+                kelas: { type: integer, minimum: 1, maximum: 100 }
+                sekolah: { type: string, maxLength: 255, description: 'Opsional; default dari prospektus.' }
+                program_belajar_id: { type: integer, nullable: true }
+                wa_orang_tua: { type: string, maxLength: 20, description: 'Opsional; default dari prospektus.' }
+                password: { type: string, format: password, minLength: 6, description: 'Opsional; default nama depan@mmyy.' }
+                confirm_password: { type: string, format: password }
+      responses:
+        '201': { description: Siswa dibuat dan prospektus ditandai bergabung }
+        '400': { description: Validasi gagal }
+        '404': { description: Prospektus tidak ditemukan }
+        '409': { description: Sudah bergabung atau email siswa dipakai }
   /api/v1/participants/{id}/prospek:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }

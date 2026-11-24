@@ -13,14 +13,35 @@ const manageParticipants = authorize('tryouts.manage');
 const PARTICIPANT_SELECT = `
   SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
          p.program_belajar_id, pb.name AS program_belajar_name, p.wa_orang_tua,
-         p.is_active, p.prospek, p.prospek_at, p.created_at, p.updated_at,
+         p.is_active, p.prospek, p.prospek_at, p.bergabung, p.bergabung_at,
+         p.created_at, p.updated_at,
          (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.participant_id = p.id) AS submission_count
   FROM tryout_participants p
   LEFT JOIN program_belajar pb ON pb.id = p.program_belajar_id
 `;
 
+const PARTICIPANT_DETAIL_SELECT = `
+  SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
+         p.program_belajar_id, pb.name AS program_belajar_name, p.wa_orang_tua,
+         p.is_active, p.prospek, p.prospek_at, p.bergabung, p.bergabung_at,
+         p.password_plain, p.pin_plain, p.created_at, p.updated_at,
+         (SELECT count(*)::int FROM tryout_submissions ts WHERE ts.participant_id = p.id) AS submission_count
+  FROM tryout_participants p
+  LEFT JOIN program_belajar pb ON pb.id = p.program_belajar_id
+`;
+
+function participantTable(jenis) {
+  return jenis === 'umum' ? 'prospektus' : 'siswa';
+}
+
 async function loadParticipant(client, id) {
   const { rows } = await client.query(`${PARTICIPANT_SELECT} WHERE p.id = $1`, [id]);
+  return rows[0];
+}
+
+async function loadParticipantDetail(client, id) {
+  const executor = client ?? { query };
+  const { rows } = await executor.query(`${PARTICIPANT_DETAIL_SELECT} WHERE p.id = $1`, [id]);
   return rows[0];
 }
 
@@ -115,7 +136,7 @@ function requirePassword(value, confirm) {
 async function findByEmail(client, email, excludeId = null) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
-    `SELECT id FROM tryout_participants
+    `SELECT id FROM siswa
      WHERE lower(email) = $1 AND ($2::bigint IS NULL OR id <> $2)`,
     [email, excludeId]
   );
@@ -125,7 +146,7 @@ async function findByEmail(client, email, excludeId = null) {
 async function findByNamaUmum(client, nama, excludeId = null) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(
-    `SELECT id FROM tryout_participants
+    `SELECT id FROM prospektus
      WHERE jenis = 'umum' AND lower(nama) = lower($1) AND ($2::bigint IS NULL OR id <> $2)`,
     [nama, excludeId]
   );
@@ -152,13 +173,76 @@ participantRouter.get('/participants', manageParticipants, asyncHandler(async (r
   res.json({ ok: true, data: { participants: rows }, meta: nowMeta() });
 }));
 
+participantRouter.get('/participants/:id/detail', manageParticipants, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const participant = await loadParticipantDetail(null, id);
+  if (!participant) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
+  res.json({ ok: true, data: { participant }, meta: nowMeta() });
+}));
+
 participantRouter.get('/prospektus', manageParticipants, asyncHandler(async (req, res) => {
   const { rows } = await query(
     `${PARTICIPANT_SELECT}
-     WHERE p.prospek = true
-     ORDER BY p.prospek_at DESC NULLS LAST, p.id DESC`
+     WHERE p.jenis = 'umum'
+     ORDER BY p.bergabung, p.prospek_at DESC NULLS LAST, p.id DESC`
   );
   res.json({ ok: true, data: { prospektus: rows }, meta: nowMeta() });
+}));
+
+participantRouter.get('/prospektus/:id', manageParticipants, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const prospektus = await loadParticipantDetail(null, id);
+  if (!prospektus || prospektus.jenis !== 'umum') {
+    throw new ApiError('NOT_FOUND', 'Prospektus tidak ditemukan', 404);
+  }
+  res.json({ ok: true, data: { prospektus }, meta: nowMeta() });
+}));
+
+participantRouter.post('/prospektus/:id/daftar', manageParticipants, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const email = requireEmail(req.body?.email);
+  const kelas = requireKelas(req.body?.kelas);
+  const programBelajarId = parseProgramBelajarId(req.body?.program_belajar_id);
+  const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua);
+  const rawPassword = req.body?.password;
+
+  const result = await withTransaction(async (client) => {
+    const current = await client.query(
+      'SELECT id, nama, sekolah, wa_orang_tua, bergabung FROM prospektus WHERE id = $1 AND jenis = $2',
+      [id, 'umum']
+    );
+    const prospect = current.rows[0];
+    if (!prospect) throw new ApiError('NOT_FOUND', 'Prospektus tidak ditemukan', 404);
+    if (prospect.bergabung) {
+      throw new ApiError('CONFLICT', 'Prospektus ini sudah didaftarkan sebagai siswa', 409);
+    }
+    if (await findByEmail(client, email)) {
+      throw new ApiError('CONFLICT', 'Email siswa sudah digunakan', 409);
+    }
+    await ensureProgramBelajar(client, programBelajarId);
+    const password = typeof rawPassword === 'string' && rawPassword.trim()
+      ? requirePassword(rawPassword, req.body?.confirm_password)
+      : defaultParticipantPassword(prospect.nama);
+    const passwordHash = await hashPassword(password);
+    const inserted = await client.query(
+      `INSERT INTO siswa
+         (nama, jenis, email, password_hash, password_plain, kelas, sekolah,
+          program_belajar_id, wa_orang_tua)
+       VALUES ($1, 'siswa', $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [prospect.nama, email, passwordHash, password, kelas,
+        req.body?.sekolah || prospect.sekolah, programBelajarId,
+        waOrangTua || prospect.wa_orang_tua]
+    );
+    await client.query(
+      `UPDATE prospektus SET bergabung = true, bergabung_at = now()
+       WHERE id = $1 AND bergabung = false`,
+      [id]
+    );
+    return loadParticipant(client, inserted.rows[0].id);
+  });
+
+  res.status(201).json({ ok: true, data: { participant: result, prospektus_id: id }, meta: nowMeta() });
 }));
 
 participantRouter.post('/participants', manageParticipants, asyncHandler(async (req, res) => {
@@ -170,11 +254,15 @@ participantRouter.post('/participants', manageParticipants, asyncHandler(async (
   let kelas = 0;
   let programBelajarId = null;
   let passwordHash = null;
+  let passwordPlain = null;
   let pinHash = null;
+  let pinPlain = null;
   let waOrangTua;
 
   if (jenis === 'umum') {
-    pinHash = await hashPassword(requirePin(req.body?.pin));
+    const pin = requirePin(req.body?.pin);
+    pinHash = await hashPassword(pin);
+    pinPlain = pin;
     waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua, true);
   } else {
     email = requireEmail(req.body?.email);
@@ -186,6 +274,7 @@ participantRouter.post('/participants', manageParticipants, asyncHandler(async (
       ? rawPassword
       : defaultParticipantPassword(nama);
     passwordHash = await hashPassword(requirePassword(password));
+    passwordPlain = password;
   }
 
   const participant = await withTransaction(async (client) => {
@@ -200,11 +289,13 @@ participantRouter.post('/participants', manageParticipants, asyncHandler(async (
       await ensureProgramBelajar(client, programBelajarId);
     }
     const { rows } = await client.query(
-      `INSERT INTO tryout_participants
-         (nama, jenis, email, kelas, sekolah, program_belajar_id, wa_orang_tua, password_hash, pin_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO ${participantTable(jenis)}
+         (nama, jenis, email, kelas, sekolah, program_belajar_id, wa_orang_tua,
+          password_hash, password_plain, pin_hash, pin_plain)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
-      [nama, jenis, email, kelas, sekolah, programBelajarId, waOrangTua, passwordHash, pinHash]
+      [nama, jenis, email, kelas, sekolah, programBelajarId, waOrangTua,
+        passwordHash, passwordPlain, pinHash, pinPlain]
     );
     return loadParticipant(client, rows[0].id);
   });
@@ -230,7 +321,7 @@ participantRouter.put('/participants/:id', manageParticipants, asyncHandler(asyn
       }
       const waOrangTua = parseWaOrangTua(req.body?.wa_orang_tua, true);
       const updated = await client.query(
-        `UPDATE tryout_participants
+        `UPDATE ${participantTable(current.jenis)}
          SET nama = $2, sekolah = $3, wa_orang_tua = $4, is_active = $5
          WHERE id = $1 AND jenis = 'umum'
          RETURNING id`,
@@ -247,7 +338,7 @@ participantRouter.put('/participants/:id', manageParticipants, asyncHandler(asyn
       }
       await ensureProgramBelajar(client, programBelajarId);
       const updated = await client.query(
-        `UPDATE tryout_participants
+        `UPDATE ${participantTable(current.jenis)}
          SET nama = $2, email = $3, kelas = $4, sekolah = $5,
              program_belajar_id = $6, wa_orang_tua = $7, is_active = $8
          WHERE id = $1 AND jenis = 'siswa'
@@ -273,13 +364,14 @@ participantRouter.put('/participants/:id', manageParticipants, asyncHandler(asyn
 participantRouter.delete('/participants/:id', manageParticipants, asyncHandler(async (req, res) => {
   const id = parseId(req.params.id);
   const participant = await withTransaction(async (client) => {
+    const current = await loadJenis(client, id);
+    if (!current) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
     const { rows } = await client.query(
-      `UPDATE tryout_participants SET is_active = false
+      `UPDATE ${participantTable(current.jenis)} SET is_active = false
        WHERE id = $1
        RETURNING id, nama, jenis, email, kelas, sekolah, is_active`,
       [id]
     );
-    if (!rows[0]) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan', 404);
     await client.query(
       'UPDATE auth_sessions SET revoked_at = now() WHERE participant_id = $1 AND revoked_at IS NULL',
       [id]
@@ -304,7 +396,7 @@ participantRouter.post('/participants/:id/prospek', manageParticipants, asyncHan
     }
 
     const updated = await client.query(
-      `UPDATE tryout_participants
+      `UPDATE prospektus
        SET is_active = false, prospek = true, prospek_at = now()
        WHERE id = $1
        RETURNING id, nama, jenis, is_active, prospek, prospek_at`,
@@ -332,11 +424,12 @@ participantRouter.put('/participants/:id/password', manageParticipants, asyncHan
       throw new ApiError('VALIDATION_ERROR', 'Peserta Umum memakai PIN; reset PIN belum tersedia');
     }
     const { rows } = await client.query(
-      `UPDATE tryout_participants
-       SET password_hash = $2, failed_login_count = 0, locked_until = NULL
+      `UPDATE siswa
+       SET password_hash = $2, password_plain = $3,
+           failed_login_count = 0, locked_until = NULL
        WHERE id = $1 AND is_active = true AND jenis = 'siswa'
        RETURNING id, nama, email, kelas, sekolah`,
-      [id, passwordHash]
+      [id, passwordHash, req.body?.password]
     );
     if (!rows[0]) throw new ApiError('NOT_FOUND', 'Peserta tidak ditemukan atau tidak aktif', 404);
     await client.query(

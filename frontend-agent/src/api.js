@@ -112,6 +112,7 @@ export const updateQuestionSheet = (id, payload) =>
   request(`/question-sheets/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 export const deleteQuestionSheet = (id) => request(`/question-sheets/${id}`, { method: 'DELETE' });
 export const getParticipants = () => request('/participants');
+export const getParticipantDetail = (id) => request(`/participants/${id}/detail`);
 export const createParticipant = (payload) =>
   request('/participants', { method: 'POST', body: JSON.stringify(payload) });
 export const updateParticipant = (id, payload) =>
@@ -120,6 +121,9 @@ export const deleteParticipant = (id) => request(`/participants/${id}`, { method
 export const markParticipantProspek = (id) =>
   request(`/participants/${id}/prospek`, { method: 'POST' });
 export const getProspektus = () => request('/prospektus');
+export const getProspektusDetail = (id) => request(`/prospektus/${id}`);
+export const registerProspektus = (id, payload) =>
+  request(`/prospektus/${id}/daftar`, { method: 'POST', body: JSON.stringify(payload) });
 export const updateParticipantPassword = (id, password, confirmPassword) =>
   request(`/participants/${id}/password`, {
     method: 'PUT',

@@ -5,6 +5,7 @@ import {
   createTryout,
   deleteTryout,
   getMapels,
+  getParticipantDetail,
   getParticipants,
   getQuestionSheets,
   getTryout,
@@ -217,6 +218,16 @@ export default function TryoutManagement() {
     setSiswaSearch('');
     setParticipantTarget(target);
     setPesertaDialog('siswa');
+  }
+
+  async function openParticipantDetail(participant) {
+    setDetailParticipant(participant);
+    try {
+      const data = await getParticipantDetail(participant.id);
+      setDetailParticipant(data.participant);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function handlePickSiswa(participant) {
@@ -475,7 +486,7 @@ export default function TryoutManagement() {
               <legend className="px-1 text-sm font-semibold">Peserta Tryout ({selectedParticipants.length} dipilih, opsional)</legend>
               <ParticipantRows
                 rows={draftParticipantRows}
-                onDetail={setDetailParticipant}
+                onDetail={openParticipantDetail}
                 onRemove={handleRemoveDraftParticipant}
                 emptyText="Belum ada peserta terpilih. Peserta tidak wajib diisi."
               />
@@ -596,7 +607,7 @@ export default function TryoutManagement() {
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span>{detailParticipant.email || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detailParticipant.wa_orang_tua || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Submission</span><span>{detailParticipant.submission_count ?? 0}</span></div>
-            <p className="pt-2 text-xs text-muted-foreground">PIN atau password yang sudah di-hash tidak dapat ditampilkan kembali.</p>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Password / PIN</span><strong>{detailParticipant.pin_plain || detailParticipant.password_plain || '—'}</strong></div>
           </div>
         )}
       </Dialog>
@@ -609,7 +620,7 @@ export default function TryoutManagement() {
           rows={managedParticipants}
           onDetail={(participant) => {
             setPesertaDialog(null);
-            setDetailParticipant(participant);
+            openParticipantDetail(participant);
           }}
           onRemove={handleRemoveManagedParticipant}
           emptyText="Tidak ada peserta pada tryout ini."

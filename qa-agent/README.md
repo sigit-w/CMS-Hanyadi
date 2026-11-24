@@ -19,6 +19,8 @@ Menyusun checklist pengujian fungsional, memvalidasi data dan edge case, menguji
 | `reports/phase6p-release-gate.md` | Keputusan gate `REL-18` Fase 6p |
 | `reports/phase6q-report.md` | Laporan QA Fase 6q: ADR-009, QP-01..QP-05, regresi 155/155 |
 | `reports/phase6q-release-gate.md` | Keputusan gate `REL-19` Fase 6q |
+| `reports/phase6r-report.md` | Laporan QA Fase 6r: ADR-010, PS-01..PS-07, regresi lengkap |
+| `reports/phase6r-release-gate.md` | Keputusan gate `REL-20` Fase 6r |
 
 ## Severity Bug
 

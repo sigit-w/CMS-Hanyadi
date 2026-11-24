@@ -26,11 +26,13 @@ Seed awal: `MTKA`, `BIND`, `IPAS`. Kode mapel unik tepat 4 karakter `^[A-Z0-9]{4
 
 Saat membuat peserta Siswa (`jenis='siswa'`), `password` opsional. Jika kosong, sistem memakai default `nama depan@mmyy` (misalnya `Budi@1126`). Password dapat diganti saat pendaftaran maupun lewat reset; minimal 6 karakter.
 
-Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, dan `pin` 9 digit. Hanya `pin_hash` scrypt yang disimpan; login memakai `username = nama` dan `password = pin`. Nama Umum unik tanpa memperhatikan huruf besar/kecil. Payload lama Siswa dan endpoint lama `/tryout-sessions` tetap diterima.
+Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, dan `pin` 9 digit. Login memakai `username = nama` dan `password = pin` dengan verifikasi `pin_hash` scrypt; PIN plaintext juga tersimpan di `pin_plain` untuk ditampilkan di endpoint detail. Nama Umum unik tanpa memperhatikan huruf besar/kecil. Payload lama Siswa dan endpoint lama `/tryout-sessions` tetap diterima.
 
 Fase 6p (ADR-008) menambahkan `DELETE /api/v1/tryouts/{id}/participants/{participantId}` untuk mengeluarkan peserta dari sebuah tryout. Peserta Siswa hanya kehilangan relasi `tryout_session_participants`; data siswa tidak diubah. Peserta Umum yang dikeluarkan mengalami hal yang sama dan ditandai `prospek=true`, `prospek_at` terisi, `is_active=false`, serta sesinya dicabut. Data tersebut muncul di `GET /api/v1/prospektus`. Untuk daftar peserta pada form tryout yang belum disimpan, `POST /api/v1/participants/{id}/prospek` melakukan hal yang sama tanpa memerlukan ID tryout; Siswa ditolak dengan `400`. Endpoint lama `DELETE /participants/{id}` tetap berarti nonaktifkan peserta secara global dan tidak dipakai untuk aksi tryout.
 
 Fase 6q (ADR-009) menambahkan `POST /api/v1/tryouts/{id}/participants` dengan payload `{ "participant_ids": [1, 2] }` untuk melampirkan peserta yang sudah ada ke tryout tersimpan dari popup **Kelola Peserta**. Endpoint memakai `tryouts.manage`, menolak peserta nonaktif/prospek, dan melewati relasi yang sudah ada sehingga aman dipanggil ulang. Respons memuat `added_ids` serta daftar `participant_ids` terbaru. Tidak ada perubahan skema pada Fase 6q.
+
+Fase 6r (ADR-010) memindahkan seluruh Peserta Umum ke `public.prospektus` dan mengganti nama tabel lama menjadi `public.siswa`; view `tryout_participants` tetap tersedia untuk kompatibilitas. Endpoint `GET /api/v1/participants/{id}/detail` menampilkan `password_plain`/`pin_plain`, `GET /api/v1/prospektus/{id}` menampilkan detail prospektus, dan `POST /api/v1/prospektus/{id}/daftar` menyalin prospektus ke `siswa` lalu menandai `bergabung=true`. Password user CMS di `contributors.password_hash` tetap scrypt dan tidak pernah dikembalikan oleh API.
 
 ## Jenis Soal
 
