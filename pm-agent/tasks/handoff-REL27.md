@@ -22,7 +22,7 @@
 - [x] Deploy BE/FE/PRES/TRY; `app.js?v=19` ter-serve
 - [x] Smoke test: buat tryout 2 sesi berbeda mapel, pilih prospektus, cek status `selesai`, unduh Excel, buka detail pelanggaran, kerjakan sesi 1, lanjut sesi 2, login ulang
 - [x] QA-37 lolos; status board `REL-27` diisi GO/NO-GO
-- [ ] Perubahan di-commit dan di-push sebelum gate ditutup — **belum dilakukan**; user belum meminta commit/push
+- [x] Perubahan di-commit dan di-push ke `origin/main` di `b9f377a` — `Finalisasi Fase 6u — tryout bersesi dan tutup REL-27` — sesuai permintaan user
 
 ## Catatan Kendala / Risiko
 

@@ -27,7 +27,7 @@
 - Gate `REL-28` GO. Rollback ke `REL-27`; `REL-01…REL-27` tidak dibuka ulang; Fase 7 tetap dibatalkan.
 - Baseline DB final `2|3|3|6|40|5|3` = 2 events, 3 sessions (271,375,376), 3 junction, 6 relasi peserta, 40 submissions, 5 attempts, `cbt_max_violations=3`. Fixture pemilik event48/sesi375,376/peserta495,496/attempts76..79 dipertahankan.
 - Risiko diterima: peserta yang tidak terdaftar di semua sesi mendapat nilai 0 untuk mapel lain (perilaku nilai kosong); klien legacy wajib mengirim `event_id`/`eventId` yang valid.
-- Perubahan siap di-commit/di-push sesuai permintaan user.
+- Seluruh perubahan Fase 6v telah di-commit dan di-push ke `origin/main` di `425ce3d` — `Finalisasi Fase 6v — filter dan format laporan tryout` — sesuai permintaan user.
 
 ## Tindakan Penerima
 
