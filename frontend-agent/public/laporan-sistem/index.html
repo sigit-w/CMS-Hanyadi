@@ -112,8 +112,7 @@
   <div class="grid g2">
     <div class="card"><h4>Infrastruktur</h4><p>Satu VM Ubuntu 24.04.4 LTS (2 vCPU, 1,9 GiB RAM, 40 GB disk). Hanya port 22/80/443 yang terbuka publik; semua backend terikat di <code>127.0.0.1</code>.</p></div>
     <div class="card"><h4>Data</h4><p>PostgreSQL 16.15 lokal dengan 3 database aplikasi dan 25 tabel + 1 view di <code>bank_soal_db</code> setelah migrasi <code>002…025</code>. Kondisi aktual: 214 soal aktif, 3 mapel, 4 peserta tryout, dan 212 sesi login. Varian historis tetap ada sebagai data lama tetapi tidak dipakai sejak Fase 6j. Referensi produksi 441 soal/565 varian historis belum tersedia dump-nya.</p></div>
-    <div class="card"><h4>Agen &amp; proses</h4><p>5 peran agen operasional (PM, Backend, Frontend, QA, Tryout) + layanan Presentation dan Infra. Alur kerja ber-RELEASE GATE dengan 169/169 test lolos; gate REL-01…REL-21, REL-15 masih
-  <span class="tag warn">partial</span>, REL-16…REL-21 <span class="tag ok">GO</span>.</p></div>
+    <div class="card"><h4>Agen &amp; proses</h4><p>5 peran agen operasional (PM, Backend, Frontend, QA, Tryout) + layanan Presentation dan Infra. Alur kerja ber-RELEASE GATE dengan 169/169 test lolos; seluruh gate REL-01…REL-21 <span class="tag ok">GO</span>.</p></div>
     <div class="card"><h4>Jangkauan publik</h4><p>5 host layanan di balik Cloudflare + Nginx: <code>hanyadi.web.id</code>, <code>api.</code>, <code>cms.</code>, <code>tryout.</code>, <code>n8n.</code>. <code>crm.</code> dan <code>office.</code> kini memakai halaman root yang sama; <code>api.</code> tidak lagi menampilkan dashboard CMS.</p></div>
   </div>
   <div class="note"><b>Dua perhatian utama:</b> (1) backup harian tidak aktif dan skripnya masih bergantung pada kontainer Docker yang berhenti; (2) memori tersedia ≈376 MiB dengan 2,9 GiB swap kosong setelah build Fase 6s, tanpa OOM.</div>
@@ -256,7 +255,7 @@
     <tr><th>Status tugas</th><th>backlog · ready · in_progress · review · done · blocked</th></tr>
     <tr><th>Status soal</th><td><code>approved</code> otomatis · <code>rejected</code> · <code>archived</code>; <code>draft</code>/<code>review</code> dihapus (ADR-004)</td></tr>
     <tr><th>Perkembangan test</th><td>19/19 → … → 99/99 → 106/106 → 118/118 → 126/126 → 129/129 → 132/132 → 142/142 → 150/150 → 162/162 → <b>169/169</b></td></tr>
-    <tr><th>Hasil terakhir</th><td><span class="tag ok">169 lolos · 0 gagal · 0 P0/P1</span> · REL-01…REL-21, REL-15 <span class="tag warn">partial</span>, REL-16…REL-21 <span class="tag ok">GO</span></td></tr>
+    <tr><th>Hasil terakhir</th><td><span class="tag ok">169 lolos · 0 gagal · 0 P0/P1</span> · seluruh gate REL-01…REL-21 <span class="tag ok">GO</span></td></tr>
     <tr><th>Kelompok test</th><td>19 smoke + 15 edge + 14 Fase 5 + 8 peserta + 8 tryout + 17 auth + 9 upload/grading + 3 manajemen soal + 6 laporan &amp; manajemen tryout + 6 mapel + 2 multi-jawaban + 10 skenario Fase 6j</td></tr>
   </table>
 </section>
@@ -354,7 +353,7 @@
     <tr><td>F5</td><td>CMS frontend</td><td>10 layar di <code>cms.*</code>, dengan menu grup Manajemen Soal, Manajemen Tryout (termasuk Kelola Peserta), dan Setting</td></tr>
     <tr><td>F6</td><td>Tryout, domain, n8n</td><td><code>tryout.*</code>, <code>api.*</code>, landing, n8n aktif</td></tr>
     <tr><td>F7</td><td>Modul lama &amp; backup</td><td>8080/8081, template office, dump &amp; timer</td></tr>
-    <tr><td>F8</td><td>QA &amp; dokumentasi</td><td>169/169 test, 21 gate (REL-15 partial; REL-16…REL-21 GO), laporan deviasi, dan release gate per fase</td></tr>
+    <tr><td>F8</td><td>QA &amp; dokumentasi</td><td>169/169 test, 21 gate semuanya GO, laporan deviasi, dan release gate per fase</td></tr>
   </table>
   <p style="font-size:13px;color:var(--muted)">Salin prompt di slide berikutnya ke sesi OpenCode baru, satu fase setiap kali. Gunakan <code>/clear</code> atau sesi baru antar fase agar konteks tidak menumpuk.</p>
 </section>
@@ -485,12 +484,13 @@ Simpan ke docs/replikasi/fase-7-legacy.md.</pre>
   <div class="kicker">Slide 26 · Fase 8</div>
   <h2>F8 — Verifikasi, QA &amp; Serah Terima</h2>
   <h3>Langkah</h3>
-  <ol><li>Jalankan 169 test berurutan lewat <code>npm test</code> di <code>backend-agent</code> dengan heap 128 MB.</li><li>Cek gate REL-01…REL-21 dan status seluruh service; catat REL-15 sebagai partial.</li><li>Tulis deviasi, verifikasi bundle CMS dan aset tryout, lalu pastikan fixture QA dibersihkan.</li></ol>
+  <ol><li>Jalankan 169 test berurutan lewat <code>npm test</code> di <code>backend-agent</code> dengan heap 128 MB.</li><li>Cek gate REL-01…REL-21 dan status seluruh service; pastikan REL-15 GO bersama gate lainnya.</li><li>Tulis deviasi, verifikasi bundle CMS dan aset tryout, lalu pastikan fixture QA dibersihkan.</li></ol>
   <div class="prompt-label">Prompt OpenCode</div>
   <pre>Fase 8 — VERIFIKASI SAJA. Jangan mengubah kode; cukup uji dan laporkan.
  1. Jalankan 169 test secara berurutan, bukan paralel, lewat <code>NODE_OPTIONS=--max-old-space-size=128 npm test</code> di <code>backend-agent</code>. Target 169/169 lolos, 0 P0/P1; fixture QA dibersihkan otomatis.
- 2. Periksa gate REL-01 sampai REL-21; REL-15 masih partial menunggu regresi Fase 6m, REL-16…REL-21 GO.
-3. Verifikasi systemctl is-active untuk nginx, postgresql@16-main, bank-soal-api, bank-soal-presentation, n8n, hanyadi-api; jalankan nginx -t; curl /health pada 8082 dan 8083.
+  2. Periksa gate REL-01 sampai REL-21; seluruh gate GO, termasuk REL-15 setelah regresi penuh Fase 6m.
+ 3. Verifikasi systemctl is-active untuk nginx, postgresql@16-main, bank-soal-api, bank-soal-presentation, n8n, hanyadi-api; jalankan nginx -t; curl /health pada 8082 dan 8083.
+
 4. Tulis docs/replikasi/fase-8-verifikasi.md yang berisi hasil test, status layanan, dan deviasi terhadap kondisi produksi: referensi 441 soal/565 varian historis/133 sesi, kondisi lokal setelah cleanup 3 soal/7 varian historis/307 sesi login/1 user admin/1 peserta tryout manual/1 sesi tryout tanpa relasi peserta dan submission, 12 dump, 0 workflow n8n, timer backup disabled, vhost 8080 untuk office belum aktif (host publik mengikuti root).
 Jika ada yang gagal, laporkan sebagai BUG-xxx dengan severity; jangan langsung memperbaiki di sesi ini.</pre>
 </section>
@@ -542,7 +542,7 @@ Jika ada yang gagal, laporkan sebagai BUG-xxx dengan severity; jangan langsung m
     <div class="card"><h4>Kontrak backend</h4><p><code>POST /api/v1/tryouts/{id}/participants</code> melampirkan peserta existing secara idempoten. Fase 6r menambahkan detail/daftar Prospektus dan migrasi <code>024</code>; Fase 6s menambahkan <code>GET /siswa</code>, <code>GET /tryouts/{id}/participants</code>, <code>tryout_slug</code> saat login, serta migrasi <code>025</code>.</p></div>
     <div class="card"><h4>Kontrol UI</h4><p>Frontend membedakan target <code>draft</code> dan <code>manage</code>. Picker menonaktifkan siswa yang sudah terlampir. Umum baru dari popup Kelola dibuat lalu langsung dilampirkan; PIN tetap ditampilkan sekali pada notifikasi.</p></div>
     <div class="card"><h4>QA &amp; deploy</h4><p>QS-01…QS-07 lolos. Regresi penuh <span class="tag ok">169/169</span>, 0 P0/P1. Build FE memakai heap 256 MB menghasilkan <code>index-CwovVZBt.js</code>; test memakai heap 128 MB tanpa OOM.</p></div>
-    <div class="card"><h4>Status produksi</h4><p>CMS, tryout, API, dan presentation mengembalikan 200. Aset tryout <code>app.js?v=13</code> dan <code>styles.css?v=12</code> aktif. <code>REL-15</code> tetap partial; gate terbaru <code>REL-21</code> GO.</p></div>
+    <div class="card"><h4>Status produksi</h4><p>CMS, tryout, API, dan presentation mengembalikan 200. Aset tryout <code>app.js?v=13</code> dan <code>styles.css?v=12</code> aktif. Seluruh gate <code>REL-01…REL-21</code> GO, termasuk <code>REL-15</code> yang difinalisasi dengan regresi 169/169.</p></div>
   </div>
   <div class="note">Dampak: admin dapat menambah Siswa maupun Umum ke tryout tersimpan, melihat kredensial peserta, menyalin URL tryout unik, dan mengubah prospek Umum menjadi siswa hanya dari halaman Prospektus. Peserta tanpa keanggotaan tryout tidak bisa login.</div>
 </section>
@@ -553,8 +553,8 @@ Jika ada yang gagal, laporkan sebagai BUG-xxx dengan severity; jangan langsung m
   <div class="grid g2">
     <div class="card"><h4>Sumber utama</h4><p><code>/opt/hanyadi-vo</code> (dashboard, API, migrasi, backup, docs) · <code>/opt/virtual-office-bank-soal</code> (agen, backend, frontend, tryout, QA) · <code>/etc/nginx</code> · <code>/etc/systemd/system</code> · PostgreSQL cluster 16/main · <code>/home/n8n</code>.</p></div>
     <div class="card"><h4>Batasan</h4><p>Semua nilai rahasia sengaja tidak ditampilkan. Data dibaca langsung dari server pada 24 Nov 2026 setelah Fase 6s; DOC-06S menyelaraskan laporan ini dengan ADR-011, migrasi <code>025</code>, login scoped, dan bundle <code>index-CwovVZBt.js</code>. Backup pre-025 tersimpan di <code>/tmp/opencode</code>; replikasi data penuh tetap memerlukan ekspor dari sumber.</p></div>
-    <div class="card"><h4>Perbedaan dokumentasi</h4><p>Dokumen lama menyebut 4 agen, arsitektur sampai Fase 4, <code>office.</code> sebagai template, dan dashboard di <code>api.</code>. Kondisi aktual: 5 agen, Fase 6n–6s + ADR-004/006/007/008/009/010/011, REL-21 (REL-15 masih partial), status soal <code>approved</code> otomatis, tanpa versi/readiness, serta menu Prospektus, Kelola Peserta, dan URL tryout tersedia.</p></div>
-    <div class="card"><h4>Langkah berikutnya</h4><p>Prioritaskan perbaikan backup &amp; memori, aktifkan workflow n8n bila diperlukan, dan simpan prompt replikasi ini sebagai runbook tim. Status board dan laporan ini sudah diselaraskan.</p></div>
+    <div class="card"><h4>Perbedaan dokumentasi</h4><p>Dokumen lama menyebut 4 agen, arsitektur sampai Fase 4, <code>office.</code> sebagai template, dan dashboard di <code>api.</code>. Kondisi aktual: 5 agen, Fase 6n–6s + ADR-004/006/007/008/009/010/011, seluruh gate REL-01…REL-21 GO, status soal <code>approved</code> otomatis, tanpa versi/readiness, serta menu Prospektus, Kelola Peserta, dan URL tryout tersedia.</p></div>
+    <div class="card"><h4>Langkah berikutnya</h4><p>Fase 6 dinyatakan selesai dengan seluruh gate GO dan regresi 169/169. Prioritaskan perbaikan backup &amp; memori, aktifkan workflow n8n bila diperlukan, dan simpan prompt replikasi ini sebagai runbook tim. Status board dan laporan ini sudah diselaraskan.</p></div>
   </div>
   <p class="hint">Akhir presentasi — tekan Home untuk kembali ke awal.</p>
 </section>

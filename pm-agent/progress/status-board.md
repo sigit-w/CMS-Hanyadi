@@ -1,6 +1,6 @@
 # Status Board — Fase 3–6 & Tryout
 
-Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) sudah di-deploy tetapi menunggu regresi QA penuh. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Fase 6q (Kelola Peserta dari Daftar Tryout) final 2026-11-24 dengan `REL-19` **GO**, regresi 155/155, bundle `index-D0au7v9d.js`. Fase 6r (Perubahan flow tryout: siswa/prospektus & kredensial) final 2026-11-24 dengan `REL-20` **GO**; regresi 162/162, migrasi `024` terpasang, bundle `index-B10Efnkg.js`. Fase 6s (tryout-scoped login & pemisahan peserta) final 2026-11-24 dengan `REL-21` **GO**; regresi 169/169, migrasi `025` terpasang, bundle `index-CwovVZBt.js`. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, `pm-agent/tasks/phase6r-backlog.md`, `pm-agent/tasks/phase6s-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
+Diperbarui oleh PM setiap hari kerja. Status per 2026-11-24; Fase 3–5 & tryout final 2026-11-21, Fase 6i final 2026-11-22, Fase 6j, 6k, dan 6l final 2026-11-23. Fase 6m (sinkronisasi mapel soal–tryout) final 2026-11-24 dengan `REL-15` **GO** setelah regresi penuh 169/169. Fase 6n (Manajemen Bimbel) final 2026-11-24 dengan `REL-16` **GO**. Fase 6o (alur Buat Tryout & Peserta Umum) final 2026-11-24 dengan `REL-17` **GO**; regresi 142/142, migrasi 020/021/022 terpasang, dan aset produksi terverifikasi. Fase 6p (peserta tryout, detail, hapus relasi, & Prospektus) final 2026-11-24 dengan `REL-18` **GO**; regresi 150/150, migrasi `023` terpasang, bundle `index-CIWSCIZ4.js`, dan aset tryout terverifikasi. Fase 6q (Kelola Peserta dari Daftar Tryout) final 2026-11-24 dengan `REL-19` **GO**, regresi 155/155, bundle `index-D0au7v9d.js`. Fase 6r (Perubahan flow tryout: siswa/prospektus & kredensial) final 2026-11-24 dengan `REL-20` **GO**; regresi 162/162, migrasi `024` terpasang, bundle `index-B10Efnkg.js`. Fase 6s (tryout-scoped login & pemisahan peserta) final 2026-11-24 dengan `REL-21` **GO**; regresi 169/169, migrasi `025` terpasang, bundle `index-CwovVZBt.js`. **Fase 6 ditutup 2026-11-24** dengan seluruh gate `REL-01…REL-21` GO, regresi final 169/169, dan commit `45b8daa`. Sumber backlog: `pm-agent/tasks/phase6-backlog.md`, `pm-agent/tasks/phase6j-backlog.md`, `pm-agent/tasks/phase6n-backlog.md`, `pm-agent/tasks/phase6o-backlog.md`, `pm-agent/tasks/phase6p-backlog.md`, `pm-agent/tasks/phase6r-backlog.md`, `pm-agent/tasks/phase6s-backlog.md`, dan bagian Fase 6k/6l/6m di bawah.
 
 | Task ID | Owner | Prioritas | Status | Dependency | Catatan |
 |---|---|---|---|---|---|
@@ -251,9 +251,9 @@ Gejala: setelah mapel soal diubah dan disimpan, soal tidak muncul di `tryout.han
 | FE-27 | Frontend | P1 | done | BE-30 | Filter mapel Daftar Soal disesuaikan otomatis setelah simpan; daftar soal Manajemen Tryout dimuat ulang saat halaman mendapat fokus; build `index-CFDLsDdb.js` terdeploy |
 | TRY-11 | Tryout | P1 | done | BE-30 | Daftar soal peserta dimuat ulang saat jendela mendapat fokus; aset `app.js?v=11` |
 | DATA-06M | Backend/PM | P1 | done | BE-30 | Rekonsiliasi data existing: soal id 950 ditambahkan ke sesi aktif 29 (`position=2`); query daftar tryout peserta kini mengembalikan id 950 dan 144 |
-| QA-27 | QA | P1 | partial | BE-30, FE-27, TRY-11, DATA-06M | Verifikasi statis (`node --check`), build frontend sukses, simulasi SQL transaksional dengan rollback, health API 200. Regresi 129 test belum dijalankan karena `QA_ADMIN_PASSWORD` tidak tersedia dan test tryout mengubah sesi aktif produksi |
+| QA-27 | QA | P1 | done | BE-30, FE-27, TRY-11, DATA-06M | Verifikasi statis (`node --check`), build frontend sukses, simulasi SQL transaksional dengan rollback, health API 200. Regresi penuh final 169/169 dijalankan dengan `QA_ADMIN_PASSWORD` dari secret store; fixture dibersihkan |
 | DOC-06M | PM/Docs | P1 | done | QA-27 | Status board dan laporan sistem diperbarui dengan gejala, akar masalah, perbaikan, serta batasan verifikasi |
-| REL-15 | PM | P1 | partial | QA-27 | Deploy aktif 2026-11-23 (backend direstart, frontend/tryout ter-update); gate **GO** menunggu regresi QA penuh |
+| REL-15 | PM | P1 | done | QA-27 | Deploy aktif 2026-11-23 (backend direstart, frontend/tryout ter-update); gate **GO** 2026-11-24 setelah regresi penuh 169/169 |
 
 ## Fase 6n — Manajemen Bimbel — 2026-11-24
 
@@ -279,7 +279,7 @@ Permintaan pemilik: ubah halaman Buat Tryout menjadi Nama Tryout (Camel/Title Ca
 | FE-29 | Frontend | P0 | done | BE-32 (kontrak) | Urutan form baru, picker lembar soal, peserta opsional, popup Umum & generator PIN; bundle `index-BWwbQxdi.js` |
 | TRY-12 | Tryout | P0 | done | BE-32 (kontrak) | Login `Nama atau Email` / `Password atau PIN`, aset `?v=11`/`?v=12` terverifikasi |
 | QA-29 | QA | P0 | done | QA-29A, BE-32, FE-29, TRY-12 | U-01..U-10 lolos; regresi 142/142, 0 bug P0/P1 |
-| REL-17 | PM | P0 | done | QA-29 | **GO** 2026-11-24; terpisah dari `REL-15` yang masih partial |
+| REL-17 | PM | P0 | done | QA-29 | **GO** 2026-11-24; terpisah dari `REL-15` yang kini ikut final **GO** |
 
 ## Fase 6p — Peserta Tryout, Detail, Hapus Relasi & Prospektus — 2026-11-24
 
@@ -335,3 +335,15 @@ Permintaan pemilik: (1) peserta/siswa yang tidak terdaftar di sebuah tryout tida
 | QA-33 | QA | P0 | done | BE-36, FE-33, TRY-15, PRES-03 | QS-01…QS-07 lolos; regresi 169/169, 0 P0/P1; `phase6s-report.md` |
 | DOC-06S | PM/Docs | P1 | done | FE-33, QA-33 | OpenAPI, README backend/DB, ADR-011, backlog, status board, laporan sistem, gate `REL-21 GO` diselaraskan |
 | REL-21 | PM | P0 | done | QA-33, DOC-06S | **GO** 2026-11-24; health/aset produksi terverifikasi; commit & push ke `origin/main` |
+
+## Penutup Fase 6 — 2026-11-24
+
+Fase 6 dinyatakan selesai. Seluruh sub-fase 6i–6s telah final dan seluruh gate `REL-01…REL-21` berstatus **GO**; `REL-15` difinalisasi memakai bukti regresi penuh 169/169 yang sama dengan `REL-21`. Catatan `REL-15 partial` di ADR dan laporan gate lama dipertahankan sebagai catatan historis pada saat gate tersebut diterbitkan.
+
+| Aspek | Status akhir |
+|---|---|
+| Regresi | 169/169 lolos, 0 gagal, 0 P0/P1 |
+| Gate | `REL-01…REL-21` **GO**, tidak ada gate partial |
+| Deploy | Migrasi `025` terpasang; CMS `index-CwovVZBt.js`/`index-D_wAgUtB.css`; tryout `styles.css?v=12`/`app.js?v=13`; health API, presentation, CMS, tryout 200 |
+| Dokumen | ADR-001…ADR-011, backlog Fase 6/6j/6n/6o/6p/6r/6s, QA report & release gate, status board, dan laporan sistem tersinkron |
+| VCS | Implementasi Fase 6s di commit `45b8daa`; penutup Fase 6 dicatat di commit terpisah |
