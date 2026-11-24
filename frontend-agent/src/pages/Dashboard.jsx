@@ -55,7 +55,7 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('id-ID');
 }
 
-export default function Dashboard({ can }) {
+export default function Dashboard({ can, refreshKey = 0 }) {
   const [mapels, setMapels] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [pagination, setPagination] = useState({ total: 0 });
@@ -98,6 +98,16 @@ export default function Dashboard({ can }) {
     })();
     return () => { active = false; };
   }, [refreshQuestions]);
+
+  useEffect(() => {
+    if (refreshKey === 0) return;
+    setPage(1);
+    setError('');
+    setLoading(true);
+    refreshQuestions(filters, 1)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [refreshKey]);
 
   function applyFilter(patch) {
     const next = { ...filters, ...patch };
@@ -309,7 +319,7 @@ export default function Dashboard({ can }) {
             ) : questions.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
                 <p className="text-sm font-medium">Belum ada soal</p>
-                <p className="text-sm text-muted-foreground">Ubah filter atau tambahkan lewat Manajemen Soal › Input Soal.</p>
+                <p className="text-sm text-muted-foreground">Ubah filter atau tambahkan lewat form Buat Soal di atas ini.</p>
               </div>
             ) : (
               <ul className="m-0 list-none divide-y rounded-md border p-0">

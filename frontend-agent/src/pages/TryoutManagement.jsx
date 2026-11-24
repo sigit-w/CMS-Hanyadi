@@ -118,7 +118,7 @@ export default function TryoutManagement() {
     setNotice('');
     if (!form.name.trim() || !form.session_date || !form.mapel_code
       || selectedQuestions.length === 0 || selectedParticipants.length === 0) {
-      setError('Lengkapi nama, tanggal, mapel, minimal satu soal, dan minimal satu peserta.');
+      setError('Lengkapi nama, tanggal, mapel, minimal satu soal, dan minimal satu siswa.');
       return;
     }
     setSaving(true);
@@ -160,7 +160,7 @@ export default function TryoutManagement() {
     <>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Manajemen Tryout</h1>
-        <p className="text-sm text-muted-foreground">Buat Tryout baru, tentukan mapel, soal yang dipakai, dan peserta yang diundang.</p>
+        <p className="text-sm text-muted-foreground">Buat Tryout baru, tentukan mapel, soal yang dipakai, dan siswa yang diundang.</p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
@@ -226,9 +226,9 @@ export default function TryoutManagement() {
             </fieldset>
 
             <fieldset className="rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Peserta ({selectedParticipants.length} dipilih)</legend>
+              <legend className="px-1 text-sm font-semibold">Siswa ({selectedParticipants.length} dipilih)</legend>
               {participants.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada peserta. Tambahkan lewat menu Kelola Peserta.</p>
+                <p className="text-sm text-muted-foreground">Belum ada siswa. Tambahkan lewat menu Kelola Siswa.</p>
               ) : (
                 <div className="max-h-56 space-y-2 overflow-y-auto">
                   {participants.map((participant) => {
@@ -254,7 +254,7 @@ export default function TryoutManagement() {
               <Button type="submit" disabled={saving}>
                 {saving ? 'Menyimpan…' : 'Simpan Tryout'}
               </Button>
-              <span className="text-xs text-muted-foreground">Soal dan peserta wajib dipilih minimal satu.</span>
+              <span className="text-xs text-muted-foreground">Soal dan siswa wajib dipilih minimal satu.</span>
             </div>
           </form>
         </CardContent>
@@ -276,7 +276,7 @@ export default function TryoutManagement() {
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Mapel</TableHead>
                   <TableHead>Soal</TableHead>
-                  <TableHead>Peserta</TableHead>
+                  <TableHead>Siswa</TableHead>
                   <TableHead>Submission</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>

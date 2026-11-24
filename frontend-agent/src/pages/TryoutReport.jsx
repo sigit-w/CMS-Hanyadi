@@ -96,7 +96,7 @@ export default function TryoutReport() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Laporan Tryout</h1>
         <p className="text-sm text-muted-foreground">
-          Sesi tryout dan rekap jumlah benar, salah, serta skor per peserta dan mapel.
+          Sesi tryout dan rekap jumlah benar, salah, serta skor per siswa dan mapel.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
@@ -166,7 +166,7 @@ export default function TryoutReport() {
       {groupedSessions.length === 0 && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Belum ada sesi dengan submission. Buat sesi lalu minta peserta mengirim jawaban.</p>
+            <p className="text-sm text-muted-foreground">Belum ada sesi dengan submission. Buat sesi lalu minta siswa mengirim jawaban.</p>
           </CardContent>
         </Card>
       )}
@@ -184,7 +184,7 @@ export default function TryoutReport() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nama Peserta</TableHead>
+                    <TableHead>Nama Siswa</TableHead>
                     <TableHead>Kelas</TableHead>
                     <TableHead>Sekolah</TableHead>
                     <TableHead>Mapel</TableHead>

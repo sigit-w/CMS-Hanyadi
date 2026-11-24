@@ -17,7 +17,7 @@ const EMPTY_FORM = {
 };
 const MAPEL_LABELS = { MTKA: 'Matematika', BIND: 'Bahasa Indonesia', IPAS: 'IPAS' };
 
-export default function QuestionInput() {
+export default function QuestionInput({ onCreated }) {
   const [mapels, setMapels] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [importMode, setImportMode] = useState('file');
@@ -87,7 +87,8 @@ export default function QuestionInput() {
         answer_text: form.answer_text || null, explanation: form.explanation || null
       }, imageFile);
       event.target.reset(); setForm(EMPTY_FORM); setImageFile(null);
-      setNotice('Soal berhasil disimpan. Lihat daftar di menu Dashboard.');
+      onCreated?.();
+      setNotice('Soal berhasil disimpan. Lihat daftar di bawah halaman ini.');
     } catch (err) { setError(err.message); }
   }
 
@@ -99,14 +100,15 @@ export default function QuestionInput() {
       const data = importMode === 'file' ? await importFile(selectedFile, sourceType) : await importPayload({ content: importText, source: { type: sourceType, label: 'Payload Manual' } });
       setNotice(`Import berhasil: ${data.created} soal dari sumber #${data.source_id}`);
       setImportText(''); setSelectedFile(null);
+      onCreated?.();
     } catch (err) { setError(err.message); }
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Input Soal</h1>
-        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file/payload.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Buat Soal</h1>
+        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file/payload. Daftar soal diperbarui otomatis di bawah halaman ini.</p>
       </div>
       {error && <Alert variant="destructive">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}

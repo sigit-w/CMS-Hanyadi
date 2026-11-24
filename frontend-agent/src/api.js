@@ -61,6 +61,13 @@ export const createMapel = (payload) =>
 export const updateMapel = (id, payload) =>
   request(`/mapels/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 export const deleteMapel = (id) => request(`/mapels/${id}`, { method: 'DELETE' });
+export const getProgramsBelajar = () => request('/program-belajar');
+export const getProgramBelajar = (id) => request(`/program-belajar/${id}`);
+export const createProgramBelajar = (payload) =>
+  request('/program-belajar', { method: 'POST', body: JSON.stringify(payload) });
+export const updateProgramBelajar = (id, payload) =>
+  request(`/program-belajar/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+export const deleteProgramBelajar = (id) => request(`/program-belajar/${id}`, { method: 'DELETE' });
 export const getQuestions = (params) => {
   const query = new URLSearchParams(params).toString();
   return request(`/questions${query ? `?${query}` : ''}`);

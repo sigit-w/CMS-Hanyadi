@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, FilePlus2, ClipboardList, BarChart3, Users, Shield, FileText, BookOpen, LogOut, Menu, X, ChevronRight
+  LayoutDashboard, ClipboardList, BarChart3, Users, Shield, FileText, BookOpen, GraduationCap, LogOut, Menu, X, ChevronRight
 } from 'lucide-react';
 import LoginView from './components/LoginView.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -8,6 +8,7 @@ import QuestionInput from './pages/QuestionInput.jsx';
 import QuestionSheets from './pages/QuestionSheets.jsx';
 import RoleManagement from './pages/RoleManagement.jsx';
 import MapelManagement from './pages/MapelManagement.jsx';
+import ProgramBelajarManagement from './pages/ProgramBelajarManagement.jsx';
 import SystemReport from './pages/SystemReport.jsx';
 import TryoutReport from './pages/TryoutReport.jsx';
 import UserManagement from './pages/UserManagement.jsx';
@@ -36,8 +37,7 @@ const NAV_GROUPS = [
     key: 'manajemen-soal',
     label: 'Manajemen Soal',
     items: [
-      { path: '/questions', hash: '#/questions', label: 'Daftar Soal', permission: 'questions.read', icon: LayoutDashboard },
-      { path: '/questions/new', hash: '#/questions/new', label: 'Input Soal', permission: 'questions.write', icon: FilePlus2 },
+      { path: '/questions', hash: '#/questions', label: 'Daftar & Buat Soal', permission: 'questions.read', icon: LayoutDashboard },
       { path: '/question-sheets', hash: '#/question-sheets', label: 'Lembar Soal', permission: 'question_sheets.manage', icon: FileText }
     ]
   },
@@ -46,7 +46,7 @@ const NAV_GROUPS = [
     label: 'Manajemen Tryout',
     items: [
       { path: '/tryouts', hash: '#/tryouts', label: 'Buat/Daftar Tryout', permission: 'tryouts.manage', icon: ClipboardList },
-      { path: '/tryouts/peserta', hash: '#/tryouts/peserta', label: 'Kelola Peserta', permission: 'tryouts.manage', icon: Users },
+      { path: '/tryouts/peserta', hash: '#/tryouts/peserta', label: 'Kelola Siswa', permission: 'tryouts.manage', icon: Users },
       { path: '/reports/tryout', hash: '#/reports/tryout', label: 'Laporan Tryout', permission: 'tryout_reports.read', icon: BarChart3 }
     ]
   },
@@ -55,6 +55,7 @@ const NAV_GROUPS = [
     label: 'Setting',
       items: [
         { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel', permission: 'mapels.manage', icon: BookOpen },
+        { path: '/program-belajar', hash: '#/program-belajar', label: 'Kelola Program Belajar', permission: 'program_belajar.manage', icon: GraduationCap },
         { path: '/roles', hash: '#/roles', label: 'Kelola Role', permission: 'roles.manage', icon: Shield },
         { path: '/reports/system', hash: '#/reports/system', label: 'Laporan Sistem', permission: 'reports.read', icon: FileText }
       ]
@@ -66,7 +67,7 @@ const NAV_STANDALONE = [
 ];
 
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((group) => group.items), ...NAV_STANDALONE];
-const ROUTE_ALIASES = { '/': '/questions' };
+const ROUTE_ALIASES = { '/': '/questions', '/questions/new': '/questions' };
 
 function NavLink({ item, active, onNavigate }) {
   const Icon = item.icon;
@@ -89,6 +90,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [questionsRefresh, setQuestionsRefresh] = useState(0);
   const route = useHashRoute();
   const activePath = ROUTE_ALIASES[route] ?? route;
 
@@ -136,9 +138,12 @@ export default function App() {
     page = <div className="rounded-xl border bg-card p-6"><h2 className="text-lg font-semibold">Akses ditolak</h2>
       <p className="mt-2 text-sm text-muted-foreground">Akun Anda tidak memiliki permission {current.permission}.</p></div>;
   } else if (activePath === '/questions') {
-    page = <Dashboard can={can} />;
-  } else if (activePath === '/questions/new') {
-    page = <QuestionInput />;
+    page = (
+      <div className="space-y-6">
+        {can('questions.write') && <QuestionInput onCreated={() => setQuestionsRefresh((key) => key + 1)} />}
+        <Dashboard can={can} refreshKey={questionsRefresh} />
+      </div>
+    );
   } else if (activePath === '/question-sheets') {
     page = <QuestionSheets />;
   } else if (activePath === '/users/new') {
@@ -149,6 +154,8 @@ export default function App() {
     page = <PesertaManagement />;
   } else if (activePath === '/mapels') {
     page = <MapelManagement />;
+  } else if (activePath === '/program-belajar') {
+    page = <ProgramBelajarManagement />;
   } else if (activePath === '/roles') {
     page = <RoleManagement />;
   } else if (activePath === '/reports/system') {

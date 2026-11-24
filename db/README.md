@@ -130,6 +130,22 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
   -f /opt/virtual-office-bank-soal/db/migrations/017_mapel_code_4_char.sql
 ```
 
+Program belajar (tabel `program_belajar` dan `program_belajar_schedules`, permission `program_belajar.manage`, idempotent):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/018_program_belajar.sql
+```
+
+Field peserta/siswa: program belajar dan nomor WA orang tua (idempotent, dijalankan setelah `018`):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/019_participant_program_wa.sql
+```
+
 Kredensial tersimpan di
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
 
@@ -163,12 +179,14 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - `tryout_submissions` menyimpan satu baris per `(user_id, question_id, version)` dan memiliki `session_id` ke `tryout_sessions`; kolom `version` tetap diisi konstan `'v1'` secara internal untuk kompatibilitas histori (ADR-004). Skor rekap dihitung dari tabel ini, bukan dari state browser. Endpoint penyajian tidak mengirim `correct_key`, `correct_keys`, `answer_text`, `is_correct`, `correct`, atau `explanation` ke peserta.
 - `tryout_sessions` menyimpan `name`, `session_date`, dan `mapel_id`; hanya satu sesi yang boleh aktif. Submission baru otomatis memakai sesi aktif. Permission `tryout_reports.read` mengontrol halaman laporan yang menampilkan perbandingan jawaban dan kunci.
 - `tryout_session_questions` dan `tryout_session_participants` menentukan soal serta peserta sebuah TO. Bila sesi aktif memiliki baris pada tabel tersebut, daftar soal dan submission dibatasi sesuai daftar; sesi lama tanpa baris tetap memakai perilaku sebelumnya. Permission `tryouts.manage` mengontrol pembuatan TO dan CRUD peserta di CMS.
-- `tryout_participants` menyimpan `nama`, `email`, `kelas`, `sekolah`, dan `password_hash` peserta tryout. Peserta dibuat hanya lewat halaman CRUD Peserta, login memakai email, dan admin dapat mengubah passwordnya. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
+- `tryout_participants` menyimpan `nama`, `email`, `kelas`, `sekolah`, `password_hash`, `program_belajar_id` (FK ke `program_belajar`), dan `wa_orang_tua` siswa tryout. Siswa dibuat hanya lewat halaman CRUD Siswa, login memakai email, dan admin dapat mengubah passwordnya. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
 - `tryout_submissions` dan `auth_sessions` memakai `participant_id` untuk akun peserta dan `user_id` untuk akun CMS; tepat salah satu yang terisi. Baris lama milik user ber-role `peserta` sudah dipindahkan ke `participant_id` oleh migrasi `010`.
 - Daftar soal CMS memakai pagination server-side dengan `page` dan `limit` default 20; respons menyertakan `pagination: { page, limit, total }` (ADR-004).
 - `question_sheets` menyimpan satu lembar soal dengan tepat satu `mapel_id`, kode unik 12 karakter termasuk tanda hubung, `duration_minutes` positif, dan flag `archived` untuk soft delete. Kode generator = `LS-<KODE_MAPEL>-mmyy`, misalnya `LS-MTKA-mmyy`; kode mapel berasal langsung dari `mapels.code` tanpa pemetaan nama/fallback. Kode hasil edit hanya wajib memenuhi panjang 12 dan karakter `A-Z0-9-`.
 - `question_sheet_questions` adalah relasi banyak-ke-banyak soal–lembar; satu soal boleh dipakai banyak lembar. Semua soal dalam satu lembar wajib ber-mapel sama. Flag kode lembar aktif dikirim pada field `sheets` di `GET /api/v1/questions`; lembar terarsip tidak muncul.
 - Permission `question_sheets.manage` mengontrol create/edit/archive lembar soal dan picker soal. Kode terkunci setelah lembar dipakai tryout, tetapi relasi tryout–lembar belum ada di Fase 6l sehingga pengecekan sementara selalu `false` (ADR-005).
+- `program_belajar` menyimpan nama program, kelas 1–12, deskripsi, dan biaya; `program_belajar_schedules` menyimpan satu atau lebih jadwal per program (hari, jam mulai, jam selesai) dengan jam selesai wajib setelah jam mulai. Permission `program_belajar.manage` mengontrol CRUD halaman Kelola Program Belajar.
+- `tryout_participants.program_belajar_id` menghubungkan siswa ke program belajar (`ON DELETE SET NULL`). `tryout_participants.wa_orang_tua` maksimal 20 karakter dengan format opsional `+`, angka, spasi, atau tanda hubung; baris lama boleh NULL sampai diubah lewat UI.
 - View `v_question_catalog` dipakai frontend untuk daftar soal dan QA untuk audit cepat.
 
 ## Perubahan Schema

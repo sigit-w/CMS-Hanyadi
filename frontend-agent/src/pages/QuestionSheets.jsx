@@ -23,6 +23,18 @@ import { Dialog } from '@/components/ui/dialog';
 
 const EMPTY_FORM = { name: '', mapel_code: '', code: '', description: '', duration_minutes: 60 };
 const CODE_PATTERN = /^[A-Z0-9-]{12}$/;
+const PAGE_SIZE = 20;
+const DETAIL_BATCH_SIZE = 5;
+
+async function loadQuestions(ids) {
+  const result = [];
+  for (let index = 0; index < ids.length; index += DETAIL_BATCH_SIZE) {
+    const batch = ids.slice(index, index + DETAIL_BATCH_SIZE);
+    const rows = await Promise.all(batch.map((id) => getQuestion(id)));
+    result.push(...rows);
+  }
+  return result;
+}
 const QUESTION_TYPE_LABELS = {
   multiple_choice: 'Pilihan ganda',
   true_false: 'Benar/Salah',
@@ -33,6 +45,8 @@ const QUESTION_TYPE_LABELS = {
 
 export default function QuestionSheets() {
   const [sheets, setSheets] = useState([]);
+  const [sheetPage, setSheetPage] = useState(1);
+  const [sheetPagination, setSheetPagination] = useState({ total: 0 });
   const [mapels, setMapels] = useState([]);
   const [status, setStatus] = useState('active');
   const [form, setForm] = useState(EMPTY_FORM);
@@ -45,13 +59,23 @@ export default function QuestionSheets() {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const [sheetDetail, setSheetDetail] = useState(null);
+  const [sheetDetailLoading, setSheetDetailLoading] = useState(false);
+  const [sheetDetailError, setSheetDetailError] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
 
-  async function loadSheets() {
-    const data = await getQuestionSheets({ status, limit: 100 });
+  async function loadSheets(nextPage = sheetPage, allowBacktrack = false) {
+    let page = nextPage;
+    let data = await getQuestionSheets({ status, page, limit: PAGE_SIZE });
+    if (allowBacktrack && (data.sheets ?? []).length === 0 && page > 1) {
+      page -= 1;
+      data = await getQuestionSheets({ status, page, limit: PAGE_SIZE });
+    }
     setSheets(data.sheets ?? []);
+    setSheetPagination(data.pagination ?? { total: 0 });
+    setSheetPage(page);
   }
 
   useEffect(() => {
@@ -71,7 +95,8 @@ export default function QuestionSheets() {
     let active = true;
     setError('');
     setNotice('');
-    loadSheets().catch((err) => { if (active) setError(err.message); });
+    setSheetPage(1);
+    loadSheets(1).catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [status]);
 
@@ -96,7 +121,7 @@ export default function QuestionSheets() {
     setSaving(true);
     try {
       await action();
-      await loadSheets();
+      await loadSheets(sheetPage, true);
       setNotice(message);
     } catch (err) {
       setError(err.message);
@@ -139,7 +164,7 @@ export default function QuestionSheets() {
   async function startEdit(sheet) {
     try {
       const detailSheet = await getQuestionSheet(sheet.id);
-      const questions = await Promise.all(detailSheet.sheet.question_ids.map((id) => getQuestion(id)));
+      const questions = await loadQuestions(detailSheet.sheet.question_ids ?? []);
       setForm({
         name: detailSheet.sheet.name,
         mapel_code: detailSheet.sheet.mapel_code,
@@ -185,6 +210,21 @@ export default function QuestionSheets() {
     }
   }
 
+  async function openSheetDetail(sheet) {
+    setSheetDetail({ ...sheet, questions: [] });
+    setSheetDetailError('');
+    setSheetDetailLoading(true);
+    try {
+      const detailSheet = await getQuestionSheet(sheet.id);
+      const questions = await loadQuestions(detailSheet.sheet.question_ids ?? []);
+      setSheetDetail({ ...sheet, questions });
+    } catch (err) {
+      setSheetDetailError(err.message);
+    } finally {
+      setSheetDetailLoading(false);
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     if (!form.mapel_code) {
@@ -225,6 +265,10 @@ export default function QuestionSheets() {
     if (!window.confirm(`Arsipkan lembar soal "${sheet.name}"? Relasi soal tetap tersimpan.`)) return;
     await run(() => deleteQuestionSheet(sheet.id), `Lembar soal ${sheet.name} diarsipkan`);
   }
+
+  const sheetTotal = sheetPagination.total ?? 0;
+  const totalSheetPages = Math.max(1, Math.ceil(sheetTotal / PAGE_SIZE));
+  const currentSheetPage = Math.min(Math.max(sheetPage, 1), totalSheetPages);
 
   return (
     <div className="space-y-6">
@@ -364,7 +408,7 @@ export default function QuestionSheets() {
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
           <div>
             <CardTitle>Daftar Lembar Soal</CardTitle>
-            <CardDescription>{sheets.length} lembar ditampilkan.</CardDescription>
+            <CardDescription>{sheetTotal} lembar ditemukan · {PAGE_SIZE} per halaman. Klik baris untuk melihat soal yang dipilih.</CardDescription>
           </div>
           <SelectNative value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="active">Aktif</option>
@@ -389,7 +433,7 @@ export default function QuestionSheets() {
               </TableHeader>
               <TableBody>
                 {sheets.map((sheet) => (
-                  <TableRow key={sheet.id}>
+                  <TableRow key={sheet.id} className="cursor-pointer" onClick={() => openSheetDetail(sheet)}>
                     <TableCell>{sheet.name}</TableCell>
                     <TableCell className="font-mono text-xs">{sheet.code}</TableCell>
                     <TableCell>{sheet.mapel_name}</TableCell>
@@ -402,9 +446,10 @@ export default function QuestionSheets() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => startEdit(sheet)}>Ubah</Button>
+                        <Button type="button" size="sm" variant="outline"
+                          onClick={(event) => { event.stopPropagation(); startEdit(sheet); }}>Ubah</Button>
                         <Button type="button" size="sm" variant="destructive" disabled={sheet.archived || saving}
-                          onClick={() => handleArchive(sheet)}>Arsipkan</Button>
+                          onClick={(event) => { event.stopPropagation(); handleArchive(sheet); }}>Arsipkan</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -412,6 +457,15 @@ export default function QuestionSheets() {
               </TableBody>
             </Table>
           )}
+          <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+            <span className="text-xs text-muted-foreground">Halaman {currentSheetPage} dari {totalSheetPages}</span>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" disabled={currentSheetPage <= 1}
+                onClick={() => loadSheets(currentSheetPage - 1).catch((err) => setError(err.message))}>Prev</Button>
+              <Button type="button" variant="outline" size="sm" disabled={currentSheetPage >= totalSheetPages}
+                onClick={() => loadSheets(currentSheetPage + 1).catch((err) => setError(err.message))}>Next</Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -449,6 +503,51 @@ export default function QuestionSheets() {
                 <p className="text-xs font-semibold uppercase text-muted-foreground">Pembahasan</p>
                 <p className="whitespace-pre-wrap text-sm font-normal text-muted-foreground">{detail.answer_key.explanation}</p>
               </div>
+            )}
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog open={Boolean(sheetDetail)} onClose={() => setSheetDetail(null)} title={`Soal pada Lembar ${sheetDetail?.code ?? ''}`}>
+        {sheetDetailLoading && <p className="text-sm text-muted-foreground">Memuat soal lembar...</p>}
+        {sheetDetailError && <Alert variant="destructive">{sheetDetailError}</Alert>}
+        {sheetDetail && !sheetDetailLoading && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{sheetDetail.name}</Badge>
+              <Badge variant="secondary">{sheetDetail.mapel_name}</Badge>
+              <span className="text-xs text-muted-foreground">{sheetDetail.questions.length} soal dipilih · {sheetDetail.duration_minutes} menit</span>
+            </div>
+            {sheetDetail.questions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Belum ada soal pada lembar ini.</p>
+            ) : (
+              <ol className="space-y-3">
+                {sheetDetail.questions.map((question, index) => (
+                  <li key={question.id} className="space-y-2 rounded-md border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-mono text-muted-foreground">#{index + 1} · {question.id}</span>
+                      <Badge variant="outline">{QUESTION_TYPE_LABELS[question.question_type] ?? question.question_type}</Badge>
+                      <span className="text-xs text-muted-foreground">{question.mapel_name ?? question.mapel_code}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm font-normal leading-relaxed">{question.stem}</p>
+                    {question.image_url && (
+                      <img src={question.image_url} alt="Gambar soal" loading="lazy" className="max-h-56 rounded-md border object-contain" />
+                    )}
+                    {question.options?.length > 0 && (
+                      <div className="space-y-1">
+                        {question.options.map((option) => (
+                          <div key={option.id ?? option.option_key} className="text-sm">
+                            <span className="font-semibold">{option.option_key ?? option.key}. </span>{option.content}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {question.answer_key?.answer_text && (
+                      <p className="text-xs text-muted-foreground">Kunci: {question.answer_key.answer_text}</p>
+                    )}
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
         )}

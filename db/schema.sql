@@ -166,6 +166,31 @@ CREATE INDEX IF NOT EXISTS idx_question_sheet_questions_question
 CREATE INDEX IF NOT EXISTS idx_question_sheets_mapel_archived
     ON question_sheets (mapel_id, archived);
 
+CREATE TABLE IF NOT EXISTS program_belajar (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    kelas INTEGER NOT NULL CHECK (kelas BETWEEN 1 AND 12),
+    description TEXT,
+    biaya NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (biaya >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT program_belajar_name_not_blank CHECK (length(btrim(name)) > 0)
+);
+
+CREATE TABLE IF NOT EXISTS program_belajar_schedules (
+    id BIGSERIAL PRIMARY KEY,
+    program_id BIGINT NOT NULL REFERENCES program_belajar(id) ON DELETE CASCADE,
+    day VARCHAR(10) NOT NULL CHECK (day IN ('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu')),
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT program_belajar_schedules_time_order CHECK (end_time > start_time),
+    CONSTRAINT program_belajar_schedules_unique UNIQUE (program_id, day, start_time, end_time)
+);
+
+CREATE INDEX IF NOT EXISTS idx_program_belajar_schedules_program
+    ON program_belajar_schedules (program_id, position);
+
 CREATE TABLE IF NOT EXISTS presentation_versions (
     id BIGSERIAL PRIMARY KEY,
     code VARCHAR(16) NOT NULL UNIQUE,
@@ -215,6 +240,12 @@ EXECUTE FUNCTION set_updated_at();
 DROP TRIGGER IF EXISTS trg_question_sheets_updated_at ON question_sheets;
 CREATE TRIGGER trg_question_sheets_updated_at
 BEFORE UPDATE ON question_sheets
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_program_belajar_updated_at ON program_belajar;
+CREATE TRIGGER trg_program_belajar_updated_at
+BEFORE UPDATE ON program_belajar
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 

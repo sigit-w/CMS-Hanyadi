@@ -3,6 +3,7 @@ import {
   createParticipant,
   deleteParticipant,
   getParticipants,
+  getProgramsBelajar,
   updateParticipant,
   updateParticipantPassword
 } from '../api.js';
@@ -10,12 +11,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SelectNative } from '@/components/ui/select-native';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-const EMPTY_FORM = { nama: '', email: '', kelas: '', sekolah: '', password: '' };
+const EMPTY_FORM = {
+  nama: '', email: '', kelas: '', sekolah: '',
+  program_belajar_id: '', wa_orang_tua: '', password: ''
+};
 const EMPTY_PASSWORD_FORM = { password: '', confirm: '' };
+const WA_PATTERN = /^\+?[0-9][0-9 -]{6,18}$/;
+const EMPTY_EDIT_VALUES = {
+  nama: '', email: '', kelas: '', sekolah: '', program_belajar_id: '', wa_orang_tua: ''
+};
 
 function defaultParticipantPassword(nama) {
   const firstName = nama.trim().split(/\s+/)[0] || '';
@@ -25,12 +34,17 @@ function defaultParticipantPassword(nama) {
   return `${firstName}@${mm}${yy}`;
 }
 
+function programName(programs, id) {
+  return programs.find((program) => String(program.id) === String(id))?.name ?? '—';
+}
+
 export default function PesertaManagement() {
   const [participants, setParticipants] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [passwordEdited, setPasswordEdited] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editValues, setEditValues] = useState({ nama: '', email: '', kelas: '', sekolah: '' });
+  const [editValues, setEditValues] = useState(EMPTY_EDIT_VALUES);
   const [passwordId, setPasswordId] = useState(null);
   const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
   const [error, setError] = useState('');
@@ -38,8 +52,12 @@ export default function PesertaManagement() {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const data = await getParticipants();
-    setParticipants(data.participants);
+    const [participantData, programData] = await Promise.all([
+      getParticipants(),
+      getProgramsBelajar()
+    ]);
+    setParticipants(participantData.participants ?? []);
+    setPrograms(programData.programs ?? []);
   }
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
@@ -59,16 +77,26 @@ export default function PesertaManagement() {
     }
   }
 
+  function validateWa(wa) {
+    if (!wa || !WA_PATTERN.test(wa.trim()) || wa.trim().length > 20) {
+      setError('Nomor WA orang tua wajib diisi dengan format angka (maksimal 20 karakter)');
+      return false;
+    }
+    return true;
+  }
+
   async function handleCreate(event) {
     event.preventDefault();
+    if (!validateWa(form.wa_orang_tua)) return;
     await run(async () => {
       await createParticipant(form);
       setForm(EMPTY_FORM);
       setPasswordEdited(false);
-    }, `Peserta ${form.nama} berhasil ditambahkan`);
+    }, `Siswa ${form.nama} berhasil ditambahkan`);
   }
 
   async function handleUpdate(participant) {
+    if (!validateWa(editValues.wa_orang_tua)) return;
     await run(async () => {
       await updateParticipant(participant.id, editValues);
       setEditingId(null);
@@ -78,8 +106,8 @@ export default function PesertaManagement() {
   }
 
   async function handleDelete(participant) {
-    if (!window.confirm(`Nonaktifkan peserta "${participant.nama}"? Sesi login akan dicabut.`)) return;
-    await run(() => deleteParticipant(participant.id), `Peserta ${participant.nama} dinonaktifkan`);
+    if (!window.confirm(`Nonaktifkan siswa "${participant.nama}"? Sesi login akan dicabut.`)) return;
+    await run(() => deleteParticipant(participant.id), `Siswa ${participant.nama} dinonaktifkan`);
     setPasswordId((current) => (current === participant.id ? null : current));
   }
 
@@ -106,9 +134,9 @@ export default function PesertaManagement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Kelola Peserta Tryout</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Kelola Siswa Tryout</h1>
         <p className="text-sm text-muted-foreground">
-          Buat, ubah, dan nonaktifkan peserta tryout lengkap dengan kelas dan sekolah. Peserta login memakai email dan password yang dibuat di sini.
+          Buat, ubah, dan nonaktifkan siswa tryout lengkap dengan program belajar, kelas, sekolah, dan nomor WA orang tua. Siswa login memakai email dan password yang dibuat di sini.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
@@ -116,7 +144,7 @@ export default function PesertaManagement() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Tambah Peserta</CardTitle>
+          <CardTitle>Tambah Siswa</CardTitle>
           <CardDescription>
             Default password: nama depan@mmyy. Bisa diganti dengan password lain (min. 6 karakter).
           </CardDescription>
@@ -124,9 +152,9 @@ export default function PesertaManagement() {
         <CardContent>
           <form className="space-y-4" onSubmit={handleCreate}>
             <div className="space-y-2">
-              <Label htmlFor="participant-nama">Nama</Label>
-              <Input id="participant-nama" required maxLength={128} value={form.nama}
-                placeholder="Nama lengkap peserta"
+              <Label htmlFor="siswa-nama">Nama Siswa</Label>
+              <Input id="siswa-nama" required maxLength={128} value={form.nama}
+                placeholder="Nama lengkap siswa"
                 onChange={(e) => {
                   const nama = e.target.value;
                   setForm((current) => ({
@@ -137,28 +165,48 @@ export default function PesertaManagement() {
                 }} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="participant-email">Email</Label>
-              <Input id="participant-email" required type="email" value={form.email}
-                placeholder="peserta@contoh.id"
+              <Label htmlFor="siswa-email">Email Siswa</Label>
+              <Input id="siswa-email" required type="email" value={form.email}
+                placeholder="siswa@contoh.id"
                 onChange={(e) => setForm({ ...form, email: e.target.value.toLowerCase() })} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="participant-kelas">Kelas</Label>
-                <Input id="participant-kelas" required type="number" min={1} max={100} value={form.kelas}
+                <Label htmlFor="siswa-program">Program Belajar</Label>
+                <SelectNative id="siswa-program" required value={form.program_belajar_id}
+                  onChange={(e) => setForm({ ...form, program_belajar_id: e.target.value })}>
+                  <option value="">Pilih program belajar</option>
+                  {programs.map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.name} — Kelas {program.kelas}
+                    </option>
+                  ))}
+                </SelectNative>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="siswa-wa">No. WA Orang Tua</Label>
+                <Input id="siswa-wa" required type="tel" maxLength={20} pattern={WA_PATTERN.source}
+                  value={form.wa_orang_tua} placeholder="Contoh: 081234567890"
+                  onChange={(e) => setForm({ ...form, wa_orang_tua: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="siswa-kelas">Kelas</Label>
+                <Input id="siswa-kelas" required type="number" min={1} max={100} value={form.kelas}
                   placeholder="Contoh: 12"
                   onChange={(e) => setForm({ ...form, kelas: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="participant-sekolah">Sekolah</Label>
-                <Input id="participant-sekolah" required maxLength={255} value={form.sekolah}
+                <Label htmlFor="siswa-sekolah">Sekolah</Label>
+                <Input id="siswa-sekolah" required maxLength={255} value={form.sekolah}
                   placeholder="Nama sekolah"
                   onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="participant-password">Password</Label>
-              <Input id="participant-password" required type="password" minLength={6}
+              <Label htmlFor="siswa-password">Password</Label>
+              <Input id="siswa-password" required type="password" minLength={6}
                 autoComplete="new-password" value={form.password}
                 onChange={(e) => {
                   setPasswordEdited(true);
@@ -168,27 +216,29 @@ export default function PesertaManagement() {
                 Default: {defaultParticipantPassword(form.nama) || 'nama_depan@mmyy'} — bisa diganti.
               </p>
             </div>
-            <Button type="submit" disabled={saving}>Tambah Peserta</Button>
+            <Button type="submit" disabled={saving}>Tambah Siswa</Button>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Daftar Peserta</CardTitle>
+          <CardTitle>Daftar Siswa</CardTitle>
           <CardDescription>
-            {participants.length} peserta terdaftar. Gunakan Ubah untuk data atau Password untuk mereset kunci login.
+            {participants.length} siswa terdaftar. Gunakan Ubah untuk data atau Password untuk mereset kunci login.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {participants.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada peserta.</p>
+            <p className="text-sm text-muted-foreground">Belum ada siswa.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nama</TableHead>
+                  <TableHead>Nama Siswa</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Program Belajar</TableHead>
+                  <TableHead>WA Orang Tua</TableHead>
                   <TableHead>Kelas</TableHead>
                   <TableHead>Sekolah</TableHead>
                   <TableHead>Status</TableHead>
@@ -210,6 +260,26 @@ export default function PesertaManagement() {
                         <Input type="email" value={editValues.email}
                           onChange={(e) => setEditValues({ ...editValues, email: e.target.value.toLowerCase() })} />
                       ) : participant.email}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === participant.id ? (
+                        <SelectNative value={editValues.program_belajar_id}
+                          onChange={(e) => setEditValues({ ...editValues, program_belajar_id: e.target.value })}>
+                          <option value="">Tanpa program</option>
+                          {programs.map((program) => (
+                            <option key={program.id} value={program.id}>
+                              {program.name} — Kelas {program.kelas}
+                            </option>
+                          ))}
+                        </SelectNative>
+                      ) : participant.program_belajar_name ?? programName(programs, participant.program_belajar_id)}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === participant.id ? (
+                        <Input type="tel" maxLength={20} value={editValues.wa_orang_tua}
+                          placeholder="081234567890"
+                          onChange={(e) => setEditValues({ ...editValues, wa_orang_tua: e.target.value })} />
+                      ) : participant.wa_orang_tua || '—'}
                     </TableCell>
                     <TableCell>
                       {editingId === participant.id ? (
@@ -269,7 +339,9 @@ export default function PesertaManagement() {
                                   nama: participant.nama,
                                   email: participant.email,
                                   kelas: participant.kelas || '',
-                                  sekolah: participant.sekolah || ''
+                                  sekolah: participant.sekolah || '',
+                                  program_belajar_id: participant.program_belajar_id ?? '',
+                                  wa_orang_tua: participant.wa_orang_tua || ''
                                 });
                               }}>Ubah</Button>
                             <Button type="button" size="sm" variant="outline"

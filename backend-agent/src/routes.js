@@ -24,6 +24,7 @@ import { tryoutRouter } from './tryoutRoutes.js';
 import { participantRouter } from './participantRoutes.js';
 import { mapelRouter } from './mapelRoutes.js';
 import { questionSheetRouter, attachQuestionSheets } from './questionSheetRoutes.js';
+import { programBelajarRouter } from './programBelajarRoutes.js';
 
 export const router = Router();
 
@@ -43,6 +44,7 @@ router.use(authenticate);
 router.use(roleRouter);
 router.use(mapelRouter);
 router.use(questionSheetRouter);
+router.use(programBelajarRouter);
 router.use(participantRouter);
 router.use(tryoutReportRouter);
 router.use(tryoutRouter);

@@ -59,7 +59,7 @@ export default function UserManagement({ can = () => false }) {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Buat User</h1>
         <p className="text-sm text-muted-foreground">
-          Kelola akun CMS dan penugasan role. Peserta tryout dibuat terpisah lewat menu Kelola Peserta.
+          Kelola akun CMS dan penugasan role. Siswa tryout dibuat terpisah lewat menu Kelola Siswa.
         </p>
       </div>
       {error && <Alert variant="destructive">{error}</Alert>}
