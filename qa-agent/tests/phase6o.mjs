@@ -87,7 +87,7 @@ before(async () => {
 
 after(async () => {
   if (tryoutIds.length) {
-    await query('DELETE FROM tryout_sessions WHERE id = ANY($1::bigint[])', [tryoutIds]);
+    await query('DELETE FROM tryout_events WHERE id = ANY($1::bigint[])', [tryoutIds]);
   }
   await query(
     'DELETE FROM tryout_participants WHERE jenis = $1 AND lower(nama) = ANY($2::text[])',
@@ -244,10 +244,9 @@ test('U-07 tryout tanpa peserta tetap tersimpan dari lembar soal', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA 6O Tanpa Peserta ${suffix}`,
-      start_at: startAt,
-      end_at: endAt,
-      mapel_code: mapelCode,
-      sheet_ids: [sheetId],
+      starts_at: startAt,
+      ends_at: endAt,
+      sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],
       participant_ids: [],
       is_active: false
     })
@@ -263,16 +262,16 @@ test('U-07 tryout tanpa peserta tetap tersimpan dari lembar soal', async () => {
   assert.ok(tryout.end_at);
 
   const sheets = await query(
-    'SELECT count(*)::int AS total FROM tryout_session_sheets WHERE session_id = $1', [tryout.id]
+    'SELECT count(*)::int AS total FROM tryout_session_sheets WHERE session_id = $1', [tryout.sessions[0].id]
   );
   assert.equal(sheets.rows[0].total, 1);
   const questions = await query(
-    'SELECT count(*)::int AS total FROM tryout_session_questions WHERE session_id = $1', [tryout.id]
+    'SELECT count(*)::int AS total FROM tryout_session_questions WHERE session_id = $1', [tryout.sessions[0].id]
   );
   assert.equal(questions.rows[0].total, questionIds.length);
 });
 
-test('U-08 payload lama question_ids tetap diterima dan menerima Umum sebagai peserta', async () => {
+test('U-08 payload lama question_ids ditolak Fase 6y', async () => {
   const created = await request('/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -285,12 +284,8 @@ test('U-08 payload lama question_ids tetap diterima dan menerima Umum sebagai pe
       is_active: false
     })
   });
-  assert.equal(created.status, 201, JSON.stringify(created.body));
-  const tryout = created.body.data.tryout;
-  tryoutIds.push(tryout.id);
-  assert.equal(tryout.question_ids.length, 2);
-  assert.equal(tryout.sheet_ids.length, 0);
-  assert.ok(tryout.participant_ids.map(Number).includes(Number(umumId)));
+  assert.equal(created.status, 400, JSON.stringify(created.body));
+  assert.match(created.body.error.message, /sessions|question_ids/i);
 });
 
 test('U-09 aturan login halaman tryout diperbarui', () => {
@@ -299,7 +294,7 @@ test('U-09 aturan login halaman tryout diperbarui', () => {
   assert.match(html, /Username peserta/);
   assert.match(html, /Password atau PIN/);
   assert.match(html, /styles\.css\?v=14/);
-  assert.match(html, /app\.js\?v=19/);
+  assert.match(html, /app\.js\?v=20/);
   assert.doesNotMatch(html, /type="email"/);
   assert.match(js, /Nama\/email atau PIN\/password salah/);
   assert.match(js, /username: elements\.loginUsername\.value/);

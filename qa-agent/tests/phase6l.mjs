@@ -102,7 +102,7 @@ before(async () => {
         username: user,
         display_name: `QA Lembar ${suffix}`,
         password,
-        roles: user === username ? [roleCode] : ['editor']
+        roles: [roleCode]
       })
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));

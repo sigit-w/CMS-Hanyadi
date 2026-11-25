@@ -27,6 +27,7 @@ let participantId;
 let participantUsername;
 let tryoutId;
 let originalSlug;
+let originalSessionSlug;
 let sessionIds = [];
 let originalName;
 
@@ -184,6 +185,7 @@ before(async () => {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   tryoutId = Number(created.body.data.tryout.id);
   originalSlug = created.body.data.tryout.slug;
+  originalSessionSlug = created.body.data.tryout.sessions[0].slug;
   sessionIds = created.body.data.tryout.sessions.map((session) => Number(session.id));
   assert.equal(sessionIds.length, 3);
 });
@@ -253,7 +255,7 @@ test('Q6X-02 permission baru tidak otomatis diberikan', async () => {
 });
 
 test('Q6X-03 PATCH tryout: autorisasi, validasi, dan JWT lama tetap valid', async () => {
-  const login = await participantLogin(participantUsername, participantPassword, originalSlug);
+  const login = await participantLogin(participantUsername, participantPassword, originalSessionSlug);
   assert.equal(login.status, 200, await login.text());
   const participantCookie = cookieHeader(login);
 

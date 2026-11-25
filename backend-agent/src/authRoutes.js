@@ -158,18 +158,27 @@ async function loadTryoutForParticipant(client, rawSlug, participantId) {
     `SELECT e.id AS event_id, e.slug AS event_slug, e.name AS event_name,
             e.starts_at, e.ends_at,
             s.id, s.slug AS session_slug, s.name
-     FROM tryout_events e
-     JOIN tryout_sessions s ON s.event_id = e.id
+     FROM tryout_sessions s
+     JOIN tryout_events e ON e.id = s.event_id
      JOIN tryout_session_participants p ON p.session_id = s.id AND p.participant_id = $2
-     WHERE e.slug = $1
-        OR EXISTS (SELECT 1 FROM tryout_sessions legacy
-                   WHERE legacy.slug = $1 AND legacy.event_id = e.id)
-     ORDER BY (s.slug = $1) DESC, s.id ASC
+     WHERE s.slug = $1
      LIMIT 1`,
     [slug, participantId]
   );
   const tryout = rows[0];
   if (!tryout) {
+    const session = await run('SELECT 1 FROM tryout_sessions WHERE slug = $1 LIMIT 1', [slug]);
+    if (session.rows[0]) {
+      throw new ApiError('UNAUTHORIZED', 'Akun tidak terdaftar pada tryout ini', 401);
+    }
+    const legacy = await run('SELECT 1 FROM tryout_events WHERE slug = $1 LIMIT 1', [slug]);
+    if (legacy.rows[0]) {
+      throw new ApiError(
+        'TRYOUT_EVENT_SLUG',
+        'Tautan tryout lama tidak berlaku. Gunakan tautan sesi yang dibagikan administrator.',
+        401
+      );
+    }
     throw new ApiError('UNAUTHORIZED', 'Akun tidak terdaftar pada tryout ini', 401);
   }
   if (!tryout.ends_at || new Date(tryout.ends_at).getTime() <= Date.now()) {

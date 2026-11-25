@@ -97,6 +97,8 @@
   }
 
   function sessionMessage(error) {
+    const message = String(error?.message ?? '');
+    if (/tautan|sesi|link/i.test(message)) return message;
     return error.status === 403
       ? 'Akun Anda tidak memiliki akses tryout.'
       : 'Sesi berakhir. Silakan masuk kembali.';
@@ -145,12 +147,18 @@
     elements.loginGate.hidden = true;
     elements.appHeader.hidden = false;
     elements.appMain.hidden = false;
-    elements.userLabel.textContent = `${session.user.username}${session.tryout_slug ? ` · ${session.tryout_slug}` : ''}`;
+    const sessionSlug = session.tryout_session_slug ?? TRYOUT_SLUG;
+    elements.userLabel.textContent = `${session.user.username}${sessionSlug ? ` · ${sessionSlug}` : ''}`;
   }
 
   async function checkSession() {
     try {
       const session = await api('/auth/me');
+      const sessionSlug = session.tryout_session_slug;
+      if (!sessionSlug || String(sessionSlug).toLowerCase() !== TRYOUT_SLUG) {
+        showLogin('Tautan tryout lama tidak berlaku. Gunakan tautan sesi yang dibagikan administrator.');
+        return false;
+      }
       showApp(session);
       await loadSessions(session);
       return true;
@@ -175,20 +183,7 @@
 
   function renderSessions() {
     elements.sessionTabs.replaceChildren();
-    elements.sessionTabs.hidden = state.sessions.length === 0;
-    state.sessions.forEach((session, index) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'small';
-      const parts = [`Sesi ${index + 1}: ${session.name}`];
-      if (session.mapel_code) parts.push(session.mapel_code);
-      if (session.completed) parts.push('selesai');
-      button.textContent = parts.join(' · ');
-      button.disabled = session.completed;
-      if (session.id === state.activeSessionId) button.setAttribute('aria-current', 'true');
-      button.addEventListener('click', () => activateSession(session.id));
-      elements.sessionTabs.append(button);
-    });
+    elements.sessionTabs.hidden = true;
   }
 
   async function loadSessions(authSession) {
@@ -215,20 +210,24 @@
         return false;
       }
     }
-    state.sessions = sessions;
+    state.sessions = sessions.filter((session) =>
+      (session.slug && String(session.slug).toLowerCase() === TRYOUT_SLUG)
+      || Number(session.id) === Number(authSession?.tryout_session_id)
+    );
     renderSessions();
     if (!sessions.length) {
-      elements.listStatus.textContent = 'Tidak ada sesi yang tersedia untuk akun ini.';
+      elements.listStatus.textContent = 'Sesi dari tautan ini tidak tersedia untuk akun ini.';
       elements.questionBody.textContent = 'Belum ada sesi yang dapat dikerjakan.';
       elements.questionBody.className = 'question-body empty';
       return true;
     }
-    const firstOpen = sessions.find((session) => !session.completed);
+    const firstOpen = state.sessions.find((session) => !session.completed);
     if (!firstOpen) {
-      elements.listStatus.textContent = 'Semua sesi sudah selesai.';
-      elements.questionBody.textContent = 'Semua sesi sudah selesai. Silakan keluar.';
+      elements.listStatus.textContent = 'Sesi ini sudah selesai.';
+      elements.questionBody.textContent = 'Sesi ini sudah selesai. Silakan keluar.';
       elements.questionBody.className = 'question-body empty';
-      elements.completionMessage.textContent = 'Semua sesi sudah selesai. Silakan keluar.';
+      elements.completionMessage.textContent = 'Sesi ini selesai. Silakan keluar.';
+      elements.nextSessionButton.hidden = true;
       elements.nextSessionButton.disabled = true;
       elements.completionPanel.hidden = false;
       return true;
@@ -240,6 +239,7 @@
   async function activateSession(id) {
     const session = state.sessions.find((item) => Number(item.id) === Number(id));
     if (!session || session.completed) return false;
+    if (session.slug && String(session.slug).toLowerCase() !== TRYOUT_SLUG) return false;
     if (state.activeSessionId === session.id && !state.locked) return true;
     resetSessionState();
     state.activeSessionId = session.id;
@@ -266,18 +266,14 @@
     elements.nav.replaceChildren();
     elements.finalizeButton.hidden = true;
     elements.finalizeButton.disabled = false;
-    const next = nextSession();
-    elements.completionMessage.textContent = next
-      ? 'Sesi ini selesai. Lanjut ke sesi berikutnya atau keluar.'
-      : 'Sesi ini selesai. Silakan keluar.';
-    elements.nextSessionButton.disabled = !next;
+    elements.completionMessage.textContent = 'Sesi ini selesai. Silakan keluar.';
+    elements.nextSessionButton.hidden = true;
+    elements.nextSessionButton.disabled = true;
     elements.completionPanel.hidden = false;
   }
 
   async function continueNextSession() {
-    const next = nextSession();
-    if (!next) return;
-    await activateSession(next.id);
+    return false;
   }
 
   async function handleLogin(event) {
@@ -870,12 +866,15 @@
 
   if (elements.tryoutSlugLabel) {
     elements.tryoutSlugLabel.textContent = TRYOUT_SLUG
-      ? `Tryout: ${TRYOUT_SLUG}`
+      ? `Sesi: ${TRYOUT_SLUG}`
       : 'Tautan tryout tidak valid';
   }
 
+  elements.nextSessionButton.hidden = true;
+  elements.nextSessionButton.disabled = true;
+
   if (!TRYOUT_SLUG) {
-    showLogin('Tautan tryout tidak valid. Gunakan URL yang dibagikan administrator.');
+    showLogin('Tautan tryout tidak valid. Gunakan URL sesi yang dibagikan administrator.');
     elements.loginForm.querySelector('button[type="submit"]').disabled = true;
     return;
   }

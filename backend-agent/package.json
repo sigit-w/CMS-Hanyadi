@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test ../qa-agent/tests/mvp-smoke.mjs ../qa-agent/tests/mvp-edge.mjs ../qa-agent/tests/phase5.mjs ../qa-agent/tests/participants.mjs ../qa-agent/tests/tryout.mjs ../qa-agent/tests/auth-rbac.mjs ../qa-agent/tests/upload-grading.mjs ../qa-agent/tests/question-management.mjs ../qa-agent/tests/tryout-report.mjs ../qa-agent/tests/mapel-management.mjs ../qa-agent/tests/multiple-answer.mjs ../qa-agent/tests/phase6j.mjs ../qa-agent/tests/phase6l.mjs ../qa-agent/tests/nav-bimbel.mjs ../qa-agent/tests/phase6o.mjs ../qa-agent/tests/phase6p.mjs ../qa-agent/tests/phase6q.mjs ../qa-agent/tests/phase6r.mjs ../qa-agent/tests/phase6s.mjs ../qa-agent/tests/true-false-statements.mjs ../qa-agent/tests/cbt.mjs ../qa-agent/tests/phase6v.mjs ../qa-agent/tests/phase6w.mjs ../qa-agent/tests/phase6x.mjs"
+    "test": "node --test ../qa-agent/tests/mvp-smoke.mjs ../qa-agent/tests/mvp-edge.mjs ../qa-agent/tests/phase5.mjs ../qa-agent/tests/participants.mjs ../qa-agent/tests/tryout.mjs ../qa-agent/tests/auth-rbac.mjs ../qa-agent/tests/upload-grading.mjs ../qa-agent/tests/question-management.mjs ../qa-agent/tests/tryout-report.mjs ../qa-agent/tests/mapel-management.mjs ../qa-agent/tests/multiple-answer.mjs ../qa-agent/tests/phase6j.mjs ../qa-agent/tests/phase6l.mjs ../qa-agent/tests/nav-bimbel.mjs ../qa-agent/tests/phase6o.mjs ../qa-agent/tests/phase6p.mjs ../qa-agent/tests/phase6q.mjs ../qa-agent/tests/phase6r.mjs ../qa-agent/tests/phase6s.mjs ../qa-agent/tests/true-false-statements.mjs ../qa-agent/tests/cbt.mjs ../qa-agent/tests/phase6v.mjs ../qa-agent/tests/phase6w.mjs ../qa-agent/tests/phase6x.mjs ../qa-agent/tests/phase6y.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

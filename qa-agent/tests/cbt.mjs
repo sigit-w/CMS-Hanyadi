@@ -16,6 +16,8 @@ const BACKEND = API_BASE;
 const PRESENTATION = PRESENTATION_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
 const slug = `qa-cbt-${suffix}`;
+const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+const endsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 const password = crypto.randomBytes(18).toString('base64url');
 const participantEmails = [
   `qa_cbt_one_${suffix}@qa.test`,
@@ -23,7 +25,10 @@ const participantEmails = [
 ];
 const participantIds = [];
 const questionIds = [];
+let sheetId;
+let tryoutId;
 let sessionId;
+let sessionSlug;
 let headersOne;
 let headersTwo;
 let state;
@@ -96,6 +101,23 @@ async function createQuestion(payload) {
   return id;
 }
 
+async function createSheet() {
+  const response = await request(BACKEND, '/api/v1/question-sheets', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({
+      name: `QA CBT Lembar ${suffix}`,
+      code: `QACBT${suffix.slice(0, 7).toUpperCase()}`,
+      mapel_code: 'MTKA',
+      description: `Lembar uji CBT ${suffix}`,
+      duration_minutes: 30,
+      question_ids: questionIds
+    })
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.data.sheet.id;
+}
+
 async function startAttempt(headers) {
   const response = await request(PRESENTATION, '/api/v1/presentation/cbt/attempt/start', {
     method: 'POST',
@@ -158,16 +180,20 @@ before(async () => {
     ]
   });
 
+  sheetId = await createSheet();
   const created = await request(BACKEND, '/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA CBT ${suffix}`,
       slug,
-      mapel_code: 'MTKA',
-      start_at: '2026-11-24T08:00:00+07:00',
-      end_at: '2026-11-25T08:00:00+07:00',
-      question_ids: questionIds,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      sessions: [{
+        name: `Sesi CBT ${suffix}`,
+        mapel_code: 'MTKA',
+        sheet_ids: [sheetId]
+      }],
       participant_ids: participantIds,
       is_active: false,
       cbt_enabled: true,
@@ -179,12 +205,15 @@ before(async () => {
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
-  sessionId = created.body.data.tryout.id;
+  const tryout = created.body.data.tryout;
+  tryoutId = tryout.id;
+  sessionId = tryout.sessions[0].id;
+  sessionSlug = tryout.sessions[0].slug;
 
-  const loginOne = await participantLogin(participantEmails[0], password, slug);
-  assert.equal(loginOne.status, 200);
+  const loginOne = await participantLogin(participantEmails[0], password, sessionSlug);
+  assert.equal(loginOne.status, 200, JSON.stringify(await loginOne.clone().json()));
   headersOne = { Cookie: cookieHeader(loginOne) };
-  const loginTwo = await participantLogin(participantEmails[1], password, slug);
+  const loginTwo = await participantLogin(participantEmails[1], password, sessionSlug);
   assert.equal(loginTwo.status, 200);
   headersTwo = { Cookie: cookieHeader(loginTwo) };
 
@@ -208,8 +237,8 @@ before(async () => {
 });
 
 after(async () => {
-  if (sessionId) {
-    await request(BACKEND, `/api/v1/tryouts/${sessionId}`, {
+  if (tryoutId) {
+    await request(BACKEND, `/api/v1/tryouts/${tryoutId}`, {
       method: 'DELETE',
       headers: await adminHeaders()
     });
@@ -218,6 +247,7 @@ after(async () => {
     await query('DELETE FROM tryout_submissions WHERE participant_id = ANY($1::bigint[])', [participantIds]);
     await query('DELETE FROM tryout_participants WHERE id = ANY($1::bigint[])', [participantIds]);
   }
+  if (sheetId) await query('DELETE FROM question_sheets WHERE id = $1', [sheetId]);
   if (questionIds.length) await query('DELETE FROM questions WHERE id = ANY($1::bigint[])', [questionIds]);
   await pool.end();
 });

@@ -34,7 +34,20 @@ export async function activeTryoutContext(runQuery) {
      WHERE is_active AND slug IS NOT NULL
      ORDER BY id DESC LIMIT 1`
   );
-  if (!rows[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
+  if (!rows[0]) {
+    await runQuery(
+      `UPDATE tryout_sessions SET is_active = true
+       WHERE id = (SELECT min(id) FROM tryout_sessions WHERE slug IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM tryout_sessions WHERE is_active)`
+    );
+    const restored = await runQuery(
+      `SELECT id, slug FROM tryout_sessions
+       WHERE is_active AND slug IS NOT NULL
+       ORDER BY id DESC LIMIT 1`
+    );
+    if (!restored.rows[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
+    return { id: restored.rows[0].id, slug: restored.rows[0].slug };
+  }
   return { id: rows[0].id, slug: rows[0].slug };
 }
 

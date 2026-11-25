@@ -32,6 +32,7 @@ let siswaId;
 let umumId;
 let draftId;
 let tryoutId;
+let tryoutSessionId;
 let tryoutSlug;
 let qaTryout;
 let siswaBefore;
@@ -96,8 +97,11 @@ before(async () => {
 });
 
 after(async () => {
+  if (tryoutSessionId) {
+    await query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [tryoutSessionId]);
+  }
   if (tryoutId) {
-    await query('DELETE FROM tryout_sessions WHERE id = $1', [tryoutId]);
+    await query('DELETE FROM tryout_events WHERE id = $1', [tryoutId]);
   }
   const ids = [siswaId, umumId, draftId].filter(Boolean);
   if (ids.length) {
@@ -194,17 +198,17 @@ test('PR-04 hapus Umum dari tryout tersimpan masuk prospektus', async () => {
     method: 'POST',
     body: JSON.stringify({
       name: `TO QA 6P ${suffix}`,
-      start_at: jakartaInput(),
-      end_at: jakartaInput(2),
-      mapel_code: mapelCode,
-      sheet_ids: [sheetId],
+      starts_at: jakartaInput(),
+      ends_at: jakartaInput(2),
+      sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],
       participant_ids: [siswaId, umumId],
       is_active: false
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   tryoutId = created.body.data.tryout.id;
-  tryoutSlug = created.body.data.tryout.slug;
+  tryoutSessionId = created.body.data.tryout.sessions[0].id;
+  tryoutSlug = created.body.data.tryout.sessions[0].slug;
 
   const removed = await api(`/api/v1/tryouts/${tryoutId}/participants/${umumId}`, { method: 'DELETE' });
   assert.equal(removed.status, 200, JSON.stringify(removed.body));
@@ -273,12 +277,12 @@ test('PR-06 prospek draft Umum dan menu Prospektus benar', async () => {
 
   const app = readFileSync(APP, 'utf8');
   assert.ok(app.includes("path: '/tryouts/prospektus'"));
-  assert.ok(app.includes("label: 'Prospektus'"));
+  assert.ok(app.includes("label: 'Peserta Tryout'"));
   assert.ok(app.includes('ProspektusManagement'));
 
   const prospektusPage = readFileSync(PROSPEKTUS_PAGE, 'utf8');
   assert.ok(prospektusPage.includes('getProspektus'));
-  assert.ok(prospektusPage.includes('Data Peserta Umum tersimpan di tabel prospektus'));
+  assert.ok(prospektusPage.includes('Klik baris untuk melihat detail dan mendaftarkannya sebagai siswa.'));
 
   const siswaPage = readFileSync(SISWA_PAGE, 'utf8');
   assert.ok(siswaPage.includes('Kelola Siswa'));

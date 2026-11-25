@@ -255,7 +255,7 @@ before(async () => {
   endedEvent = endedCreated.body.data.tryout;
   sessionIds.ended = Number(endedEvent.sessions[0].id);
 
-  headers = await login(submitterEmail, regular.slug);
+  headers = await login(submitterEmail, regular.sessions[0].slug);
 });
 
 after(async () => {
@@ -395,27 +395,26 @@ test('Q6U-04 form bersesi tanpa opsi aktif dan tabel tanpa kolom Lembar', () => 
 });
 
 test('Q6U-05 deadline CBT memakai minimum durasi sesi dan batas induk', async () => {
-  const cbtHeaders = await login(submitterEmail, cbtEvent.slug);
-  const started = [];
-  for (const sessionId of sessionIds.cbt) {
-    const result = await api(PRESENTATION, '/api/v1/presentation/cbt/attempt/start', {
-      method: 'POST',
-      headers: cbtHeaders,
-      body: JSON.stringify({ session_id: sessionId })
-    });
-    assert.equal(result.status, 200, JSON.stringify(result.body));
-    started.push(result.body.data);
-  }
-  const [longSession, shortSession] = started;
+  const cbtHeaders = await login(submitterEmail, cbtEvent.sessions[0].slug);
+  const started = await api(PRESENTATION, '/api/v1/presentation/cbt/attempt/start', {
+    method: 'POST',
+    headers: cbtHeaders,
+    body: JSON.stringify({ session_id: sessionIds.cbt[0] })
+  });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const longSession = started.body.data;
+
+  const otherSession = await api(PRESENTATION, '/api/v1/presentation/cbt/attempt/start', {
+    method: 'POST',
+    headers: cbtHeaders,
+    body: JSON.stringify({ session_id: sessionIds.cbt[1] })
+  });
+  assert.equal(otherSession.status, 403, JSON.stringify(otherSession.body));
   assert.equal(longSession.attempt.cbt_duration_minutes, 30);
-  assert.equal(shortSession.attempt.cbt_duration_minutes, 5);
 
   const eventEnd = Date.parse(cbtEvent.ends_at);
   const longDeadline = Date.parse(longSession.attempt.effective_deadline_at);
-  const shortDeadline = Date.parse(shortSession.attempt.effective_deadline_at);
   assert.ok(Math.abs(longDeadline - eventEnd) < 5000, 'deadline sesi panjang dipotong ends_at induk');
-  assert.ok(shortDeadline < eventEnd - 240000, 'deadline sesi pendek memakai durasi sesi');
-  assert.ok(shortDeadline > Date.now() + 180000);
   assert.ok(longSession.attempt.deadline_at);
 
   const violation = await api(PRESENTATION, '/api/v1/presentation/cbt/attempt/violation', {
@@ -435,7 +434,7 @@ test('Q6U-06 daftar tryout tidak memiliki kolom Submission pengganti', async () 
   const cms = readFileSync(CMS_FILE, 'utf8');
   const table = cms.slice(cms.indexOf('Daftar Tryout'));
   assert.deepEqual(headerTexts(table), [
-    'Nama', 'URL Tryout', 'Mulai', 'Selesai', 'Mapel', 'Soal', 'Peserta', 'Mode', 'Status', 'Aksi'
+    'Nama', 'URL Peserta per Sesi', 'Mulai', 'Selesai', 'Mapel', 'Soal', 'Peserta', 'Mode', 'Status', 'Aksi'
   ]);
   assert.doesNotMatch(table, /Submission/i);
 
@@ -563,41 +562,39 @@ test('Q6U-10 soal non-CBT dan CBT terikat session_id yang diminta', async () => 
   }
 });
 
-test('Q6U-11 lanjut sesi dan login ulang sebelum ends_at, gate menolak sesi baru setelahnya', async () => {
+test('Q6U-11 sesi target dan login ulang sebelum ends_at, gate menolak sesi baru setelahnya', async () => {
   const html = readFileSync(TRYOUT_HTML, 'utf8');
   const js = readFileSync(TRYOUT_JS, 'utf8');
   assert.match(html, /id="nextSessionButton"/);
   assert.match(html, /id="exitSessionButton"/);
-  assert.match(html, /app\.js\?v=19/);
+  assert.match(html, /app\.js\?v=20/);
   assert.match(html, /Lanjut sesi berikutnya/);
   assert.match(js, /continueNextSession/);
 
   const sessions = await api(PRESENTATION, '/api/v1/presentation/sessions', { headers });
   assert.equal(sessions.status, 200, JSON.stringify(sessions.body));
-  assert.equal(sessions.body.data.sessions.length, 2);
-  const first = sessions.body.data.sessions.find((item) => Number(item.id) === sessionIds.regular[0]);
-  const second = sessions.body.data.sessions.find((item) => Number(item.id) === sessionIds.regular[1]);
+  assert.equal(sessions.body.data.sessions.length, 1);
+  const first = sessions.body.data.sessions[0];
+  assert.equal(Number(first.id), sessionIds.regular[0]);
   assert.equal(first.completed, true);
-  assert.equal(second.completed, false);
 
-  const relogin = await login(submitterEmail, regular.slug);
+  const relogin = await login(submitterEmail, regular.sessions[0].slug);
   const again = await api(PRESENTATION, '/api/v1/presentation/sessions', { headers: relogin });
   assert.equal(again.status, 200, JSON.stringify(again.body));
-  assert.equal(again.body.data.sessions.length, 2);
+  assert.equal(again.body.data.sessions.length, 1);
   const nextQuestions = await api(
     PRESENTATION,
     `/api/v1/presentation/questions?session_id=${sessionIds.regular[1]}`,
     { headers: relogin }
   );
-  assert.equal(nextQuestions.status, 200, JSON.stringify(nextQuestions.body));
-  assert.ok(nextQuestions.body.data.questions.length > 0);
+  assert.equal(nextQuestions.status, 403, JSON.stringify(nextQuestions.body));
 
   await query('UPDATE tryout_events SET ends_at = now() - interval \'1 minute\' WHERE id = $1', [regular.event_id]);
-  const deniedLogin = await loginRaw(submitterEmail, regular.slug);
+  const deniedLogin = await loginRaw(submitterEmail, regular.sessions[0].slug);
   const deniedBody = await deniedLogin.json().catch(() => ({}));
   const deniedSession = await api(
     PRESENTATION,
-    `/api/v1/presentation/questions?session_id=${sessionIds.regular[1]}`,
+    `/api/v1/presentation/questions?session_id=${sessionIds.regular[0]}`,
     { headers: relogin }
   );
 

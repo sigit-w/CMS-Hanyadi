@@ -51,9 +51,12 @@ async function resolvePresentationSession(auth, requestedId = null, client = poo
     if (!auth.tryoutEventId) {
       throw new ApiError('FORBIDDEN', 'Tryout tidak terikat pada akun ini', 403);
     }
-    const sessionId = requestedId ?? auth.tryoutSessionId;
+    const sessionId = auth.tryoutSessionId;
     if (!sessionId) {
       throw new ApiError('FORBIDDEN', 'Sesi tidak terikat pada tryout tertentu', 403);
+    }
+    if (requestedId && Number(requestedId) !== Number(sessionId)) {
+      throw new ApiError('FORBIDDEN', 'Tautan tryout hanya membuka sesi yang dituju', 403);
     }
     const { rows } = await client.query(
       `SELECT s.id, s.name, s.slug, s.event_id, s.start_at, s.end_at, s.is_active,
@@ -581,13 +584,14 @@ router.get('/api/v1/presentation/sessions', requireTryoutSession(), asyncHandler
               )
             END AS completed
        FROM tryout_sessions s
-      WHERE s.event_id = $1
-        AND EXISTS (
-          SELECT 1 FROM tryout_session_participants p
-          WHERE p.session_id = s.id AND p.participant_id = $2
-        )
-      ORDER BY s.start_at, s.id`,
-    [req.auth.tryoutEventId, req.auth.participantId]
+       WHERE s.event_id = $1
+         AND s.id = $3
+         AND EXISTS (
+           SELECT 1 FROM tryout_session_participants p
+           WHERE p.session_id = s.id AND p.participant_id = $2
+         )
+       ORDER BY s.start_at, s.id`,
+    [req.auth.tryoutEventId, req.auth.participantId, req.auth.tryoutSessionId]
   );
   res.json({
     ok: true,

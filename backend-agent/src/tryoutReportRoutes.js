@@ -6,6 +6,7 @@ import { ApiError, asyncHandler } from './errors.js';
 import { parseId } from './validate.js';
 import { authorize } from './authMiddleware.js';
 import { generateTryoutSlug } from './auth.js';
+import { formatJakartaDateTime } from './identity.js';
 
 export const tryoutReportRouter = Router();
 
@@ -142,24 +143,24 @@ export function buildTryoutReportWorkbook({ titleName, jenjangTitle, reportDateV
       fill: reportFill(),
       alignment: { horizontal: header.alignment, vertical: 'middle' }
     };
-    styleReportCell(sheet.getCell(5, column), { ...options, border: reportBorder(['top', 'right', 'left']) });
-    styleReportCell(sheet.getCell(6, column), { ...options, border: reportBorder(['right', 'left']) });
-    sheet.mergeCells(5, column, 6, column);
-    sheet.getCell(5, column).value = header.label;
+    styleReportCell(sheet.getCell(6, column), { ...options, border: reportBorder(['top', 'right', 'left']) });
+    styleReportCell(sheet.getCell(7, column), { ...options, border: reportBorder(['right', 'left']) });
+    sheet.mergeCells(6, column, 7, column);
+    sheet.getCell(6, column).value = header.label;
   });
 
   let column = 6;
   for (const group of groups) {
-    styleReportRange(sheet, 5, column, 5, column + 2, {
+    styleReportRange(sheet, 6, column, 6, column + 2, {
       font: reportFont('Calibri', 11, true),
       fill: reportFill(),
       border: reportBorder(),
       alignment: { horizontal: 'center', vertical: 'middle' }
     });
-    sheet.mergeCells(5, column, 5, column + 2);
-    sheet.getCell(5, column).value = group.name;
+    sheet.mergeCells(6, column, 6, column + 2);
+    sheet.getCell(6, column).value = group.name;
     ['B', 'S', 'NILAI'].forEach((label, offset) => {
-      const cell = sheet.getCell(6, column + offset);
+      const cell = sheet.getCell(7, column + offset);
       cell.value = label;
       styleReportCell(cell, {
         font: reportFont('Calibri', 11, true),
@@ -183,17 +184,17 @@ export function buildTryoutReportWorkbook({ titleName, jenjangTitle, reportDateV
       fill: reportFill(),
       alignment: { horizontal: header.alignment, vertical: 'middle' }
     };
-    styleReportCell(sheet.getCell(5, column), { ...options, border: reportBorder(['top', 'right', 'left']) });
-    styleReportCell(sheet.getCell(6, column), { ...options, border: reportBorder(['right', 'left']) });
-    sheet.mergeCells(5, column, 6, column);
-    sheet.getCell(5, column).value = header.label;
+    styleReportCell(sheet.getCell(6, column), { ...options, border: reportBorder(['top', 'right', 'left']) });
+    styleReportCell(sheet.getCell(7, column), { ...options, border: reportBorder(['right', 'left']) });
+    sheet.mergeCells(6, column, 7, column);
+    sheet.getCell(6, column).value = header.label;
     column += 1;
   });
 
   const dataFont = () => reportFont('Arial', 10);
   const dataAlignment = (horizontal) => (horizontal ? { horizontal } : undefined);
   participants.forEach((entry, index) => {
-    const row = sheet.getRow(7 + index);
+    const row = sheet.getRow(8 + index);
     const put = (targetColumn, value, options = {}) => {
       const cell = row.getCell(targetColumn);
       cell.value = value;
@@ -227,15 +228,15 @@ export function buildTryoutReportWorkbook({ titleName, jenjangTitle, reportDateV
   const notes = [
     'KETERANGAN :',
     '1. Nilai di atas adalah nilai MURNI HASIL TRYOUT',
-    '2. B = Jumlah benar, S: jumlah salah',
+    '2. B = Jumlah benar, S = jumlah salah',
     '3. Nilai diurutkan berdasar :',
     '- Jumlah nilai',
     ...groups.map((group) => `- Nilai ${group.name}`),
     '- Waktu'
   ];
-  const notesStart = 7 + participants.length + 1;
+  const notesStart = 8 + participants.length + 1;
   notes.forEach((text, index) => {
-    const cell = sheet.getCell(notesStart + index, 2);
+    const cell = sheet.getCell(notesStart + index, 1);
     cell.value = text;
     cell.font = reportFont('Calibri', 11);
   });
@@ -244,19 +245,19 @@ export function buildTryoutReportWorkbook({ titleName, jenjangTitle, reportDateV
     const label = group.name.startsWith('INDONESIA')
       ? 'INDO'
       : group.name.startsWith('MATEMATIKA') ? 'MAT' : group.name;
-    styleReportRange(sheet, notesStart, group.startColumn, notesStart, group.scoreColumn, {
+    styleReportRange(sheet, notesStart + 3, group.startColumn, notesStart + 3, group.scoreColumn, {
       font: reportFont('Arial', 10, true),
       fill: reportFill(),
       border: reportBorder(),
       alignment: { horizontal: 'center', vertical: 'middle' }
     });
-    sheet.mergeCells(notesStart, group.startColumn, notesStart, group.scoreColumn);
-    sheet.getCell(notesStart, group.startColumn).value = label;
+    sheet.mergeCells(notesStart + 3, group.startColumn, notesStart + 3, group.scoreColumn);
+    sheet.getCell(notesStart + 3, group.startColumn).value = label;
   }
 
   ['MAKSIMAL', 'MINIMAL', 'RATA-RATA'].forEach((label, index) => {
-    const row = notesStart + 1 + index;
-    const labelCell = sheet.getCell(row, 5);
+    const row = notesStart + index;
+    const labelCell = sheet.getCell(row, 2);
     labelCell.value = label;
     styleReportCell(labelCell, {
       font: reportFont('Arial', 10, true),
@@ -537,7 +538,7 @@ tryoutReportRouter.get('/reports/tryout/export.xlsx', authorize('tryout_reports.
       );
       for (const row of attempts) {
         const entry = entries.get(Number(row.participant_id));
-        if (entry) entry.waktu = row.submitted_at ? new Date(row.submitted_at) : null;
+        if (entry) entry.waktu = row.submitted_at ? formatJakartaDateTime(row.submitted_at) : null;
       }
     }
   }

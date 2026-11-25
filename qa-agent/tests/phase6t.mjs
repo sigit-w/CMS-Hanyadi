@@ -38,16 +38,26 @@ async function request(base, pathname, options = {}) {
 
 async function createTryout(definition) {
   const token = crypto.randomBytes(4).toString('hex');
+  const payload = { ...definition.payload };
+  if (Array.isArray(payload.mapel_codes)) {
+    payload.sessions = payload.mapel_codes.map((mapel_code, index) => ({
+      name: `Sesi ${index + 1} ${mapel_code} ${token}`,
+      mapel_code,
+      sheet_ids: payload.sheet_ids ?? []
+    }));
+    delete payload.mapel_codes;
+    delete payload.sheet_ids;
+  }
   const result = await request(BACKEND, '/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA 6t ${definition.key} ${token}`,
       slug: `qa-6t-${definition.key}-${token}`,
-      start_at: '2026-11-25T08:00:00+07:00',
-      end_at: '2026-11-26T08:00:00+07:00',
+      starts_at: '2026-11-25T08:00:00+07:00',
+      ends_at: '2026-11-26T08:00:00+07:00',
       is_active: false,
-      ...definition.payload
+      ...payload
     })
   });
   return result;
@@ -130,9 +140,9 @@ before(async () => {
     const result = await createTryout(definition);
     assert.equal(result.status, 201, JSON.stringify(result.body));
     const tryout = result.body.data.tryout;
-    sessionIds.push(Number(tryout.id));
-    eventIds.push(Number(tryout.event_id ?? tryout.tryout_event_id));
-    slugs[definition.key] = tryout.slug;
+    sessionIds.push(Number(tryout.sessions[0].id));
+    eventIds.push(Number(tryout.id));
+    slugs[definition.key] = tryout.sessions[0].slug;
     if (definition.key === 'multi') multiTryout = tryout;
   }
 
@@ -180,7 +190,7 @@ after(async () => {
   await pool.end();
 });
 
-test('Q6T-01 legacy mapel_codes dipecah menjadi dua sesi satu mapel', async () => {
+test('Q6T-01 dua mapel dibuat sebagai dua sesi terpisah', async () => {
   const detail = await request(BACKEND, `/api/v1/tryouts/${multiTryout.id}`, {
     headers: await adminHeaders()
   });
@@ -207,23 +217,33 @@ test('Q6T-01 legacy mapel_codes dipecah menjadi dua sesi satu mapel', async () =
 test('Q6T-02 mapel ganda dan konflik mapel_code ditolak', async () => {
   const duplicate = await createTryout({
     name: 'duplikat',
-    payload: { mapel_codes: ['MTKA', 'MTKA'], sheet_ids: [sheetIds.MTKA] }
+    payload: {
+      sessions: [
+        { mapel_code: 'MTKA', sheet_ids: [sheetIds.MTKA] },
+        { mapel_code: 'MTKA', sheet_ids: [sheetIds.MTKA] }
+      ]
+    }
   });
   assert.equal(duplicate.status, 400, JSON.stringify(duplicate.body));
   assert.match(duplicate.body.error.message, /mapel ganda/);
 
   const conflict = await createTryout({
     name: 'konflik',
-    payload: { mapel_codes: ['IPAS'], mapel_code: 'MTKA', sheet_ids: [sheetIds.MTKA] }
+    payload: {
+      mapel_code: 'MTKA',
+      sessions: [{ mapel_code: 'IPAS', sheet_ids: [sheetIds.IPAS] }]
+    }
   });
   assert.equal(conflict.status, 400, JSON.stringify(conflict.body));
-  assert.match(conflict.body.error.message, /mapel_code dan mapel_codes/);
+  assert.match(conflict.body.error.message, /mapel_code tidak didukung/);
 });
 
 test('Q6T-03 lembar dari mapel yang tidak dipilih ditolak', async () => {
   const result = await createTryout({
     name: 'lembar asing',
-    payload: { mapel_codes: ['MTKA'], sheet_ids: [sheetIds.MTKA, sheetIds.IPAS] }
+    payload: {
+      sessions: [{ mapel_code: 'MTKA', sheet_ids: [sheetIds.MTKA, sheetIds.IPAS] }]
+    }
   });
   assert.equal(result.status, 400, JSON.stringify(result.body));
   assert.match(result.body.error.message, /Sebagian lembar soal tidak ditemukan, diarsipkan, atau bukan mapel sesi ini/);
@@ -316,5 +336,5 @@ test('Q6T-06 marker frontend bersesi, toast, dan asset terbaru', () => {
   assert.match(js, /Pelanggaran tercatat:/);
 
   const html = readFileSync(TRYOUT_HTML, 'utf8');
-  assert.match(html, /app\.js\?v=19/);
+  assert.match(html, /app\.js\?v=20/);
 });

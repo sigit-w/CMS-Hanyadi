@@ -24,6 +24,8 @@ const png = Buffer.from(
 let participantHeaders;
 let qaTryout;
 let gradingTryoutId;
+let gradingSheetId;
+let gradingSessionId;
 let participantId;
 let activeSessionIds = [];
 let imageQuestionId;
@@ -57,6 +59,23 @@ async function request(base, pathname, options = {}) {
   });
   const body = await response.json().catch(() => ({}));
   return { status: response.status, body, headers: response.headers };
+}
+
+async function createGradingSheet() {
+  const response = await request(MAIN, '/api/v1/question-sheets', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({
+      name: `QA Grading Lembar ${suffix}`,
+      code: `QAGRAD${suffix.slice(0, 6).toUpperCase()}`,
+      mapel_code: 'MTKA',
+      description: `Lembar uji grading ${suffix}`,
+      duration_minutes: 30,
+      question_ids: [imageQuestionId, textQuestionId]
+    })
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.data.sheet.id;
 }
 
 before(async () => {
@@ -96,6 +115,7 @@ after(async () => {
   if (activeSessionIds.length) {
     await query('UPDATE tryout_sessions SET is_active = true WHERE id = ANY($1::bigint[])', [activeSessionIds]);
   }
+  if (gradingSheetId) await query('DELETE FROM question_sheets WHERE id = $1', [gradingSheetId]);
   if (questionIds.length) {
     const sources = await query(
       'SELECT DISTINCT source_id FROM questions WHERE id = ANY($1::bigint[]) AND source_id IS NOT NULL',
@@ -107,9 +127,11 @@ after(async () => {
       await query('DELETE FROM question_sources WHERE id = ANY($1::bigint[])', [sourceIds]);
     }
   }
+  if (gradingSessionId) {
+    await query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [gradingSessionId]);
+  }
   if (gradingTryoutId) {
-    await query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [gradingTryoutId]);
-    await query('DELETE FROM tryout_sessions WHERE id = $1', [gradingTryoutId]);
+    await query('DELETE FROM tryout_events WHERE id = $1', [gradingTryoutId]);
   }
   await query('DELETE FROM tryout_participants WHERE email = $1', [email]);
   if (imageFilename) {
@@ -165,24 +187,29 @@ test('U-03 soal tanpa gambar dibuat untuk pengujian penilaian server', async () 
   questionIds.push(textQuestionId);
   assert.equal(created.body.data.question.status, 'approved');
 
+  gradingSheetId = await createGradingSheet();
   const tryout = await request(MAIN, '/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Grading ${suffix}`,
-      start_at: jakartaInput(1),
-      end_at: jakartaInput(3),
-      mapel_code: 'MTKA',
-      question_ids: [imageQuestionId, textQuestionId],
+      starts_at: jakartaInput(1),
+      ends_at: jakartaInput(3),
+      sessions: [{
+        name: `Sesi Grading ${suffix}`,
+        mapel_code: 'MTKA',
+        sheet_ids: [gradingSheetId]
+      }],
       participant_ids: [participantId],
       is_active: false
     })
   });
   assert.equal(tryout.status, 201, JSON.stringify(tryout.body));
   gradingTryoutId = tryout.body.data.tryout.id;
+  gradingSessionId = tryout.body.data.tryout.sessions[0].id;
   qaTryout = tryout.body.data.tryout;
 
-  const relogged = await participantLogin(email, password, qaTryout.slug);
+  const relogged = await participantLogin(email, password, qaTryout.sessions[0].slug);
   assert.equal(relogged.status, 200, JSON.stringify(await relogged.json().catch(() => ({}))));
   participantHeaders = { Cookie: cookieHeader(relogged) };
 });

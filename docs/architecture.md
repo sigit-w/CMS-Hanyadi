@@ -170,6 +170,13 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - **Alur tryout-agent per sesi.** Peserta login memakai slug induk, lalu `GET /api/v1/presentation/sessions` memberi daftar sesi yang terdaftar untuknya. Agen menampilkan tab sesi dan hanya memuat soal sesi yang dipilih (`session_id` dikirim ke `/tryout/questions`, `/presentation/questions`, dan endpoint CBT/submit-all). Setelah sesi selesai muncul `Lanjut sesi berikutnya` dan `Keluar`; peserta boleh login ulang dan melanjutkan sesi lain selama `now() <= ends_at` induk. Aset dimuat sebagai `app.js?v=19`.
 - **UI CMS.** Tidak ada opsi `jadikan sesi aktif`, tidak ada kolom `Lembar`, dan tidak ada kolom `Submission` pada tabel daftar tryout. Fieldset pemilih lembar soal di form tetap ada karena dipakai menyusun soal sesi; `submission_count` tetap dikembalikan API untuk laporan/internal saja.
 
+## 8y. Fase 6y — Grouping Tryout dan URL Sesi (ADR-021)
+
+- **Grouping vs eksekusi.** `tryout_events` tetap induk administratif (nama, jadwal, peserta, CBT, laporan). `tryout_sessions` adalah unit eksekusi dan satu-satunya sumber URL peserta: `https://tryout.hanyadi.web.id/{session_slug}`. Slug induk tidak lagi dipakai untuk undangan/login.
+- **Login dan scope.** `POST /api/v1/auth/login` menerima `tryout_slug` berupa slug sesi. Backend mencari sesi terlebih dahulu; jika hanya slug induk yang cocok, respons `401 TRYOUT_EVENT_SLUG` meminta tautan sesi terbaru. JWT tetap membawa `tryout_session_id` sebagai scope utama (`tryout_slug` lama tetap berisi slug grup untuk kompatibilitas).
+- **Sesi target saja.** `GET /api/v1/presentation/sessions` hanya mengembalikan sesi yang terikat URL/JWT; resolver soal, submit, dan CBT menolak `session_id` lain dengan 403. `tryout-agent` tidak merender tab sesi lain dan tombol `Lanjut sesi berikutnya` disembunyikan. Aset dimuat sebagai `app.js?v=20`.
+- **Validasi create.** `POST /api/v1/tryouts` wajib memuat `sessions[]` minimal satu; tiap sesi wajib `mapel_code` dan minimal satu `sheet_ids` aktif. `question_ids`, `mapel_codes`, dan payload flat legacy ditolak. Laporan tryout/XLSX tetap dikelompokkan per tryout seperti `REL-28…REL-30`.
+
 ## 8c. Fase 6v — Filter Laporan dan Format XLSX (ADR-018)
 
 - **Sumber data filter.** `GET /api/v1/tryout-sessions` menggabungkan `tryout_sessions` dengan induk `tryout_events`, `tryout_session_mapels`, dan `mapels`. Parameter `search` (maks 128 karakter) memakai `ILIKE` partial case-insensitive pada `event_name`, `name` sesi, `mapel_name`, dan `mapel_code`, dengan escape backslash/`%`/`_`. `limit` default `100`, maksimal `200`. Respons `data.sessions[]` menambah `event_id`, `event_name`, `mapel_code`, dan `mapel_name`; `submission_count` adalah jumlah baris submission, bukan peserta.

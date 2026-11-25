@@ -43,11 +43,11 @@ paths:
                   type: string
                   maxLength: 32
                   pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$'
-                  description: 'Wajib untuk Peserta Umum/Siswa; slug dari URL /{slug} tryout.'
+                  description: 'Wajib untuk Peserta Umum/Siswa; slug sesi dari URL /{slug} yang dibagikan administrator. Slug induk tryout ditolak.'
       responses:
         '200': { description: Login berhasil; participant memiliki tryout_session_id }
         '400': { description: Username atau password kosong }
-        '401': { description: Kredensial tidak valid, slug tidak valid, atau peserta tidak terdaftar pada tryout }
+        '401': { description: 'Kredensial tidak valid, slug tidak valid, tautan tryout lama (TRYOUT_EVENT_SLUG), atau peserta tidak terdaftar pada sesi' }
 
         '429': { description: Akun dikunci sementara }
   /api/v1/auth/refresh:
@@ -380,15 +380,13 @@ paths:
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
       summary: Buat induk tryout dan banyak sesi (tryouts.manage)
-      description: 'Alur baru: kirim name, slug?, starts_at, ends_at, participant_ids?, dan sessions[]; tiap sesi memuat tepat satu mapel_code serta sheet_ids dan pengaturan CBT per sesi. Format flat legacy (start_at/end_at atau session_date, mapel_codes[]/mapel_code, sheet_ids/question_ids, cbt_*) tetap diterima dan dipecah menjadi satu sesi per mapel. Respons memuat data.tryout dengan event_id, status turunan, sessions[], dan mapels[]/mapel_code legacy.'
+      description: 'Fase 6y / ADR-021: kirim name, slug grup?, starts_at, ends_at, participant_ids?, dan sessions[] minimal satu. Tiap sesi wajib memuat tepat satu mapel_code dan minimal satu sheet_ids aktif; question_ids dan payload flat legacy ditolak. Slug sesi dibangkitkan otomatis dan dipakai sebagai URL peserta. Respons memuat data.tryout dengan event_id, status turunan, sessions[], dan mapels[]/mapel_code legacy.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              oneOf:
-                - $ref: '#/components/schemas/TryoutWrite'
-                - $ref: '#/components/schemas/LegacyTryoutWrite'
+              $ref: '#/components/schemas/TryoutWrite'
       responses:
         '201':
           description: 'Induk tryout_events dan sesi-sesinya dibuat'
@@ -398,7 +396,7 @@ paths:
                 type: object
                 properties:
                   tryout: { $ref: '#/components/schemas/TryoutEvent' }
-        '400': { description: 'Validasi jadwal, mapel (satu mapel per sesi, duplikat antarsesi, atau konflik mapel_codes), lembar, soal, atau peserta gagal' }
+        '400': { description: 'Validasi jadwal, minimal satu sesi, minimal satu sheet_ids per sesi, mapel (satu mapel per sesi, duplikat antarsesi), question_ids/legacy ditolak, lembar, atau peserta gagal' }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryouts/{id}:
     parameters:
@@ -418,7 +416,7 @@ paths:
         '404': { description: Tryout tidak ditemukan }
     patch:
       summary: Ubah hanya nama dan jadwal induk tryout (tryouts.manage)
-      description: 'Fase 6x / ADR-020: tersedia untuk semua status turunan, tidak mengubah slug/URL, tidak mengubah sesi/mapel/peserta/lembar soal, dan JWT peserta lama tetap valid.'
+      description: 'Fase 6x / ADR-020: tersedia untuk semua status turunan, tidak mengubah slug grup maupun slug/URL tiap sesi, tidak mengubah sesi/mapel/peserta/lembar soal, dan JWT peserta lama tetap valid.'
       requestBody:
         required: true
         content:
@@ -1262,12 +1260,12 @@ components:
         tryout_event_id: { type: integer }
         parent_id: { type: integer }
         name: { type: string }
-        slug: { type: string, description: 'Slug kanonik induk untuk URL/login; slug sesi lama tetap diterima.' }
+        slug: { type: string, description: 'Slug grup tryout (admin); bukan URL peserta. Gunakan sessions[].slug untuk URL/login.' }
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         status: { $ref: '#/components/schemas/TryoutEventStatus' }
         session_id: { type: integer, nullable: true }
-        session_slug: { type: string, nullable: true }
+        session_slug: { type: string, nullable: true, description: 'Slug sesi pertama; untuk multi-sesi gunakan sessions[].slug masing-masing.' }
         session_date: { type: string, format: date, nullable: true }
         start_at: { type: string, format: date-time }
         end_at: { type: string, format: date-time }

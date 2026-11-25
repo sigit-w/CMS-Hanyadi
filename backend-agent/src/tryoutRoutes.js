@@ -155,83 +155,65 @@ function resolveMapelCodes(body) {
 }
 
 function normalizeSessionDefinitions(body, name) {
-  if (Array.isArray(body.sessions)) {
-    if (body.sessions.length === 0) {
-      throw new ApiError('VALIDATION_ERROR', 'sessions wajib berisi minimal satu sesi');
+  if (!Array.isArray(body.sessions) || body.sessions.length === 0) {
+    throw new ApiError('VALIDATION_ERROR', 'sessions wajib berisi minimal satu sesi');
+  }
+  if (body.sessions.length > 20) {
+    throw new ApiError('VALIDATION_ERROR', 'sessions maksimal 20 sesi');
+  }
+  if (body.question_ids !== undefined || body.sheet_ids !== undefined
+      || body.mapel_codes !== undefined || body.session_date !== undefined) {
+    throw new ApiError('VALIDATION_ERROR', 'Gunakan sessions[]; format tryout legacy sudah tidak didukung');
+  }
+  const startsAt = requireTimestamp(body.starts_at, 'starts_at');
+  const endsAt = requireTimestamp(body.ends_at, 'ends_at');
+  const tryoutCbt = normalizeCbtSettings(body);
+  if (Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw new ApiError('VALIDATION_ERROR', 'end_at harus setelah start_at');
+  }
+  const definitions = body.sessions.map((session, index) => {
+    if (!session || typeof session !== 'object' || Array.isArray(session)) {
+      throw new ApiError('VALIDATION_ERROR', `sessions[${index}] harus berupa objek`);
     }
-    if (body.sessions.length > 20) {
-      throw new ApiError('VALIDATION_ERROR', 'sessions maksimal 20 sesi');
+    if (session.mapel_codes !== undefined) {
+      throw new ApiError('VALIDATION_ERROR', 'Setiap sesi harus memuat tepat satu mapel_code');
     }
+    if (session.question_ids !== undefined && session.question_ids !== null) {
+      throw new ApiError('VALIDATION_ERROR', `sessions[${index}].question_ids tidak didukung; gunakan sheet_ids`);
+    }
+    if (session.sheet_ids === undefined || session.sheet_ids === null) {
+      throw new ApiError('VALIDATION_ERROR', `sessions[${index}].sheet_ids wajib diisi minimal satu lembar soal`);
+    }
+    const mapelCode = requireMapelCode(session.mapel_code);
+    const sheetIds = requireIds(session.sheet_ids, `sessions[${index}].sheet_ids`);
+    if (sheetIds.length === 0) {
+      throw new ApiError('VALIDATION_ERROR', `sessions[${index}].sheet_ids wajib berisi minimal satu lembar soal`);
+    }
+    const rawStart = session.start_at === undefined ? null : requireTimestamp(session.start_at, `sessions[${index}].start_at`);
+    const rawEnd = session.end_at === undefined ? null : requireTimestamp(session.end_at, `sessions[${index}].end_at`);
     return {
-      isLegacy: false,
-      startsAt: requireTimestamp(body.starts_at, 'starts_at'),
-      endsAt: requireTimestamp(body.ends_at, 'ends_at'),
-      definitions: body.sessions.map((session, index) => {
-        if (!session || typeof session !== 'object' || Array.isArray(session)) {
-          throw new ApiError('VALIDATION_ERROR', `sessions[${index}] harus berupa objek`);
-        }
-        if (session.mapel_codes !== undefined) {
-          throw new ApiError('VALIDATION_ERROR', 'Setiap sesi harus memuat tepat satu mapel_code');
-        }
-        const mapelCode = requireMapelCode(session.mapel_code);
-        const hasSheets = session.sheet_ids !== undefined && session.sheet_ids !== null;
-        const sheetIds = hasSheets ? requireIds(session.sheet_ids, `sessions[${index}].sheet_ids`) : [];
-        const questionIds = hasSheets ? [] : requireIds(session.question_ids, `sessions[${index}].question_ids`);
-        const rawStart = session.start_at === undefined ? null : requireTimestamp(session.start_at, `sessions[${index}].start_at`);
-        const rawEnd = session.end_at === undefined ? null : requireTimestamp(session.end_at, `sessions[${index}].end_at`);
-        return {
-          name: session.name === undefined || session.name === null || session.name === ''
-            ? `${name} - ${mapelCode}` : requireName(session.name),
-          mapelCode,
-          sheetIds,
-          questionIds,
-          hasSheets,
-          distributeByMapel: false,
-          startAt: rawStart,
-          endAt: rawEnd,
-          cbt: normalizeCbtSettings(session)
-        };
-      })
-    };
-  }
-
-  const codes = resolveMapelCodes(body);
-  const hasSchedule = body.start_at !== undefined || body.end_at !== undefined;
-  let startsAt;
-  let endsAt;
-  if (hasSchedule) {
-    startsAt = requireTimestamp(body.start_at, 'start_at');
-    endsAt = requireTimestamp(body.end_at, 'end_at');
-    if (Date.parse(endsAt) <= Date.parse(startsAt)) {
-      throw new ApiError('VALIDATION_ERROR', 'end_at harus setelah start_at');
-    }
-  } else {
-    const sessionDate = requireDate(body.session_date);
-    const range = legacyRange(sessionDate);
-    startsAt = range.startAt;
-    endsAt = range.endAt;
-  }
-  const hasSheets = body.sheet_ids !== undefined && body.sheet_ids !== null;
-  const sheetIds = hasSheets ? requireIds(body.sheet_ids, 'sheet_ids') : [];
-  const questionIds = hasSheets ? [] : requireIds(body.question_ids, 'question_ids');
-  const cbt = normalizeCbtSettings(body);
-  return {
-    isLegacy: true,
-    startsAt,
-    endsAt,
-    definitions: codes.map((mapelCode) => ({
-      name: codes.length > 1 ? `${name} - ${mapelCode}` : name,
+      name: session.name === undefined || session.name === null || session.name === ''
+        ? `${name} - ${mapelCode}` : requireName(session.name),
       mapelCode,
       sheetIds,
-      questionIds,
-      hasSheets,
-      distributeByMapel: codes.length > 1,
-      startAt: null,
-      endAt: null,
-      cbt
-    }))
-  };
+      questionIds: [],
+      hasSheets: true,
+      distributeByMapel: false,
+      startAt: rawStart,
+      endAt: rawEnd,
+      cbt: normalizeCbtSettings({
+        cbt_enabled: session.cbt_enabled ?? tryoutCbt.enabled,
+        cbt_duration_minutes: session.cbt_duration_minutes ?? tryoutCbt.duration,
+        cbt_shuffle_questions: session.cbt_shuffle_questions ?? tryoutCbt.shuffleQuestions,
+        cbt_shuffle_options: session.cbt_shuffle_options ?? tryoutCbt.shuffleOptions,
+        cbt_require_fullscreen: session.cbt_require_fullscreen ?? tryoutCbt.requireFullscreen,
+        cbt_max_violations: session.cbt_max_violations ?? tryoutCbt.maxViolations
+      })
+    };
+  });
+  return { isLegacy: false, startsAt, endsAt, definitions };
 }
+
 
 const SESSION_SELECT = `
   SELECT s.id, s.name, s.slug, s.event_id, s.session_date, s.start_at, s.end_at, s.is_active,

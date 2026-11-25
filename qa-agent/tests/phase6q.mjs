@@ -28,6 +28,7 @@ let siswaId;
 let umumId;
 let prospekId;
 let tryoutId;
+let tryoutSessionId;
 
 function jakartaInput(offsetHours = 0) {
   return new Date(Date.now() + (7 + offsetHours) * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -67,7 +68,10 @@ async function loadParticipant(id) {
 }
 
 after(async () => {
-  if (tryoutId) await query('DELETE FROM tryout_sessions WHERE id = $1', [tryoutId]);
+  if (tryoutSessionId) {
+    await query('DELETE FROM auth_sessions WHERE tryout_session_id = $1', [tryoutSessionId]);
+  }
+  if (tryoutId) await query('DELETE FROM tryout_events WHERE id = $1', [tryoutId]);
   const ids = [siswaId, umumId, prospekId].filter(Boolean);
   if (ids.length) {
     await query('DELETE FROM auth_sessions WHERE participant_id = ANY($1::bigint[])', [ids]);
@@ -134,16 +138,16 @@ test('QP-03 lampir siswa existing ke tryout tersimpan secara idempoten', async (
     method: 'POST',
     body: JSON.stringify({
       name: `TO QA 6Q ${suffix}`,
-      start_at: jakartaInput(),
-      end_at: jakartaInput(2),
-      mapel_code: mapelCode,
-      sheet_ids: [sheetId],
+      starts_at: jakartaInput(),
+      ends_at: jakartaInput(2),
+      sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],
       participant_ids: [],
       is_active: false
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   tryoutId = created.body.data.tryout.id;
+  tryoutSessionId = created.body.data.tryout.sessions[0].id;
 
   const attached = await attach([siswaId]);
   assert.equal(attached.status, 200, JSON.stringify(attached.body));

@@ -12,6 +12,9 @@ const adminUsername = process.env.QA_ADMIN_USERNAME || 'admin';
 const roleCode = `qa_role_${suffix}`;
 const permRoleCode = `qa_perm_${suffix}`;
 const pwdRoleCode = `qa_pwdrole_${suffix}`;
+const viewerRoleCode = `qa_viewerrole_${suffix}`;
+const editorRoleCode = `qa_editorrole_${suffix}`;
+const validatorRoleCode = `qa_validatorrole_${suffix}`;
 const pwdUsername = `qa_pwd_${suffix}`;
 const pwdPassword = crypto.randomBytes(18).toString('base64url');
 const reportUsername = `qa_report_${suffix}`;
@@ -19,6 +22,9 @@ const reportPassword = crypto.randomBytes(18).toString('base64url');
 let pwdCookie;
 let viewerCookie;
 let roleId;
+let viewerRoleId;
+let editorRoleId;
+let validatorRoleId;
 
 async function call(path, options = {}) {
   const response = await fetch(`${BASE}${path}`, {
@@ -36,13 +42,47 @@ async function login(username, password) {
   });
 }
 
+async function createRole(code, name, permissions) {
+  const created = await call('/api/v1/roles', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ code, name })
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const saved = await call(`/api/v1/roles/${created.body.data.role.id}/permissions`, {
+    method: 'PUT',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ permissions })
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  return created.body.data.role.id;
+}
+
 before(async () => {
   await adminHeaders();
+  viewerRoleId = await createRole(viewerRoleCode, 'QA Viewer', [
+    'cms.access', 'questions.read', 'presentation.read', 'tryout.access'
+  ]);
+  editorRoleId = await createRole(editorRoleCode, 'QA Editor', [
+    'cms.access', 'questions.read', 'questions.write', 'questions.create',
+    'questions.update', 'questions.delete', 'question_sheets.create',
+    'question_sheets.read', 'question_sheets.update', 'question_sheets.delete',
+    'question_sheets.manage', 'program_belajar.create', 'program_belajar.read',
+    'program_belajar.update', 'program_belajar.delete', 'tryout.access',
+    'presentation.read'
+  ]);
+  validatorRoleId = await createRole(validatorRoleCode, 'QA Validator', [
+    'cms.access', 'questions.read', 'questions.review', 'readiness.write',
+    'tryout.access', 'presentation.read'
+  ]);
 });
 
 after(async () => {
   await query('DELETE FROM contributors WHERE username IN ($1, $2, $3)', [viewerUsername, pwdUsername, reportUsername]);
-  await query('DELETE FROM roles WHERE code IN ($1, $2, $3)', [roleCode, permRoleCode, pwdRoleCode]);
+  await query(
+    'DELETE FROM roles WHERE code IN ($1, $2, $3, $4, $5, $6)',
+    [roleCode, permRoleCode, pwdRoleCode, viewerRoleCode, editorRoleCode, validatorRoleCode]
+  );
   await pool.end();
 });
 
@@ -143,11 +183,11 @@ test('A-09 viewer bisa baca soal tetapi tidak bisa menulis', async () => {
       username: viewerUsername,
       display_name: 'QA Viewer',
       password: viewerPassword,
-      roles: ['viewer']
+      roles: [viewerRoleCode]
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
-  assert.deepEqual(created.body.data.roles, ['viewer']);
+  assert.deepEqual(created.body.data.roles, [viewerRoleCode]);
 
   const logged = await login(viewerUsername, viewerPassword);
   assert.equal(logged.status, 200, JSON.stringify(logged.body));
@@ -174,7 +214,7 @@ test('A-11 create user memvalidasi password dan duplikat', async () => {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
-      username: `qa_weak_${suffix}`, display_name: 'QA Lemah', password: 'pendek', roles: ['viewer']
+      username: `qa_weak_${suffix}`, display_name: 'QA Lemah', password: 'pendek', roles: [viewerRoleCode]
     })
   });
   assert.equal(weak.status, 400);
@@ -183,10 +223,10 @@ test('A-11 create user memvalidasi password dan duplikat', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       username: viewerUsername, display_name: 'QA Duplikat',
-      password: viewerPassword, roles: ['viewer']
+      password: viewerPassword, roles: [viewerRoleCode]
     })
   });
-  assert.equal(duplicate.status, 409);
+  assert.equal(duplicate.status, 409, JSON.stringify(duplicate.body));
   const invalidRole = await call('/api/v1/users', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -265,13 +305,13 @@ test('A-13 admin mengatur permission role lewat checkbox payload', async () => {
 
 test('A-10 admin bisa memberi dan mencabut role pengguna', async () => {
   const roles = await call('/api/v1/roles', { headers: await adminHeaders() });
-  const editorRole = roles.body.data.roles.find((role) => role.code === 'editor');
+  const editorRole = roles.body.data.roles.find((role) => role.id === editorRoleId);
   const user = await query('SELECT id FROM contributors WHERE username = $1', [viewerUsername]);
   const userId = user.rows[0].id;
   const assigned = await call(`/api/v1/users/${userId}/roles`, {
     method: 'POST',
     headers: await adminHeaders(),
-    body: JSON.stringify({ code: 'editor' })
+    body: JSON.stringify({ code: editorRoleCode })
   });
   assert.equal(assigned.status, 201);
   const read = await call(`/api/v1/users/${userId}/roles`, { headers: await adminHeaders() });
@@ -394,7 +434,7 @@ test('A-17 permission reports.read default hanya admin dan tidak bisa dicabut da
   const roles = await call('/api/v1/roles', { headers: await adminHeaders() });
   const adminRole = roles.body.data.roles.find((role) => role.code === 'admin');
   assert.ok(adminRole.permissions.includes('reports.read'));
-  for (const code of ['editor', 'validator', 'viewer', 'peserta']) {
+  for (const code of [editorRoleCode, validatorRoleCode, viewerRoleCode, 'peserta']) {
     const role = roles.body.data.roles.find((item) => item.code === code);
     assert.ok(!(role.permissions ?? []).includes('reports.read'), `${code} tidak boleh memiliki reports.read`);
   }
@@ -413,7 +453,7 @@ test('A-17 permission reports.read default hanya admin dan tidak bisa dicabut da
       username: reportUsername,
       display_name: 'QA Report',
       password: reportPassword,
-      roles: ['viewer']
+      roles: [viewerRoleCode]
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));

@@ -12,11 +12,15 @@ const PRESENTATION = PRESENTATION_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
 const participantEmail = `qa_tr_participant_${suffix}@qa.test`;
 const viewerUsername = `qa_tr_viewer_${suffix}`;
+const viewerRoleCode = `qa_trviewer_${suffix}`;
 const password = crypto.randomBytes(18).toString('base64url');
 const sessionDate = new Date().toISOString().slice(0, 10);
+const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+const endsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 
 const usernames = [viewerUsername];
 const questionIds = [];
+const sheetIds = [];
 const sessionIds = [];
 let participantHeaders;
 let viewerHeaders;
@@ -88,6 +92,25 @@ async function createQuestion(stem) {
   return id;
 }
 
+async function createSheet(code, mapel, questions) {
+  const response = await request(BACKEND, '/api/v1/question-sheets', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({
+      name: `QA TR Lembar ${mapel} ${suffix}`,
+      code,
+      mapel_code: mapel,
+      description: `Lembar uji ${suffix}`,
+      duration_minutes: 30,
+      question_ids: questions
+    })
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  const id = response.body.data.sheet.id;
+  sheetIds.push(id);
+  return id;
+}
+
 before(async () => {
   for (const base of [BACKEND, PRESENTATION]) {
     const response = await fetch(`${base}/health`);
@@ -107,10 +130,23 @@ before(async () => {
   });
   assert.equal(participant.status, 201, JSON.stringify(participant.body));
   participantId = participant.body.data.participant.id;
-  await createUser(viewerUsername, 'viewer');
+  const role = await request(BACKEND, '/api/v1/roles', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ code: viewerRoleCode, name: `QA TR Viewer ${suffix}` })
+  });
+  assert.equal(role.status, 201, JSON.stringify(role.body));
+  const granted = await request(BACKEND, `/api/v1/roles/${role.body.data.role.id}/permissions`, {
+    method: 'PUT',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ permissions: ['cms.access', 'questions.read', 'tryout.access', 'presentation.read'] })
+  });
+  assert.equal(granted.status, 200, JSON.stringify(granted.body));
+  await createUser(viewerUsername, viewerRoleCode);
   viewerHeaders = await login(viewerUsername);
   await createQuestion(`QA sesi benar ${suffix}`);
   await createQuestion(`QA sesi salah ${suffix}`);
+  await createSheet(`QATR${suffix.slice(0, 8).toUpperCase()}`, 'MTKA', questionIds);
 
   const eventName = `QA TR Event ${suffix}`;
   const event = await query(
@@ -148,6 +184,9 @@ before(async () => {
 });
 
 after(async () => {
+  if (sheetIds.length) {
+    await query('DELETE FROM question_sheets WHERE id = ANY($1::bigint[])', [sheetIds]);
+  }
   if (questionIds.length) {
     const sources = await query(
       'SELECT DISTINCT source_id FROM questions WHERE id = ANY($1::bigint[]) AND source_id IS NOT NULL',
@@ -170,6 +209,7 @@ after(async () => {
        AND NOT EXISTS (SELECT 1 FROM tryout_sessions WHERE is_active)`
   );
   await query('DELETE FROM contributors WHERE username = ANY($1::text[])', [usernames]);
+  await query('DELETE FROM roles WHERE code = $1', [viewerRoleCode]);
   await query('DELETE FROM tryout_participants WHERE email = $1', [participantEmail]);
   await pool.end();
 });
@@ -295,30 +335,35 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA ${suffix}`,
-      session_date: sessionDate,
-      mapel_code: 'MTKA',
-      question_ids: questionIds,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      sessions: [{
+        name: `Sesi TO QA ${suffix}`,
+        mapel_code: 'MTKA',
+        sheet_ids: [sheetIds[0]]
+      }],
       participant_ids: [participantId],
       is_active: false
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const tryout = created.body.data.tryout;
-  sessionIds.push(tryout.id);
-  assert.equal(tryout.mapel_code, 'MTKA');
-  assert.equal(tryout.question_ids.length, 2);
+  const listedTryoutId = Number(tryout.sessions[0].id);
+  sessionIds.push(listedTryoutId);
+  assert.equal(tryout.sessions[0].mapel_code, 'MTKA');
+  assert.equal(tryout.sessions[0].question_ids.length, 2);
   assert.ok(tryout.participant_ids.some((id) => Number(id) === Number(participantId)));
 
   const detail = await request(BACKEND, `/api/v1/tryouts/${tryout.id}`, {
     headers: await adminHeaders()
   });
   assert.equal(detail.status, 200, JSON.stringify(detail.body));
-  assert.equal(detail.body.data.tryout.question_ids.length, 2);
+  assert.equal(detail.body.data.tryout.sessions[0].question_ids.length, 2);
 
   const listing = await request(BACKEND, '/api/v1/tryouts', { headers: await adminHeaders() });
   assert.equal(listing.status, 200);
-  assert.ok(listing.body.data.tryouts.some((item) => Number(item.id) === Number(tryout.id)));
-  const listed = listing.body.data.tryouts.find((item) => Number(item.id) === Number(tryout.id));
+  assert.ok(listing.body.data.tryouts.some((item) => Number(item.id) === listedTryoutId));
+  const listed = listing.body.data.tryouts.find((item) => Number(item.id) === listedTryoutId);
   assert.equal(listed.question_count, 2);
   assert.equal(listed.participant_count, 1);
 
@@ -327,9 +372,9 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA salah mapel ${suffix}`,
-      session_date: sessionDate,
-      mapel_code: 'IPAS',
-      question_ids: questionIds,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      sessions: [{ mapel_code: 'IPAS', sheet_ids: [sheetIds[0]] }],
       participant_ids: [participantId]
     })
   });
@@ -340,9 +385,9 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA peserta invalid ${suffix}`,
-      session_date: sessionDate,
-      mapel_code: 'MTKA',
-      question_ids: questionIds,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      sessions: [{ mapel_code: 'MTKA', sheet_ids: [sheetIds[0]] }],
       participant_ids: [99999999]
     })
   });
@@ -350,28 +395,33 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
 });
 
 test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () => {
-  const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const endsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const activeSheetId = await createSheet(
+    `QATRONE${suffix.slice(0, 5).toUpperCase()}`,
+    'MTKA',
+    [questionIds[0]]
+  );
   const created = await request(BACKEND, '/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO aktif QA ${suffix}`,
-      session_date: sessionDate,
-      start_at: startsAt,
-      end_at: endsAt,
-      mapel_code: 'MTKA',
-      question_ids: [questionIds[0]],
+      starts_at: startsAt,
+      ends_at: endsAt,
+      sessions: [{
+        name: `Sesi aktif QA ${suffix}`,
+        mapel_code: 'MTKA',
+        sheet_ids: [activeSheetId]
+      }],
       participant_ids: [participantId],
       is_active: true
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const activeTryout = created.body.data.tryout;
-  sessionIds.push(activeTryout.id);
+  sessionIds.push(activeTryout.sessions[0].id);
 
   const boundLogin = await participantLogin(
-    participantEmail, password, activeTryout.slug
+    participantEmail, password, activeTryout.sessions[0].slug
   );
   assert.equal(boundLogin.status, 200, await boundLogin.clone().text());
   const boundHeaders = { Cookie: cookieHeader(boundLogin) };

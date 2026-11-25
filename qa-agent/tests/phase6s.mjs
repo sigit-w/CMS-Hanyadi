@@ -150,7 +150,7 @@ test('QS-02 login participant wajib marker dan keanggotaan tryout', async () => 
   const me = await api('/api/v1/auth/me', { headers: { Cookie: participantCookie } });
   assert.equal(me.status, 200, JSON.stringify(me.body));
   assert.equal(Number(me.body.data.tryout_session_id), Number(qaTryout.id));
-  assert.equal(me.body.data.tryout_slug, qaTryout.slug);
+  assert.equal(me.body.data.tryout_session_slug, qaTryout.slug);
 });
 
 test('QS-03 daftar siswa dan peserta tryout terpisah', async () => {
@@ -242,7 +242,7 @@ test('QS-05 presentation-service memakai tryout binding, bukan sesi aktif global
 test('QS-06 marker UI Fase 6s tersedia di source dan bundle produksi', () => {
   const tryoutPage = readFileSync(TRYOUT_PAGE, 'utf8');
   for (const marker of [
-    'TRYOUT_BASE_URL', 'tryoutUrl(', 'URL Tryout', 'Salin', 'getSiswa',
+    'TRYOUT_BASE_URL', 'tryoutUrl(', 'URL Peserta per Sesi', 'Salin', 'getSiswa',
     'getTryoutParticipants', 'A. Peserta Didik', 'Kelola Peserta'
   ]) {
     assert.ok(tryoutPage.includes(marker), `Marker ${marker} tidak ditemukan di TryoutManagement`);
@@ -261,7 +261,7 @@ test('QS-06 marker UI Fase 6s tersedia di source dan bundle produksi', () => {
 
   const assets = readdirSync(DIST).filter((file) => file.endsWith('.js'));
   const bundle = readFileSync(`${DIST}/${assets[0]}`, 'utf8');
-  for (const marker of ['https://tryout.hanyadi.web.id', 'URL Tryout', 'Salin']) {
+  for (const marker of ['https://tryout.hanyadi.web.id', 'URL Peserta per Sesi', 'Salin']) {
     assert.ok(bundle.includes(marker), `Marker bundle ${marker} tidak ditemukan`);
   }
 });

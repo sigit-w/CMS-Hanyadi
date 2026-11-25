@@ -9,6 +9,7 @@ const suffix = crypto.randomBytes(4).toString('hex');
 const code = `QA${suffix.slice(0, 2).toUpperCase()}`;
 const renamedCode = `QB${suffix.slice(2, 4).toUpperCase()}`;
 const editorUsername = `qa_mapel_editor_${suffix}`;
+const editorRoleCode = `qa_mapelrole_${suffix}`;
 const password = crypto.randomBytes(18).toString('base64url');
 
 let mapelId;
@@ -39,6 +40,18 @@ async function login(username) {
 before(async () => {
   const response = await fetch(`${BASE}/health`);
   assert.equal(response.status, 200);
+  const role = await request('/api/v1/roles', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ code: editorRoleCode, name: 'QA Mapel Reader' })
+  });
+  assert.equal(role.status, 201, JSON.stringify(role.body));
+  const granted = await request(`/api/v1/roles/${role.body.data.role.id}/permissions`, {
+    method: 'PUT',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ permissions: ['cms.access', 'questions.read'] })
+  });
+  assert.equal(granted.status, 200, JSON.stringify(granted.body));
   const created = await request('/api/v1/users', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -46,7 +59,7 @@ before(async () => {
       username: editorUsername,
       display_name: 'QA Mapel Editor',
       password,
-      roles: ['editor']
+      roles: [editorRoleCode]
     })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
@@ -71,6 +84,7 @@ after(async () => {
   }
   await query('DELETE FROM mapels WHERE code = ANY($1::text[])', [codes]);
   await query('DELETE FROM contributors WHERE username = $1', [editorUsername]);
+  await query('DELETE FROM roles WHERE code = $1', [editorRoleCode]);
   await pool.end();
 });
 

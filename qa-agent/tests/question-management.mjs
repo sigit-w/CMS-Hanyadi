@@ -11,6 +11,8 @@ const BASE = API_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
 const editorUsername = `qa_qm_editor_${suffix}`;
 const viewerUsername = `qa_qm_viewer_${suffix}`;
+const editorRoleCode = `qa_qmeditor_${suffix}`;
+const viewerRoleCode = `qa_qmviewer_${suffix}`;
 const password = crypto.randomBytes(18).toString('base64url');
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AF+7V9JAAAAAElFTkSuQmCC',
@@ -60,6 +62,21 @@ async function login(username) {
   return { Cookie: cookies.filter(Boolean).map((item) => item.split(';')[0]).join('; ') };
 }
 
+async function createRole(code, name, permissions) {
+  const created = await request('/api/v1/roles', {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ code, name })
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const saved = await request(`/api/v1/roles/${created.body.data.role.id}/permissions`, {
+    method: 'PUT',
+    headers: await adminHeaders(),
+    body: JSON.stringify({ permissions })
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+}
+
 function essay(stem) {
   return {
     stem,
@@ -73,8 +90,16 @@ function essay(stem) {
 before(async () => {
   const response = await fetch(`${BASE}/health`);
   assert.equal(response.status, 200);
-  await createUser(editorUsername, ['editor']);
-  await createUser(viewerUsername, ['viewer']);
+  await createRole(editorRoleCode, 'QA QM Editor', [
+    'cms.access', 'questions.read', 'questions.write', 'questions.create',
+    'questions.update', 'questions.delete', 'question_sheets.manage',
+    'tryout.access', 'presentation.read'
+  ]);
+  await createRole(viewerRoleCode, 'QA QM Viewer', [
+    'cms.access', 'questions.read', 'tryout.access', 'presentation.read'
+  ]);
+  await createUser(editorUsername, [editorRoleCode]);
+  await createUser(viewerUsername, [viewerRoleCode]);
   editorHeaders = await login(editorUsername);
   viewerHeaders = await login(viewerUsername);
 });
@@ -92,6 +117,7 @@ after(async () => {
     }
   }
   await query('DELETE FROM contributors WHERE username = ANY($1::text[])', [usernames]);
+  await query('DELETE FROM roles WHERE code = ANY($1::text[])', [[editorRoleCode, viewerRoleCode]]);
   if (imageFilename) {
     await fs.unlink(path.join(config.uploadDir, imageFilename)).catch(() => {});
   }

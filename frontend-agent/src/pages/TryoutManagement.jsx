@@ -44,6 +44,10 @@ function tryoutUrl(slug) {
   return slug ? `${TRYOUT_BASE_URL}/${slug}` : '—';
 }
 
+function tryoutSessionUrls(tryout) {
+  return (tryout?.sessions ?? []).map((session) => tryoutUrl(session.slug)).filter((url) => url !== '—');
+}
+
 function mapelLabel(code, name) {
   return MAPEL_LABELS[code] ?? name ?? code ?? '—';
 }
@@ -620,7 +624,7 @@ export default function TryoutManagement() {
           cbt_max_violations: Number(session.cbt_max_violations)
         }))
       });
-      setNotice(`Tryout "${created.tryout.name}" berhasil dibuat. URL peserta: ${tryoutUrl(created.tryout.slug)}`);
+      setNotice(`Tryout "${created.tryout.name}" berhasil dibuat. URL peserta per sesi: ${tryoutSessionUrls(created.tryout).join(' · ') || '—'}`);
       setForm(emptyForm());
       setSelectedParticipants([]);
       setDraftParticipants([]);
@@ -673,7 +677,7 @@ export default function TryoutManagement() {
         starts_at: editForm.starts_at,
         ends_at: editForm.ends_at
       });
-      setNotice(`Tryout "${updated.tryout.name}" diperbarui. URL peserta tetap ${tryoutUrl(updated.tryout.slug)}.`);
+      setNotice(`Tryout "${updated.tryout.name}" diperbarui. URL peserta tiap sesi tetap ${tryoutSessionUrls(updated.tryout).join(' · ') || '—'}.`);
       setEditTarget(null);
       await refreshTryouts();
     } catch (err) {
@@ -754,12 +758,12 @@ export default function TryoutManagement() {
     }
   }
 
-  async function handleCopyUrl(tryout) {
-    const url = tryoutUrl(tryout.slug);
+  async function handleCopyUrl(session, tryoutName) {
+    const url = tryoutUrl(session.slug);
     try {
       await navigator.clipboard.writeText(url);
       setError('');
-      setNotice(`URL tryout "${tryout.name}" disalin: ${url}`);
+      setNotice(`URL sesi "${session.name || tryoutName}" disalin: ${url}`);
     } catch (err) {
       setError(`Gagal menyalin URL: ${err.message}`);
     }
@@ -845,7 +849,7 @@ export default function TryoutManagement() {
                   onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Slug (opsional)</Label>
+                <Label>Slug Grup Tryout (opsional, bukan URL peserta)</Label>
                 <Input value={form.slug} placeholder="contoh: tryout-november"
                   onChange={(event) => setForm({ ...form, slug: event.target.value })} />
               </div>
@@ -1148,7 +1152,7 @@ export default function TryoutManagement() {
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Status saat ini: <Badge variant={statusVariant(editTarget.status)}>{editTarget.status ?? '—'}</Badge>.
-              Mengubah jadwal dapat mengubah status tryout; URL dan JWT peserta tidak berubah.
+              Mengubah jadwal dapat mengubah status tryout; URL dan JWT peserta tiap sesi tidak berubah.
             </p>
             <div className="space-y-1.5">
               <Label>Nama Tryout</Label>
@@ -1173,7 +1177,7 @@ export default function TryoutManagement() {
                 <div key={session.id} className="flex flex-wrap justify-between gap-2 text-sm">
                   <span>{session.name || 'Sesi tanpa nama'}</span>
                   <span className="text-muted-foreground">
-                    {mapelLabel(session.mapel_code, session.mapel_name)} · {session.participant_ids?.length ?? 0} peserta
+                    {mapelLabel(session.mapel_code, session.mapel_name)} · {session.participant_ids?.length ?? 0} peserta · {tryoutUrl(session.slug)}
                   </span>
                 </div>
               ))}
@@ -1263,7 +1267,7 @@ export default function TryoutManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
-                  <TableHead>URL Tryout</TableHead>
+                  <TableHead>URL Peserta per Sesi</TableHead>
                   <TableHead>Mulai</TableHead>
                   <TableHead>Selesai</TableHead>
                   <TableHead>Mapel</TableHead>
@@ -1279,11 +1283,18 @@ export default function TryoutManagement() {
                   <TableRow key={tryout.id}>
                     <TableCell>#{tryout.id} {tryout.name}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Input aria-label={`URL tryout ${tryout.name}`} value={tryoutUrl(tryout.slug)} readOnly className="h-8 w-56 text-xs" />
-                        <Button type="button" variant="outline" size="sm" onClick={() => handleCopyUrl(tryout)}>
-                          Salin
-                        </Button>
+                      <div className="space-y-2">
+                        {(tryout.sessions ?? []).length === 0 && (
+                          <span className="text-xs text-muted-foreground">Tidak ada sesi</span>
+                        )}
+                        {(tryout.sessions ?? []).map((session) => (
+                          <div key={session.id} className="flex items-center gap-2">
+                            <Input aria-label={`URL sesi ${session.name || tryout.name}`} value={tryoutUrl(session.slug)} readOnly className="h-8 w-56 text-xs" />
+                            <Button type="button" variant="outline" size="sm" onClick={() => handleCopyUrl(session, tryout.name)}>
+                              Salin
+                            </Button>
+                          </div>
+                        ))}
                       </div>
                     </TableCell>
                     <TableCell>{formatDateTime(tryout.starts_at ?? tryout.start_at)}</TableCell>
