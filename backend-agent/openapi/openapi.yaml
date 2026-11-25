@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Bank Soal CMS API
-  version: 0.3.0
-  description: 'Fase 6u / ADR-017 — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel (UNIQUE(session_id) pada tryout_session_mapels). status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; batas ends_at induk mengunci login dan akses sesi, deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Payload flat legacy mapel_codes[] dipecah per mapel. CMS tidak menampilkan kolom Submission, opsi jadikan sesi aktif, atau kolom Lembar pada daftar tryout; submission_count hanya field API. Fase 6v / ADR-018 menambahkan search dan limit pada daftar sesi serta tryout_name pada ekspor XLSX; format XLSX memakai worksheet Laporan Tryout dengan header dua level dan grup B|S|NILAI per mapel, tanpa mengubah permission tryout_reports.read. Endpoint create/activate legacy tetap dipertahankan.'
+  version: 0.4.0
+  description: 'Fase 6u/6v — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel. status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Fase 6w / ADR-019 menambah jenjang SD/SMP/SMA, username dan kredensial WA 8–15 digit, login participant memakai username dengan fallback email/nama, serta ekspor XLSX tryout-only tanpa identitas/tanggal dan dengan WAKTU Asia/Jakarta dari submission terakhir. Fase 6x / ADR-020 menambah PATCH /tryouts/{id} hanya untuk name/starts_at/ends_at tanpa mengubah slug, serta unduhan satu ZIP berisi PDF per sesi; varian berkunci memakai permission tryout_questions.key_export. Endpoint create/activate legacy tetap dipertahankan.'
 security:
   - cookieAuth: []
 servers:
@@ -34,11 +34,11 @@ paths:
               properties:
                 username:
                   type: string
-                  description: 'Email untuk Siswa/CMS; Nama untuk Peserta Umum.'
+                  description: 'Username peserta yang dibangkitkan sistem untuk Siswa/Peserta Umum; email CMS atau fallback email/nama peserta lama tetap diterima.'
                 password:
                   type: string
                   format: password
-                  description: 'Password untuk Siswa/CMS; PIN 9 digit untuk Peserta Umum.'
+                  description: 'Password Siswa/CMS; PIN/WA 8–15 digit untuk Peserta Umum.'
                 tryout_slug:
                   type: string
                   maxLength: 32
@@ -115,10 +115,10 @@ paths:
         '409': { description: Role admin tetap harus memiliki roles.manage }
   /api/v1/permissions:
     get:
-      summary: Daftar 46 permission untuk checkbox RBAC (roles.manage)
-      description: Mengembalikan seluruh kode permission aktif, termasuk opsi CRUD dan permission agregat *.manage yang tetap diterima guard backend.
+      summary: Daftar 47 permission untuk checkbox RBAC (roles.manage)
+      description: 'Mengembalikan seluruh kode permission aktif, termasuk opsi CRUD, permission agregat *.manage, dan tryout_questions.key_export dari migrasi 032. Permission baru tidak otomatis melekat pada role lama.'
       responses:
-        '200': { description: Daftar 46 permission }
+        '200': { description: Daftar 47 permission }
   /api/v1/users:
     get:
       summary: Daftar pengguna beserta role (roles.manage)
@@ -188,8 +188,10 @@ paths:
       description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus. Fase 6u: pencarian server-side dipakai picker peserta.'
       parameters:
         - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
+        - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang peserta.' }
       responses:
         '200': { description: Daftar siswa }
+        '400': { description: jenjang_id tidak valid }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/participants:
     get:
@@ -197,9 +199,10 @@ paths:
       parameters:
         - { name: prospek, in: query, required: false, schema: { type: boolean }, description: 'Filter status prospek Peserta Umum.' }
         - { name: search, in: query, required: false, schema: { type: string }, description: 'Fase 6u: cari nama, email, kelas, atau sekolah untuk picker Peserta Umum; alias q diterima.' }
+        - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang peserta.' }
       responses:
         '200': { description: Daftar peserta }
-        '400': { description: Nilai prospek tidak valid }
+        '400': { description: Nilai prospek atau jenjang_id tidak valid }
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
       summary: Buat peserta tryout baru, Siswa atau Peserta Umum (tryouts.manage)
@@ -210,30 +213,34 @@ paths:
             schema:
               oneOf:
                 - type: object
-                  required: [jenis, nama, sekolah, pin, wa_orang_tua]
+                  required: [jenis, nama, sekolah, wa_orang_tua, jenjang_id]
                   properties:
                     jenis: { type: string, enum: [umum] }
                     nama: { type: string, maxLength: 128 }
                     sekolah: { type: string, maxLength: 255 }
-                    pin: { type: string, pattern: '^[0-9]{9}$', description: 'PIN 9 digit; hash dipakai login, plaintext tampil di endpoint detail.' }
-                    wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$' }
+                    jenjang_id: { type: integer, description: 'Wajib; ID dari /api/v1/jenjangs.' }
+                    pin: { type: string, pattern: '^[0-9]{8,15}$', description: 'Opsional 8–15 digit; bila kosong memakai digit wa_orang_tua.' }
+                    wa_orang_tua: { type: string, maxLength: 20, pattern: '^\+?[0-9][0-9 -]{6,18}$', description: 'Wajib; harus mengandung 8–15 digit.' }
+                    username: { type: string, readOnly: true, description: 'Dibangkitkan dari jenjang, jam Asia/Jakarta, dan 4 digit WA.' }
                     prospek: { type: boolean, readOnly: true, description: 'True setelah dikeluarkan dari tryout; hanya untuk Umum.' }
                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
                 - type: object
-                  required: [nama, email, kelas, sekolah]
+                  required: [nama, email, kelas, sekolah, jenjang_id]
                   properties:
                     jenis: { type: string, enum: [siswa], default: siswa }
                     nama: { type: string, maxLength: 128 }
                     email: { type: string, format: email }
                     kelas: { type: integer, minimum: 1, maximum: 100 }
                     sekolah: { type: string, maxLength: 255 }
+                    jenjang_id: { type: integer, description: 'Wajib; ID dari /api/v1/jenjangs.' }
                     program_belajar_id: { type: integer, nullable: true }
-                    wa_orang_tua: { type: string, maxLength: 20, nullable: true }
+                    wa_orang_tua: { type: string, maxLength: 20, nullable: true, description: 'Bila berisi 8–15 digit, dipakai sebagai password default dan username.' }
                     password:
                       type: string
                       format: password
                       minLength: 6
-                      description: 'Opsional. Kosongkan untuk memakai default nama depan@mmyy.'
+                      description: 'Opsional. Kosongkan untuk memakai digit WA bila valid, jika tidak nama depan@mmyy.'
+                    username: { type: string, readOnly: true, description: 'Dibangkitkan dari jenjang, jam Asia/Jakarta, dan 4 digit WA.' }
                     prospek: { type: boolean, readOnly: true, description: 'False untuk Siswa.' }
                     prospek_at: { type: string, format: date-time, nullable: true, readOnly: true }
       responses:
@@ -256,8 +263,10 @@ paths:
       description: 'Fase 6u: picker Peserta Umum memakai endpoint ini dengan search server-side; prospektus aktif boleh dilampirkan langsung, sedangkan yang bergabung=true dipetakan ke ID siswa hasil konversi.'
       parameters:
         - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
+        - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang prospektus.' }
       responses:
         '200': { description: Daftar prospektus }
+        '400': { description: jenjang_id tidak valid }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/prospektus/{id}:
     parameters:
@@ -283,10 +292,11 @@ paths:
               properties:
                 email: { type: string, format: email }
                 kelas: { type: integer, minimum: 1, maximum: 100 }
+                jenjang_id: { type: integer, description: 'Opsional; default jenjang_id prospektus.' }
                 sekolah: { type: string, maxLength: 255, description: 'Opsional; default dari prospektus.' }
                 program_belajar_id: { type: integer, nullable: true }
                 wa_orang_tua: { type: string, maxLength: 20, description: 'Opsional; default dari prospektus.' }
-                password: { type: string, format: password, minLength: 6, description: 'Opsional; default nama depan@mmyy.' }
+                password: { type: string, format: password, minLength: 6, description: 'Opsional; default digit WA bila valid, jika tidak nama depan@mmyy.' }
                 confirm_password: { type: string, format: password }
       responses:
         '201': { description: Siswa dibuat dan prospektus ditandai bergabung }
@@ -406,6 +416,33 @@ paths:
                 properties:
                   tryout: { $ref: '#/components/schemas/TryoutEvent' }
         '404': { description: Tryout tidak ditemukan }
+    patch:
+      summary: Ubah hanya nama dan jadwal induk tryout (tryouts.manage)
+      description: 'Fase 6x / ADR-020: tersedia untuk semua status turunan, tidak mengubah slug/URL, tidak mengubah sesi/mapel/peserta/lembar soal, dan JWT peserta lama tetap valid.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, starts_at, ends_at]
+              additionalProperties: false
+              properties:
+                name: { type: string, maxLength: 128 }
+                starts_at: { type: string, format: date-time }
+                ends_at: { type: string, format: date-time, description: 'Harus setelah starts_at.' }
+      responses:
+        '200':
+          description: Tryout diperbarui
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tryout: { $ref: '#/components/schemas/TryoutEvent' }
+        '400': { description: Validasi gagal atau field di luar name/starts_at/ends_at dikirim }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+        '404': { description: Tryout tidak ditemukan }
     delete:
       summary: Hapus Tryout dan relasinya (tryouts.manage); submission lama kehilangan session_id
       description: 'Menghapus seluruh sesi dan induknya lewat cascade; session_id lama tetap diterima sebagai parameter.'
@@ -432,6 +469,36 @@ paths:
                     items: { $ref: '#/components/schemas/TryoutSession' }
         '403': { description: Tidak memiliki permission tryouts.manage }
         '404': { description: Tryout tidak ditemukan }
+  /api/v1/tryouts/{id}/questions.zip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer }, description: 'event_id atau session_id lama.' }
+    get:
+      summary: Unduh soal tryout sebagai satu ZIP berisi PDF per sesi (tryouts.manage)
+      description: 'Fase 6x / ADR-020. Setiap PDF memuat nama lembar soal, kode lembar soal, mapel, dan keterangan. Tidak menyertakan kunci jawaban.'
+      responses:
+        '200':
+          description: Arsip ZIP soal per sesi
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '400': { description: ID tryout tidak valid }
+        '403': { description: Tidak memiliki permission tryouts.manage }
+        '404': { description: Tryout atau lembar soal tidak ditemukan }
+  /api/v1/tryouts/{id}/questions-with-keys.zip:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer }, description: 'event_id atau session_id lama.' }
+    get:
+      summary: Unduh soal beserta kunci jawaban sebagai satu ZIP berisi PDF per sesi (tryout_questions.key_export)
+      description: 'Fase 6x / ADR-020. Permission baru tidak otomatis diberikan ke role lama, termasuk admin; kunci berasal dari question_options.is_correct.'
+      responses:
+        '200':
+          description: Arsip ZIP soal berkunci per sesi
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '400': { description: ID tryout tidak valid }
+        '403': { description: Tidak memiliki permission tryout_questions.key_export }
+        '404': { description: Tryout atau lembar soal tidak ditemukan }
   /api/v1/tryouts/{id}/cbt:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -507,6 +574,11 @@ paths:
           required: false
           schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
           description: 'Jumlah maksimal sesi yang dikembalikan; default 100, maksimal 200.'
+        - name: jenjang_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Fase 6w: batasi sesi yang memiliki peserta pada jenjang tertentu.'
       responses:
         '200':
           description: Daftar sesi beserta konteks induk dan mapel
@@ -547,15 +619,17 @@ paths:
       summary: Laporan tryout dikelompokkan per sesi, peserta, dan mapel (tryout_reports.read)
       parameters:
         - { name: session_id, in: query, schema: { type: integer } }
+        - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang peserta.' }
       responses:
         '200': { description: sessions, summary benar/salah/skor, details perbandingan jawaban, attempts CBT, dan violations }
         '403': { description: Tidak memiliki permission tryout_reports.read }
   /api/v1/reports/tryout/export.xlsx:
     get:
       summary: Unduh laporan tryout XLSX dengan filter sesi dan nama tryout (tryout_reports.read)
-      description: 'Kedua filter digabung AND bila keduanya diisi; permission tryout_reports.read tidak diubah. File memakai worksheet Laporan Tryout: tiga baris judul (HASIL TRYOUT <nama>, NEW PRIMAGAMA YOGYAKARTA, tanggal id-ID huruf besar), header dua level pada baris 6-7 dengan A-E NO|NAMA SISWA|USER|ASAL SEKOLAH|WAKTU, grup per mapel B|S|NILAI dengan nama mapel dinamis, lalu TOTAL|RATA-RATA|RANKING. Data mulai baris 8 diurutkan TOTAL menurun. Catatan kaki memuat KETERANGAN, aturan B/S, kriteria pengurutan, statistik MAKSIMAL|MINIMAL|RATA-RATA per mapel, dan tanda tangan. Tidak memuat kunci jawaban atau pembahasan. Seluruh sesi yang cocok diambil tanpa paginasi 500.'
+      description: 'Kedua filter digabung AND bila keduanya diisi; permission tryout_reports.read tidak diubah. Fase 6w / ADR-019: ekspor dipilih tryout-only lewat dropdown/popup CMS, bukan seluruh sesi. File memakai worksheet Laporan Tryout: baris 1 HASIL TRYOUT <nama> tanpa identitas NEW PRIMAGAMA YOGYAKARTA, tanggal, atau tanda tangan; header dua level pada baris 6-7 dengan A-E NO|NAMA SISWA|USER|ASAL SEKOLAH|WAKTU, grup per mapel B|S|NILAI dengan nama mapel dinamis, lalu TOTAL|RATA-RATA|RANKING. WAKTU = YYYY-MM-DD HH:mm:ss Asia/Jakarta dari submitted_at terakhir per peserta atau - bila belum submit. Data mulai baris 8 diurutkan TOTAL menurun. Catatan kaki memuat KETERANGAN, aturan B/S, kriteria pengurutan, dan statistik MAKSIMAL|MINIMAL|RATA-RATA per mapel. Tidak memuat kunci jawaban atau pembahasan.'
       parameters:
         - { name: session_id, in: query, required: false, schema: { type: integer }, description: 'Batasi ekspor pada satu sesi; tanpa parameter, ekspor semua sesi.' }
+        - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang peserta.' }
         - name: tryout_name
           in: query
           required: false
@@ -659,6 +733,63 @@ paths:
       responses:
         '200': { description: Lembar soal diarsipkan }
         '404': { description: Lembar soal tidak ditemukan }
+  /api/v1/jenjangs:
+    get:
+      summary: Daftar jenjang pendidikan aktif (questions.read atau mapels.manage)
+      parameters:
+        - { name: include_inactive, in: query, schema: { type: boolean, default: false }, description: 'Hanya untuk mapels.manage' }
+      responses:
+        '200': { description: Daftar jenjang beserta participant_count }
+        '403': { description: Tidak memiliki permission questions.read atau mapels.manage }
+    post:
+      summary: Buat jenjang baru dengan kode unik (mapels.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kode, nama]
+              properties:
+                kode: { type: string, pattern: '^[A-Z0-9]{1,8}$', description: 'Disimpan uppercase; seed SD/SMP/SMA.' }
+                nama: { type: string, maxLength: 64 }
+                description: { type: string, maxLength: 1000, nullable: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '201': { description: Jenjang dibuat }
+        '400': { description: Validasi gagal }
+        '403': { description: Tidak memiliki permission mapels.manage }
+        '409': { description: Kode jenjang sudah digunakan }
+  /api/v1/jenjangs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Ubah kode, nama, deskripsi, atau status jenjang (mapels.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kode, nama]
+              properties:
+                kode: { type: string, pattern: '^[A-Z0-9]{1,8}$' }
+                nama: { type: string, maxLength: 64 }
+                description: { type: string, maxLength: 1000, nullable: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '200': { description: Jenjang diperbarui }
+        '400': { description: Validasi gagal }
+        '403': { description: Tidak memiliki permission mapels.manage }
+        '404': { description: Jenjang tidak ditemukan }
+        '409': { description: Kode jenjang sudah digunakan }
+    delete:
+      summary: Hapus jenjang yang belum dipakai peserta (mapels.manage)
+      responses:
+        '200': { description: Jenjang dihapus }
+        '403': { description: Tidak memiliki permission mapels.manage }
+        '404': { description: Jenjang tidak ditemukan }
+        '409': { description: Jenjang masih dipakai peserta }
   /api/v1/mapels:
     get:
       summary: Daftar mapel aktif dengan tryout_count dari tryout_session_mapels (questions.read atau mapels.manage)

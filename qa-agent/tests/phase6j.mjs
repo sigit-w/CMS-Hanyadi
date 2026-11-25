@@ -11,6 +11,7 @@ const searchMarker = `QA6J-${suffix}-PAGE`;
 const questionIds = [];
 let mapelId;
 let sessionId;
+let eventId;
 let manualId;
 let activeSessionIds = [];
 
@@ -63,6 +64,15 @@ before(async () => {
   assert.equal(mapel.status, 201, JSON.stringify(mapel.body));
   mapelId = mapel.body.data.mapel.id;
 
+  const eventName = `QA6J Event ${suffix}`;
+  const event = await query(
+    `INSERT INTO tryout_events (name, slug, starts_at, ends_at)
+     VALUES ($1, $2, now() - interval '1 hour', now() + interval '2 hours')
+     RETURNING id`,
+    [eventName, `qa6j-event-${suffix}`]
+  );
+  eventId = Number(event.rows[0].id);
+
   const active = await query('SELECT id FROM tryout_sessions WHERE is_active');
   activeSessionIds = active.rows.map((row) => row.id);
   if (activeSessionIds.length) {
@@ -75,6 +85,7 @@ after(async () => {
     await query('DELETE FROM tryout_submissions WHERE session_id = $1', [sessionId]);
     await query('DELETE FROM tryout_sessions WHERE id = $1', [sessionId]);
   }
+  if (eventId) await query('DELETE FROM tryout_events WHERE id = $1', [eventId]);
   if (activeSessionIds.length) {
     await query('UPDATE tryout_sessions SET is_active = true WHERE id = ANY($1::bigint[])', [activeSessionIds]);
   }
@@ -272,6 +283,7 @@ test('J-10 submission lama v1 terbaca dan submit baru menyimpan v1', async () =>
     body: JSON.stringify({
       name: `Sesi QA6J ${suffix}`,
       session_date: new Date().toISOString().slice(0, 10),
+      event_id: eventId,
       is_active: true
     })
   });

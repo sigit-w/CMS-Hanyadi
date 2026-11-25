@@ -40,7 +40,8 @@ function clearSessionCookies(res) {
 async function sessionPayload(account, sessionId, tryoutSession = null) {
   if (account.type === ACCOUNT_TYPE_PARTICIPANT) {
     const participant = await query(
-      `SELECT id, coalesce(email, nama) AS username, nama AS display_name
+      `SELECT id, coalesce(username, email, nama) AS username, nama AS display_name,
+              jenjang_kode, jenjang_nama
        FROM tryout_participants WHERE id = $1 AND is_active = true`,
       [account.id]
     );
@@ -107,20 +108,26 @@ function accountTable(type, account) {
 
 async function findLoginAccount(identity) {
   const umum = await query(
-    `SELECT id, nama AS username, nama AS display_name, pin_hash AS password_hash,
-            failed_login_count, locked_until
+    `SELECT id, coalesce(username, nama) AS username, nama AS display_name,
+            pin_hash AS password_hash, failed_login_count, locked_until
      FROM prospektus
-     WHERE is_active = true AND jenis = 'umum' AND lower(nama) = lower($1)`,
+     WHERE is_active = true AND jenis = 'umum'
+       AND (lower(username) = lower($1) OR lower(nama) = lower($1))
+     ORDER BY CASE WHEN lower(username) = lower($1) THEN 0 ELSE 1 END
+     LIMIT 1`,
     [identity]
   );
   if (umum.rows[0]) {
     return { type: ACCOUNT_TYPE_PARTICIPANT, account: { ...umum.rows[0], table: 'prospektus' } };
   }
   const siswa = await query(
-    `SELECT id, email AS username, nama AS display_name, password_hash,
+    `SELECT id, coalesce(username, email) AS username, nama AS display_name, password_hash,
             failed_login_count, locked_until
      FROM siswa
-     WHERE is_active = true AND jenis = 'siswa' AND lower(email) = lower($1)`,
+     WHERE is_active = true AND jenis = 'siswa'
+       AND (lower(username) = lower($1) OR lower(email) = lower($1))
+     ORDER BY CASE WHEN lower(username) = lower($1) THEN 0 ELSE 1 END
+     LIMIT 1`,
     [identity]
   );
   if (siswa.rows[0]) {

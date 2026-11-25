@@ -14,7 +14,7 @@ async function loadAuth(req) {
     `SELECT s.id, s.user_id, s.participant_id, s.tryout_session_id,
             coalesce(s.tryout_event_id, ts.event_id) AS tryout_event_id,
             c.username, c.display_name,
-             coalesce(tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama,
+              coalesce(tp.username, tp.email, tp.nama) AS participant_username, tp.nama AS participant_nama,
              e.slug AS tryout_slug, e.name AS tryout_name, e.ends_at AS tryout_ends_at,
              ts.slug AS tryout_session_slug, ts.name AS tryout_session_name
      FROM auth_sessions s

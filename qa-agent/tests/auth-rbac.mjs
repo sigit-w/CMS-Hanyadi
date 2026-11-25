@@ -211,7 +211,7 @@ test('A-12 daftar permission hanya untuk admin', async () => {
     'questions.create', 'questions.delete', 'questions.read', 'questions.review', 'questions.update', 'questions.write',
     'readiness.write', 'reports.read',
     'roles.create', 'roles.delete', 'roles.manage', 'roles.read', 'roles.update',
-    'tryout.access', 'tryout_reports.read',
+    'tryout.access', 'tryout_questions.key_export', 'tryout_reports.read',
     'tryouts.create', 'tryouts.delete', 'tryouts.manage', 'tryouts.read', 'tryouts.update',
     'users.create', 'users.delete', 'users.password.write', 'users.read', 'users.update'
   ].sort());

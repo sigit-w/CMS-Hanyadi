@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  getJenjangs,
   getProspektus,
   getProspektusDetail,
   getProgramsBelajar,
@@ -15,7 +16,14 @@ import { Dialog } from '@/components/ui/dialog';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-const EMPTY_FORM = { email: '', kelas: '', program_belajar_id: '', wa_orang_tua: '', password: '' };
+const EMPTY_FORM = {
+  email: '', kelas: '', program_belajar_id: '', jenjang_id: '', wa_orang_tua: '', password: ''
+};
+
+function jenjangLabel(prospektus) {
+  if (!prospektus.jenjang_kode) return '-';
+  return `${prospektus.jenjang_kode} — ${prospektus.jenjang_nama || ''}`.trim();
+}
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -27,6 +35,8 @@ function formatDateTime(value) {
 export default function ProspektusManagement() {
   const [items, setItems] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
+  const [jenjangFilter, setJenjangFilter] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,12 +49,14 @@ export default function ProspektusManagement() {
     setLoading(true);
     setError('');
     try {
-      const [prospektusData, programData] = await Promise.all([
-        getProspektus(),
-        getProgramsBelajar()
+      const [prospektusData, programData, jenjangData] = await Promise.all([
+        getProspektus({ jenjang_id: jenjangFilter || null }),
+        getProgramsBelajar(),
+        getJenjangs()
       ]);
       setItems(prospektusData.prospektus);
       setPrograms(programData.programs ?? []);
+      setJenjangs(jenjangData.jenjangs ?? []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -52,12 +64,14 @@ export default function ProspektusManagement() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [jenjangFilter]);
 
   const visible = items.filter((item) => {
     const term = search.trim().toLowerCase();
     return !term
       || item.nama.toLowerCase().includes(term)
+      || (item.username ?? '').toLowerCase().includes(term)
+      || (item.jenjang_kode ?? '').toLowerCase().includes(term)
       || (item.sekolah ?? '').toLowerCase().includes(term);
   });
 
@@ -72,6 +86,7 @@ export default function ProspektusManagement() {
         email: '',
         kelas: '',
         program_belajar_id: '',
+        jenjang_id: prospektus.jenjang_id || '',
         wa_orang_tua: prospektus.wa_orang_tua || '',
         password: ''
       });
@@ -93,6 +108,7 @@ export default function ProspektusManagement() {
         email: form.email.trim().toLowerCase(),
         kelas: Number(form.kelas),
         program_belajar_id: form.program_belajar_id || null,
+        jenjang_id: form.jenjang_id || detail.jenjang_id || null,
         wa_orang_tua: form.wa_orang_tua,
         password: form.password || undefined
       });
@@ -109,32 +125,42 @@ export default function ProspektusManagement() {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Prospektus</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Peserta Tryout</h1>
         <p className="text-sm text-muted-foreground">
-          Data Peserta Umum tersimpan di tabel prospektus. Klik baris untuk melihat detail dan mendaftarkannya sebagai siswa.
+          Klik baris untuk melihat detail dan mendaftarkannya sebagai siswa.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
-      {loading && <Alert>Memuat prospektus…</Alert>}
+      {loading && <Alert>Memuat peserta tryout…</Alert>}
 
       <Card>
         <CardContent className="pt-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama atau sekolah" aria-label="Cari prospektus" onChange={(event) => setSearch(event.target.value)} />
+            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama, username, atau sekolah" aria-label="Cari peserta tryout" onChange={(event) => setSearch(event.target.value)} />
+            <Label htmlFor="prospektus-filter-jenjang">Jenjang</Label>
+            <SelectNative id="prospektus-filter-jenjang" value={jenjangFilter}
+              onChange={(event) => setJenjangFilter(event.target.value)}>
+              <option value="">Semua jenjang</option>
+              {jenjangs.map((jenjang) => (
+                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+              ))}
+            </SelectNative>
             <Badge variant="secondary" className="h-9 px-3">{visible.length} data</Badge>
           </div>
           {visible.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada Peserta Umum di prospektus.</p>
+            <p className="text-sm text-muted-foreground">Belum ada peserta tryout.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Jenjang</TableHead>
                   <TableHead>Sekolah</TableHead>
                   <TableHead>WA Orang Tua</TableHead>
                   <TableHead>Jenis</TableHead>
-                  <TableHead>Masuk Prospektus</TableHead>
+                  <TableHead>Tanggal Masuk</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -150,6 +176,8 @@ export default function ProspektusManagement() {
                       }
                     }}>
                     <TableCell className="font-medium">{item.nama}</TableCell>
+                    <TableCell className="font-mono text-xs">{item.username || '-'}</TableCell>
+                    <TableCell>{jenjangLabel(item)}</TableCell>
                     <TableCell>{item.sekolah || '—'}</TableCell>
                     <TableCell>{item.wa_orang_tua || '—'}</TableCell>
                     <TableCell><Badge variant="secondary">Peserta Umum</Badge></TableCell>
@@ -167,11 +195,13 @@ export default function ProspektusManagement() {
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} title="Detail Prospektus">
+      <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} title="Detail Peserta Tryout">
         {detail && (
           <div className="space-y-4 text-sm">
             <div className="space-y-2">
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detail.nama}</strong></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detail.username || '-'}</strong></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{jenjangLabel(detail)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detail.sekolah || '—'}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detail.wa_orang_tua || '—'}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">PIN</span><strong>{detail.pin_plain || '—'}</strong></div>
@@ -184,7 +214,7 @@ export default function ProspektusManagement() {
             </div>
 
             {detail.bergabung ? (
-              <p className="text-xs text-muted-foreground">Prospektus ini sudah didaftarkan sebagai siswa.</p>
+              <p className="text-xs text-muted-foreground">Peserta ini sudah didaftarkan sebagai siswa.</p>
             ) : (
               <form className="space-y-3 border-t pt-4" onSubmit={handleDaftar}>
                 <p className="font-semibold">Daftarkan sebagai Siswa</p>
@@ -209,6 +239,16 @@ export default function ProspektusManagement() {
                       ))}
                     </SelectNative>
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Jenjang Siswa</Label>
+                  <SelectNative value={form.jenjang_id}
+                    onChange={(event) => setForm({ ...form, jenjang_id: event.target.value })}>
+                    <option value="">Ikuti jenjang peserta</option>
+                    {jenjangs.map((jenjang) => (
+                      <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                    ))}
+                  </SelectNative>
                 </div>
                 <div className="space-y-1.5">
                   <Label>WA Orang Tua</Label>

@@ -123,7 +123,7 @@ test('U-01 migrasi Fase 6o terpasang', async () => {
   assert.equal(nullable.rows[0].is_nullable, 'YES');
 });
 
-test('U-02 admin dapat membuat Peserta Umum dengan PIN 9 digit', async () => {
+test('U-02 admin dapat membuat Peserta Umum dengan PIN 8 sampai 15 digit', async () => {
   const created = await request('/api/v1/participants', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -158,7 +158,7 @@ test('U-03 PIN, WA, Nama, dan duplikat divalidasi', async () => {
   };
   const badPin = await request('/api/v1/participants', {
     method: 'POST', headers,
-    body: JSON.stringify({ ...base, pin: '12345678' })
+    body: JSON.stringify({ ...base, pin: '1234567' })
   });
   assert.equal(badPin.status, 400, JSON.stringify(badPin.body));
 
@@ -229,7 +229,7 @@ test('U-06 marker form Buat Tryout sesuai ADR-007', () => {
     'Nama Tryout', 'Tanggal &amp; Jam Mulai', 'Tanggal &amp; Jam Selesai',
     'Lembar Soal (', 'getQuestionSheets', 'sheet_ids', 'start_at', 'end_at',
     'Tambah Peserta Tryout', 'A. Peserta Didik', 'B. Peserta Umum',
-    "jenis: 'umum'", 'Generate ulang', 'wa_orang_tua', 'participant_ids: selectedParticipants.map(Number)'
+    "jenis: 'umum'", 'Nomor WA Orang Tua', 'wa_orang_tua', 'participant_ids: selectedParticipants.map(Number)'
   ]) {
     assert.ok(source.includes(marker), `Marker CMS "${marker}" tidak ditemukan`);
   }
@@ -255,7 +255,7 @@ test('U-07 tryout tanpa peserta tetap tersimpan dari lembar soal', async () => {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const tryout = created.body.data.tryout;
   tryoutIds.push(tryout.id);
-  assert.equal(tryout.participant_count, undefined);
+  assert.equal(tryout.participant_count, 0);
   assert.equal(tryout.participant_ids.length, 0);
   assert.deepEqual(tryout.sheet_ids.map(Number), [Number(sheetId)]);
   assert.equal(tryout.question_ids.length, questionIds.length);
@@ -296,10 +296,10 @@ test('U-08 payload lama question_ids tetap diterima dan menerima Umum sebagai pe
 test('U-09 aturan login halaman tryout diperbarui', () => {
   const html = readFileSync(TRYOUT_HTML, 'utf8');
   const js = readFileSync(TRYOUT_JS, 'utf8');
-  assert.match(html, /Nama atau Email peserta/);
+  assert.match(html, /Username peserta/);
   assert.match(html, /Password atau PIN/);
   assert.match(html, /styles\.css\?v=14/);
-  assert.match(html, /app\.js\?v=15/);
+  assert.match(html, /app\.js\?v=19/);
   assert.doesNotMatch(html, /type="email"/);
   assert.match(js, /Nama\/email atau PIN\/password salah/);
   assert.match(js, /username: elements\.loginUsername\.value/);
@@ -309,7 +309,7 @@ test('U-09 aturan login halaman tryout diperbarui', () => {
 test('U-10 dokumentasi OpenAPI dan DB diperbarui', () => {
   const openapi = readFileSync(OPENAPI, 'utf8');
   const dbDoc = readFileSync(DB_DOC, 'utf8');
-  for (const marker of ['PIN 9 digit', 'start_at', 'end_at', 'sheet_ids', 'participant_ids']) {
+  for (const marker of ['8–15 digit', 'start_at', 'end_at', 'sheet_ids', 'participant_ids']) {
     assert.ok(openapi.includes(marker), `OpenAPI tidak menyebut ${marker}`);
   }
   for (const marker of [

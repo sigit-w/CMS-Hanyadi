@@ -48,6 +48,45 @@ async function request(path, options = {}) {
   }
 }
 
+async function blobRequest(path) {
+  const fetchBlob = async () => {
+    const response = await fetch(`${BASE}${path}`, { credentials: 'include' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new ApiRequestError(
+        body?.error?.message ?? `HTTP ${response.status}`,
+        response.status,
+        body?.error?.code
+      );
+    }
+    return response.blob();
+  };
+  try {
+    return await fetchBlob();
+  } catch (error) {
+    if (error.status !== 401) throw error;
+    if (!refreshing) {
+      refreshing = rawRequest('/auth/refresh', { method: 'POST' })
+        .finally(() => { refreshing = null; });
+    }
+    try {
+      await refreshing;
+    } catch {
+      throw error;
+    }
+    return fetchBlob();
+  }
+}
+
+function withQuery(path, params = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+  }
+  const search = query.toString();
+  return `${path}${search ? `?${search}` : ''}`;
+}
+
 export const login = (username, password) =>
   rawRequest('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
 export const logout = () => rawRequest('/auth/logout', { method: 'POST' });
@@ -61,6 +100,12 @@ export const createMapel = (payload) =>
 export const updateMapel = (id, payload) =>
   request(`/mapels/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 export const deleteMapel = (id) => request(`/mapels/${id}`, { method: 'DELETE' });
+export const getJenjangs = (params) => request(withQuery('/jenjangs', params ?? {}));
+export const createJenjang = (payload) =>
+  request('/jenjangs', { method: 'POST', body: JSON.stringify(payload) });
+export const updateJenjang = (id, payload) =>
+  request(`/jenjangs/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+export const deleteJenjang = (id) => request(`/jenjangs/${id}`, { method: 'DELETE' });
 export const getProgramsBelajar = () => request('/program-belajar');
 export const getProgramBelajar = (id) => request(`/program-belajar/${id}`);
 export const createProgramBelajar = (payload) =>
@@ -111,14 +156,8 @@ export const createQuestionSheet = (payload) =>
 export const updateQuestionSheet = (id, payload) =>
   request(`/question-sheets/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 export const deleteQuestionSheet = (id) => request(`/question-sheets/${id}`, { method: 'DELETE' });
-export const getSiswa = (params) => {
-  const query = new URLSearchParams(params).toString();
-  return request(`/siswa${query ? `?${query}` : ''}`);
-};
-export const getParticipants = (params) => {
-  const query = new URLSearchParams(params).toString();
-  return request(`/participants${query ? `?${query}` : ''}`);
-};
+export const getSiswa = (params) => request(withQuery('/siswa', params));
+export const getParticipants = (params) => request(withQuery('/participants', params));
 export const getParticipantDetail = (id) => request(`/participants/${id}/detail`);
 export const createParticipant = (payload) =>
   request('/participants', { method: 'POST', body: JSON.stringify(payload) });
@@ -127,10 +166,7 @@ export const updateParticipant = (id, payload) =>
 export const deleteParticipant = (id) => request(`/participants/${id}`, { method: 'DELETE' });
 export const markParticipantProspek = (id) =>
   request(`/participants/${id}/prospek`, { method: 'POST' });
-export const getProspektus = (params) => {
-  const query = new URLSearchParams(params).toString();
-  return request(`/prospektus${query ? `?${query}` : ''}`);
-};
+export const getProspektus = (params) => request(withQuery('/prospektus', params));
 export const getProspektusDetail = (id) => request(`/prospektus/${id}`);
 export const registerProspektus = (id, payload) =>
   request(`/prospektus/${id}/daftar`, { method: 'POST', body: JSON.stringify(payload) });
@@ -143,6 +179,8 @@ export const getTryouts = () => request('/tryouts');
 export const getTryout = (id) => request(`/tryouts/${id}`);
 export const createTryout = (payload) =>
   request('/tryouts', { method: 'POST', body: JSON.stringify(payload) });
+export const updateTryout = (id, payload) =>
+  request(`/tryouts/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 export const updateTryoutCbt = (id, payload) =>
   request(`/tryouts/${id}/cbt`, { method: 'PATCH', body: JSON.stringify(payload) });
 export const deleteTryout = (id) => request(`/tryouts/${id}`, { method: 'DELETE' });
@@ -158,6 +196,9 @@ export const getTryoutSessions = (params = {}) => {
   const query = new URLSearchParams();
   if (params.search !== undefined && params.search !== null) query.set('search', String(params.search));
   if (params.limit !== undefined && params.limit !== null) query.set('limit', String(params.limit));
+  if (params.jenjang_id !== undefined && params.jenjang_id !== null && params.jenjang_id !== '') {
+    query.set('jenjang_id', String(params.jenjang_id));
+  }
   const search = query.toString();
   return request(`/tryout-sessions${search ? `?${search}` : ''}`);
 };
@@ -166,24 +207,18 @@ export const createTryoutSession = (payload) =>
   request('/tryout-sessions', { method: 'POST', body: JSON.stringify(payload) });
 export const activateTryoutSession = (id) =>
   request(`/tryout-sessions/${id}/activate`, { method: 'PATCH' });
-export const getTryoutReport = (sessionId) =>
-  request(`/reports/tryout${sessionId ? `?session_id=${sessionId}` : ''}`);
-export async function downloadTryoutReportExcel(sessionId, tryoutName) {
-  const params = new URLSearchParams();
-  if (sessionId) params.set('session_id', sessionId);
-  if (tryoutName) params.set('tryout_name', tryoutName);
-  const query = params.toString();
-  const response = await fetch(`${BASE}/reports/tryout/export.xlsx${query ? `?${query}` : ''}`, { credentials: 'include' });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new ApiRequestError(
-      body?.error?.message ?? `HTTP ${response.status}`,
-      response.status,
-      body?.error?.code
-    );
-  }
-  return response.blob();
-}
+export const getTryoutReport = (sessionId, jenjangId) =>
+  request(withQuery('/reports/tryout', { session_id: sessionId, jenjang_id: jenjangId }));
+export const downloadTryoutReportExcel = (sessionId, tryoutName, jenjangId) =>
+  blobRequest(withQuery('/reports/tryout/export.xlsx', {
+    session_id: sessionId,
+    tryout_name: tryoutName,
+    jenjang_id: jenjangId
+  }));
+export const downloadTryoutQuestions = (tryoutId) =>
+  blobRequest(`/tryouts/${tryoutId}/questions.zip`);
+export const downloadTryoutQuestionsWithKeys = (tryoutId) =>
+  blobRequest(`/tryouts/${tryoutId}/questions-with-keys.zip`);
 export const getRoles = () => request('/roles');
 export const getPermissions = () => request('/permissions');
 export const updateRolePermissions = (id, permissions) =>

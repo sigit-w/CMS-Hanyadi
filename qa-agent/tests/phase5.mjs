@@ -204,8 +204,9 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
     'Kelola Peserta',
     'Detail Peserta Tryout',
     'Peserta Umum',
-    'PIN (9 digit)',
-    'Generate ulang',
+    'Nomor WA Orang Tua',
+    'Unduh Soal + Kunci',
+    'Ubah Tryout',
     'Pilih semua',
     'Ubah Password'
   ]) {
@@ -215,6 +216,23 @@ test('P5-14 halaman/menu CMS tetap terpisah', () => {
     'Section perbandingan jawaban tidak boleh tampil di laporan tryout');
   assert.ok(!bundle.includes('Kelola Siswa Tryout'),
     'Label lama Kelola Siswa Tryout tidak boleh tampil lagi');
+
+  const apiSource = readFileSync('/opt/virtual-office-bank-soal/frontend-agent/src/api.js', 'utf8');
+  for (const helper of [
+    "export const getSiswa = (params) => request(withQuery('/siswa', params));",
+    "export const getParticipants = (params) => request(withQuery('/participants', params));",
+    "export const getProspektus = (params) => request(withQuery('/prospektus', params));"
+  ]) {
+    assert.ok(apiSource.includes(helper), `Helper API tidak memakai withQuery: ${helper}`);
+  }
+  assert.ok(apiSource.includes('Object.entries(params ?? {})'),
+    'withQuery harus aman saat dipanggil tanpa parameter');
+
+  const comboboxSource = readFileSync('/opt/virtual-office-bank-soal/frontend-agent/src/components/ui/combobox.jsx', 'utf8');
+  assert.ok(comboboxSource.includes('setOpen(false)'), 'Combobox harus menutup opsi setelah dipilih');
+  assert.ok(comboboxSource.includes('onClick={() => setOpen(true)}'), 'Combobox harus bisa dibuka ulang setelah dipilih');
+  assert.ok(comboboxSource.includes('activeQuery'), 'Combobox harus menampilkan semua opsi saat dibuka ulang');
+  assert.ok(comboboxSource.includes('onChange(event.target.value)'), 'Combobox harus meneruskan teks yang diketik');
 });
 
 test('P5-13 soal baru langsung tampil tanpa pengaktifan readiness', async () => {

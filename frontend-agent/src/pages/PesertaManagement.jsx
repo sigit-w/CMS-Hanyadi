@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   createParticipant,
   deleteParticipant,
+  getJenjangs,
   getParticipantDetail,
   getProgramsBelajar,
   getSiswa,
@@ -20,20 +21,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 const EMPTY_FORM = {
   nama: '', email: '', kelas: '', sekolah: '',
-  program_belajar_id: '', wa_orang_tua: '', password: ''
+  program_belajar_id: '', jenjang_id: '', wa_orang_tua: '', password: ''
 };
 const EMPTY_PASSWORD_FORM = { password: '', confirm: '' };
 const WA_PATTERN = /^\+?[0-9][0-9 -]{6,18}$/;
 const EMPTY_EDIT_VALUES = {
-  nama: '', email: '', kelas: '', sekolah: '', program_belajar_id: '', wa_orang_tua: ''
+  nama: '', email: '', kelas: '', sekolah: '', program_belajar_id: '', jenjang_id: '', wa_orang_tua: ''
 };
 
-function defaultParticipantPassword(nama) {
-  const firstName = nama.trim().split(/\s+/)[0] || '';
-  const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const yy = String(now.getFullYear() % 100).padStart(2, '0');
-  return `${firstName}@${mm}${yy}`;
+function waDigits(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits.length >= 8 && digits.length <= 15 ? digits : '';
+}
+
+function defaultParticipantPassword(wa) {
+  return waDigits(wa);
 }
 
 function programName(programs, id) {
@@ -43,6 +45,8 @@ function programName(programs, id) {
 export default function PesertaManagement() {
   const [participants, setParticipants] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
+  const [jenjangFilter, setJenjangFilter] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
   const [passwordEdited, setPasswordEdited] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -55,15 +59,19 @@ export default function PesertaManagement() {
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const [participantData, programData] = await Promise.all([
-      getSiswa(),
-      getProgramsBelajar()
+    const [participantData, programData, jenjangData] = await Promise.all([
+      getSiswa({ jenjang_id: jenjangFilter || null }),
+      getProgramsBelajar(),
+      getJenjangs()
     ]);
     setParticipants(participantData.siswa ?? []);
     setPrograms(programData.programs ?? []);
+    setJenjangs(jenjangData.jenjangs ?? []);
   }
 
-  useEffect(() => { load().catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    load().catch((e) => setError(e.message));
+  }, [jenjangFilter]);
 
   async function run(action, message) {
     setError('');
@@ -149,7 +157,7 @@ export default function PesertaManagement() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Kelola Siswa</h1>
         <p className="text-sm text-muted-foreground">
-          Buat, ubah, dan nonaktifkan siswa tryout lengkap dengan program belajar, kelas, sekolah, dan nomor WA orang tua. Siswa login memakai email dan password yang dibuat di sini.
+          Buat, ubah, dan nonaktifkan siswa tryout lengkap dengan jenjang, username, program belajar, kelas, sekolah, dan nomor WA orang tua. Siswa login memakai username dan password yang dibuat di sini; email lama tetap diterima.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
@@ -159,7 +167,7 @@ export default function PesertaManagement() {
         <CardHeader>
           <CardTitle>Tambah Siswa</CardTitle>
           <CardDescription>
-            Default password: nama depan@mmyy. Bisa diganti dengan password lain (min. 6 karakter).
+            Password awal mengikuti digit nomor WA orang tua. Bisa diganti dengan password lain (min. 6 karakter).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -168,14 +176,7 @@ export default function PesertaManagement() {
               <Label htmlFor="siswa-nama">Nama Siswa</Label>
               <Input id="siswa-nama" required maxLength={128} value={form.nama}
                 placeholder="Nama lengkap siswa"
-                onChange={(e) => {
-                  const nama = e.target.value;
-                  setForm((current) => ({
-                    ...current,
-                    nama,
-                    password: passwordEdited ? current.password : defaultParticipantPassword(nama)
-                  }));
-                }} />
+                onChange={(e) => setForm({ ...form, nama: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="siswa-email">Email Siswa</Label>
@@ -184,6 +185,16 @@ export default function PesertaManagement() {
                 onChange={(e) => setForm({ ...form, email: e.target.value.toLowerCase() })} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="siswa-jenjang">Jenjang</Label>
+                <SelectNative id="siswa-jenjang" required value={form.jenjang_id}
+                  onChange={(e) => setForm({ ...form, jenjang_id: e.target.value })}>
+                  <option value="">Pilih jenjang</option>
+                  {jenjangs.map((jenjang) => (
+                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                  ))}
+                </SelectNative>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="siswa-program">Program Belajar</Label>
                 <SelectNative id="siswa-program" required value={form.program_belajar_id}
@@ -200,7 +211,14 @@ export default function PesertaManagement() {
                 <Label htmlFor="siswa-wa">No. WA Orang Tua</Label>
                 <Input id="siswa-wa" required type="tel" maxLength={20} pattern={WA_PATTERN.source}
                   value={form.wa_orang_tua} placeholder="Contoh: 081234567890"
-                  onChange={(e) => setForm({ ...form, wa_orang_tua: e.target.value })} />
+                  onChange={(e) => {
+                    const wa_orang_tua = e.target.value;
+                    setForm((current) => ({
+                      ...current,
+                      wa_orang_tua,
+                      password: passwordEdited ? current.password : defaultParticipantPassword(wa_orang_tua)
+                    }));
+                  }} />
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -226,7 +244,7 @@ export default function PesertaManagement() {
                   setForm({ ...form, password: e.target.value });
                 }} />
               <p className="text-xs text-muted-foreground">
-                Default: {defaultParticipantPassword(form.nama) || 'nama_depan@mmyy'} — bisa diganti.
+                Default: angka WA orang tua — bisa diganti.
               </p>
             </div>
             <Button type="submit" disabled={saving}>Tambah Siswa</Button>
@@ -242,6 +260,17 @@ export default function PesertaManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <Label htmlFor="siswa-filter-jenjang">Jenjang</Label>
+            <SelectNative id="siswa-filter-jenjang" className="max-w-xs" value={jenjangFilter}
+              onChange={(e) => setJenjangFilter(e.target.value)}>
+              <option value="">Semua jenjang</option>
+              {jenjangs.map((jenjang) => (
+                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+              ))}
+            </SelectNative>
+            <Badge variant="secondary">{participants.length} data</Badge>
+          </div>
           {participants.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada siswa.</p>
           ) : (
@@ -249,13 +278,14 @@ export default function PesertaManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama Siswa</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Jenjang</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Program Belajar</TableHead>
                   <TableHead>WA Orang Tua</TableHead>
                   <TableHead>Kelas</TableHead>
                   <TableHead>Sekolah</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Submission</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -267,6 +297,20 @@ export default function PesertaManagement() {
                         <Input value={editValues.nama} maxLength={128}
                           onChange={(e) => setEditValues({ ...editValues, nama: e.target.value })} />
                       ) : participant.nama}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{participant.username || '-'}</TableCell>
+                    <TableCell>
+                      {editingId === participant.id ? (
+                        <SelectNative value={editValues.jenjang_id}
+                          onChange={(e) => setEditValues({ ...editValues, jenjang_id: e.target.value })}>
+                          <option value="">Tanpa jenjang</option>
+                          {jenjangs.map((jenjang) => (
+                            <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                          ))}
+                        </SelectNative>
+                      ) : participant.jenjang_kode
+                        ? `${participant.jenjang_kode} — ${participant.jenjang_nama || ''}`.trim()
+                        : '-'}
                     </TableCell>
                     <TableCell>
                       {editingId === participant.id ? (
@@ -311,7 +355,6 @@ export default function PesertaManagement() {
                         {participant.is_active ? 'Aktif' : 'Nonaktif'}
                       </Badge>
                     </TableCell>
-                    <TableCell>{participant.submission_count}</TableCell>
                     <TableCell className="w-72">
                       <div className="flex flex-wrap gap-2">
                         {passwordId === participant.id ? (
@@ -356,6 +399,7 @@ export default function PesertaManagement() {
                                   kelas: participant.kelas || '',
                                   sekolah: participant.sekolah || '',
                                   program_belajar_id: participant.program_belajar_id ?? '',
+                                  jenjang_id: participant.jenjang_id ?? '',
                                   wa_orang_tua: participant.wa_orang_tua || ''
                                 });
                               }}>Ubah</Button>
@@ -384,6 +428,8 @@ export default function PesertaManagement() {
         {detailParticipant && (
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detailParticipant.nama}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detailParticipant.username || '-'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{detailParticipant.jenjang_kode ? `${detailParticipant.jenjang_kode} — ${detailParticipant.jenjang_nama || ''}`.trim() : '-'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span>{detailParticipant.email || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Kelas</span><span>{detailParticipant.kelas || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detailParticipant.sekolah || '—'}</span></div>

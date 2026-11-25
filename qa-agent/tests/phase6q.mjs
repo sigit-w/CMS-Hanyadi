@@ -156,7 +156,9 @@ test('QP-03 lampir siswa existing ke tryout tersimpan secara idempoten', async (
   assert.deepEqual(repeated.body.data.participant_ids.map(String), [String(siswaId)]);
 
   const empty = await attach([]);
-  assert.equal(empty.status, 400);
+  assert.equal(empty.status, 200, JSON.stringify(empty.body));
+  assert.deepEqual(empty.body.data.added_ids, []);
+  assert.deepEqual(empty.body.data.participant_ids.map(String), [String(siswaId)]);
   const missing = await attach([999999999]);
   assert.equal(missing.status, 400);
   const missingTryout = await attach([siswaId], 999999999);

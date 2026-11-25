@@ -5,11 +5,17 @@ import { ApiError, asyncHandler } from './errors.js';
 import { parseId, requireMapelCode, requireMapelCodes } from './validate.js';
 import { authorize } from './authMiddleware.js';
 import { normalizeTryoutSlug, generateTryoutSlug } from './auth.js';
+import {
+  buildQuestionsZip,
+  loadSessionExportData,
+  zipResponse
+} from './tryoutExport.js';
 
 export const tryoutRouter = Router();
 
 const nowMeta = () => ({ ts: new Date().toISOString() });
 const adminOnly = authorize('tryouts.manage');
+const keyExportOnly = authorize('tryout_questions.key_export');
 
 function toBool(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
@@ -353,6 +359,28 @@ async function sessionIdsFor(run, id) {
   return ids.includes(id) && eventId !== id ? [id] : ids;
 }
 
+async function exportTryoutQuestions(id, includeKeys) {
+  const eventId = await eventIdFor(query, id);
+  if (eventId === null) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+  const event = await loadEvent(null, eventId, id);
+  const sessionIds = event.sessions.map((session) => Number(session.id));
+  if (sessionIds.length === 0) {
+    throw new ApiError('NOT_FOUND', 'Tryout tidak memiliki sesi untuk diekspor', 404);
+  }
+  const sessionData = await loadSessionExportData(query, sessionIds);
+  const buffer = buildQuestionsZip({
+    event: {
+      name: event.name,
+      slug: event.slug,
+      starts_at: event.starts_at,
+      ends_at: event.ends_at
+    },
+    sessionData,
+    includeKeys
+  });
+  return { event, buffer };
+}
+
 async function resolveParticipantIds(client, rawIds) {
   const ids = optionalIds(rawIds, 'participant_ids');
   const resolved = [];
@@ -430,6 +458,49 @@ tryoutRouter.get('/tryouts/:id/sessions', adminOnly, asyncHandler(async (req, re
     data: { tryout_event_id: event.event_id, sessions: event.sessions },
     meta: nowMeta()
   });
+}));
+
+tryoutRouter.patch('/tryouts/:id', adminOnly, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const body = req.body ?? {};
+  const allowed = new Set(['name', 'starts_at', 'ends_at']);
+  const disallowed = Object.keys(body).filter((key) => !allowed.has(key));
+  if (disallowed.length > 0) {
+    throw new ApiError(
+      'VALIDATION_ERROR',
+      `Hanya nama dan jadwal yang dapat diubah; field tidak didukung: ${disallowed.join(', ')}`
+    );
+  }
+  const name = requireName(body.name);
+  const startsAt = requireTimestamp(body.starts_at, 'starts_at');
+  const endsAt = requireTimestamp(body.ends_at, 'ends_at');
+  if (Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw new ApiError('VALIDATION_ERROR', 'ends_at harus setelah starts_at');
+  }
+  const tryout = await withTransaction(async (client) => {
+    const found = await client.query('SELECT id FROM tryout_events WHERE id = $1', [id]);
+    if (!found.rows[0]) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
+    await client.query(
+      `UPDATE tryout_events
+          SET name = $2, starts_at = $3, ends_at = $4, updated_at = now()
+        WHERE id = $1`,
+      [id, name, startsAt, endsAt]
+    );
+    return loadEvent(client, id, id);
+  });
+  res.json({ ok: true, data: { tryout }, meta: nowMeta() });
+}));
+
+tryoutRouter.get('/tryouts/:id/questions.zip', adminOnly, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const { event, buffer } = await exportTryoutQuestions(id, false);
+  return zipResponse(res, buffer, event, false);
+}));
+
+tryoutRouter.get('/tryouts/:id/questions-with-keys.zip', keyExportOnly, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const { event, buffer } = await exportTryoutQuestions(id, true);
+  return zipResponse(res, buffer, event, true);
 }));
 
 tryoutRouter.patch('/tryouts/:id/cbt', adminOnly, asyncHandler(async (req, res) => {

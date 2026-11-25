@@ -18,8 +18,10 @@ const FORBIDDEN_MARKERS = [
 ];
 const REQUIRED_MARKERS = [
   'Filter Laporan Tryout',
-  'Cari tryout, sesi, atau mapel',
+  'Cari tryout',
   'Semua sesi',
+  'Jenjang',
+  'Semua jenjang',
   'Cari/Filter',
   'Nama tryout',
   'Unduh Excel'
@@ -190,16 +192,18 @@ test('Q6V-02 pencarian sesi server-side, wildcard, batas limit, dan marker filte
   const source = readFileSync(REPORT_FILE, 'utf8');
   assert.match(source, /setTimeout\(\(\) => setDebouncedSearch\(search\), \d+\)/);
   assert.match(source, /clearTimeout\(timer\)/);
-  assert.match(source, /getTryoutSessions\(\{ search: debouncedSearch \}\)/);
+  assert.match(source, /getTryoutSessions\(\{ search: debouncedSearch, jenjang_id: jenjangId \|\| null \}\)/);
+  assert.match(source, /getTryoutSessions\(\{ jenjang_id: jenjangId \|\| null \}\)/);
   assert.match(source, /const \[selectedSessionId, setSelectedSessionId\]/);
   assert.match(source, /const \[appliedSessionId, setAppliedSessionId\]/);
+  assert.match(source, /const \[jenjangId, setJenjangId\]/);
   assert.match(source, /setAppliedSessionId\(selectedSessionId\)/);
   assert.match(source, /value=\{selectedSessionId\}/);
-  assert.match(source, /getTryoutReport\(appliedSessionId \|\| null\)/);
-  assert.match(source, /}, \[appliedSessionId\]\);/);
+  assert.match(source, /getTryoutReport\(appliedSessionId \|\| null, jenjangId \|\| null\)/);
+  assert.match(source, /}, \[appliedSessionId, jenjangId\]\);/);
   assert.doesNotMatch(source, /getTryoutReport\(selectedSessionId/);
-  assert.match(source, /downloadTryoutReportExcel\(appliedSessionId \|\| null, name\)/);
-  assert.match(source, /session\.event_name, session\.name, session\.mapel_name/);
+  assert.match(source, /downloadTryoutReportExcel\(\s*appliedSessionId \|\| null,\s*name \|\| null,\s*jenjangId \|\| null\s*\)/);
+  assert.match(source, /return session\.event_name \|\| session\.name \|\| '—';/);
 });
 
 test('Q6V-03 filter tryout_name, AND dengan session_id, dan ekspor semua', async () => {
@@ -239,8 +243,6 @@ test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', a
   const { sheet } = await exportXlsx('?tryout_name=TKA');
 
   assert.match(cellText(sheet.getCell(1, 1)), /^HASIL TRYOUT .*TKA/);
-  assert.equal(cellText(sheet.getCell(2, 1)), 'NEW PRIMAGAMA YOGYAKARTA');
-  assert.match(cellText(sheet.getCell(3, 1)), /^\S+, \d{1,2} \p{L}+ \d{4}$/u);
 
   const fixedHeaders = ['NO', 'NAMA SISWA', 'USER', 'ASAL SEKOLAH', 'WAKTU'];
   const merges = new Set(sheet.model.merges);
@@ -299,7 +301,7 @@ test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', a
   dataRows.forEach((row, index) => {
     assert.equal(Number(row.getCell(1).value), index + 1);
     assert.equal(cellText(row.getCell(4)), 'SD KW');
-    assert.ok(Number.isFinite(Number(row.getCell(5).value)));
+    assert.match(cellText(row.getCell(5)), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     let total = 0;
     groupColumns.forEach((start, groupIndex) => {
       const correct = Number(row.getCell(start).value);
@@ -343,7 +345,6 @@ test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', a
   });
 
   const texts = allText(sheet);
-  assert.ok(texts.some((text) => text.startsWith('Yogyakarta, ')));
-  assert.ok(texts.includes('New Primagama Yogyakarta'));
+  assert.ok(!texts.some((text) => /primagama|^Yogyakarta,/i.test(text)), 'XLSX masih memuat identitas atau tanggal');
   assert.ok(!texts.some((text) => /kunci|pembahasan|jawaban/i.test(text)), 'XLSX memuat kunci atau pembahasan');
 });

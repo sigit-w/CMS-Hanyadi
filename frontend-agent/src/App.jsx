@@ -47,7 +47,7 @@ const NAV_GROUPS = [
     label: 'Manajemen Tryout',
     items: [
       { path: '/tryouts', hash: '#/tryouts', label: 'Buat/Daftar Tryout', permission: 'tryouts.manage', icon: ClipboardList },
-      { path: '/tryouts/prospektus', hash: '#/tryouts/prospektus', label: 'Prospektus', permission: 'tryouts.manage', icon: Users },
+      { path: '/tryouts/prospektus', hash: '#/tryouts/prospektus', label: 'Peserta Tryout', permission: 'tryouts.manage', icon: Users },
       { path: '/reports/tryout', hash: '#/reports/tryout', label: 'Laporan Tryout', permission: 'tryout_reports.read', icon: BarChart3 }
     ]
   },
@@ -63,7 +63,7 @@ const NAV_GROUPS = [
     key: 'setting',
     label: 'Setting',
     items: [
-      { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel', permission: 'mapels.manage', icon: BookOpen },
+      { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel & Jenjang', permission: 'mapels.manage', icon: BookOpen },
       { path: '/roles', hash: '#/roles', label: 'Kelola Role', permission: 'roles.manage', icon: Shield },
       { path: '/reports/system', hash: '#/reports/system', label: 'Laporan Sistem', permission: 'reports.read', icon: FileText }
     ]

@@ -31,6 +31,10 @@ let textQuestionId;
 let imageFilename;
 const questionIds = [];
 
+function jakartaInput(offsetHours = 0) {
+  return new Date(Date.now() + (7 + offsetHours) * 60 * 60 * 1000).toISOString().slice(0, 16);
+}
+
 function mcPayload(stem) {
   return {
     stem,
@@ -166,8 +170,8 @@ test('U-03 soal tanpa gambar dibuat untuk pengujian penilaian server', async () 
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Grading ${suffix}`,
-      start_at: new Date(Date.now() + 60_000).toISOString().slice(0, 16).replace('T', ' '),
-      end_at: new Date(Date.now() + 3_600_000).toISOString().slice(0, 16).replace('T', ' '),
+      start_at: jakartaInput(1),
+      end_at: jakartaInput(3),
       mapel_code: 'MTKA',
       question_ids: [imageQuestionId, textQuestionId],
       participant_ids: [participantId],

@@ -21,6 +21,7 @@ const sessionIds = [];
 let participantHeaders;
 let viewerHeaders;
 let sessionId;
+let eventId;
 let qaTryout;
 let participantId;
 
@@ -111,10 +112,24 @@ before(async () => {
   await createQuestion(`QA sesi benar ${suffix}`);
   await createQuestion(`QA sesi salah ${suffix}`);
 
+  const eventName = `QA TR Event ${suffix}`;
+  const event = await query(
+    `INSERT INTO tryout_events (name, slug, starts_at, ends_at)
+     VALUES ($1, $2, now() - interval '1 hour', now() + interval '2 hours')
+     RETURNING id`,
+    [eventName, `qa-tr-event-${suffix}`]
+  );
+  eventId = Number(event.rows[0].id);
+
   const created = await request(BACKEND, '/api/v1/tryout-sessions', {
     method: 'POST',
     headers: await adminHeaders(),
-    body: JSON.stringify({ name: `Sesi QA ${suffix}`, session_date: sessionDate, is_active: true })
+    body: JSON.stringify({
+      name: `Sesi QA ${suffix}`,
+      session_date: sessionDate,
+      event_id: eventId,
+      is_active: true
+    })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   sessionId = created.body.data.session.id;
@@ -148,6 +163,7 @@ after(async () => {
     await query('DELETE FROM auth_sessions WHERE tryout_session_id = ANY($1::bigint[])', [sessionIds]);
     await query('DELETE FROM tryout_sessions WHERE id = ANY($1::bigint[])', [sessionIds]);
   }
+  if (eventId) await query('DELETE FROM tryout_events WHERE id = $1', [eventId]);
   await query(
     `UPDATE tryout_sessions SET is_active = true
      WHERE id = (SELECT min(id) FROM tryout_sessions)
@@ -171,7 +187,12 @@ test('TR-01 permission tryout_reports.read mengatur akses laporan dan aktivasi s
   const created = await request(BACKEND, '/api/v1/tryout-sessions', {
     method: 'POST',
     headers: await adminHeaders(),
-    body: JSON.stringify({ name: `Sesi QA cadangan ${suffix}`, session_date: sessionDate, is_active: false })
+    body: JSON.stringify({
+      name: `Sesi QA cadangan ${suffix}`,
+      session_date: sessionDate,
+      event_id: eventId,
+      is_active: false
+    })
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const temporaryId = created.body.data.session.id;
@@ -329,12 +350,16 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
 });
 
 test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () => {
+  const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const endsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
   const created = await request(BACKEND, '/api/v1/tryouts', {
     method: 'POST',
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO aktif QA ${suffix}`,
       session_date: sessionDate,
+      start_at: startsAt,
+      end_at: endsAt,
       mapel_code: 'MTKA',
       question_ids: [questionIds[0]],
       participant_ids: [participantId],
@@ -348,7 +373,7 @@ test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () =>
   const boundLogin = await participantLogin(
     participantEmail, password, activeTryout.slug
   );
-  assert.equal(boundLogin.status, 200);
+  assert.equal(boundLogin.status, 200, await boundLogin.clone().text());
   const boundHeaders = { Cookie: cookieHeader(boundLogin) };
 
   const list = await request(BACKEND, '/api/v1/tryout/questions?limit=100', {

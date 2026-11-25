@@ -25,6 +25,8 @@ const GROUP_LABELS = {
   program_belajar: 'Program Belajar'
 };
 const permissionCodes = (role) => role?.permissions ?? [];
+const removedRoleCodes = new Set(['editor', 'validator', 'viewer']);
+const visibleRoles = (roles) => roles.filter((role) => !removedRoleCodes.has(role.code));
 
 export default function RoleManagement() {
   const [roles, setRoles] = useState([]);
@@ -40,8 +42,9 @@ export default function RoleManagement() {
 
   async function load() {
     const [roleData, permissionData] = await Promise.all([getRoles(), getPermissions()]);
-    setRoles(roleData.roles); setPermissions(permissionData.permissions);
-    return roleData.roles;
+    const roles = visibleRoles(roleData.roles);
+    setRoles(roles); setPermissions(permissionData.permissions);
+    return roles;
   }
 
   useEffect(() => {

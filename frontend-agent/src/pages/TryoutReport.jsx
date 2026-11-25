@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   downloadTryoutReportExcel,
+  getJenjangs,
   getTryoutReport,
   getTryoutSessions
 } from '../api.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Combobox } from '@/components/ui/combobox';
+import { Dialog } from '@/components/ui/dialog';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
@@ -25,18 +27,34 @@ function displayDateTime(value) {
   });
 }
 
-function sessionLabel(session) {
-  return [session.event_name, session.name, session.mapel_name].filter(Boolean).join(' · ') || '—';
+function tryoutLabel(session) {
+  return session.event_name || session.name || '—';
+}
+
+function uniqueTryouts(sessions) {
+  const seen = new Set();
+  return sessions
+    .map((session) => tryoutLabel(session))
+    .filter((name) => {
+      if (!name || name === '—' || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    })
+    .sort((a, b) => String(a).localeCompare(String(b), 'id-ID'))
+    .map((name) => ({ value: name, label: name }));
 }
 
 export default function TryoutReport() {
   const [filterSessions, setFilterSessions] = useState([]);
   const [reportSessions, setReportSessions] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [appliedSessionId, setAppliedSessionId] = useState('');
+  const [jenjangId, setJenjangId] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [tryoutName, setTryoutName] = useState('');
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadTryout, setDownloadTryout] = useState('');
   const [report, setReport] = useState({ summary: [], attempts: [], violations: [] });
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -44,11 +62,15 @@ export default function TryoutReport() {
 
   useEffect(() => {
     let active = true;
-    getTryoutSessions()
-      .then((data) => { if (active) setReportSessions(data.sessions ?? []); })
+    Promise.all([getTryoutSessions({ jenjang_id: jenjangId || null }), getJenjangs()])
+      .then(([sessions, jenjangData]) => {
+        if (!active) return;
+        setReportSessions(sessions.sessions ?? []);
+        setJenjangs(jenjangData.jenjangs ?? []);
+      })
       .catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, []);
+  }, [jenjangId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 350);
@@ -57,15 +79,15 @@ export default function TryoutReport() {
 
   useEffect(() => {
     let active = true;
-    getTryoutSessions({ search: debouncedSearch })
+    getTryoutSessions({ search: debouncedSearch, jenjang_id: jenjangId || null })
       .then((data) => { if (active) setFilterSessions(data.sessions ?? []); })
       .catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, [debouncedSearch]);
+  }, [debouncedSearch, jenjangId]);
 
   useEffect(() => {
     let active = true;
-    getTryoutReport(appliedSessionId || null)
+    getTryoutReport(appliedSessionId || null, jenjangId || null)
       .then((data) => {
         if (!active) return;
         setReport({
@@ -76,14 +98,18 @@ export default function TryoutReport() {
       })
       .catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, [appliedSessionId]);
+  }, [appliedSessionId, jenjangId]);
 
   async function handleDownload() {
     setError('');
     setDownloading(true);
     try {
-      const name = tryoutName.trim();
-      const blob = await downloadTryoutReportExcel(appliedSessionId || null, name);
+      const name = downloadTryout.trim();
+      const blob = await downloadTryoutReportExcel(
+        appliedSessionId || null,
+        name || null,
+        jenjangId || null
+      );
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -92,6 +118,7 @@ export default function TryoutReport() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      setDownloadOpen(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -103,12 +130,19 @@ export default function TryoutReport() {
     setOpenViolations((current) => ({ ...current, [id]: !current[id] }));
   }
 
-  const optionSessions = [...filterSessions];
-  if (selectedSessionId && !optionSessions.some((session) => session.id === selectedSessionId)) {
+  const tryoutOptions = useMemo(() => uniqueTryouts(reportSessions), [reportSessions]);
+  const sessionOptions = useMemo(() => {
+    const options = filterSessions.map((session) => ({
+      value: session.id,
+      label: tryoutLabel(session)
+    }));
     const selected = filterSessions.find((session) => session.id === selectedSessionId)
       ?? reportSessions.find((session) => session.id === selectedSessionId);
-    if (selected) optionSessions.unshift(selected);
-  }
+    if (selected && !options.some((option) => option.value === selected.id)) {
+      options.unshift({ value: selected.id, label: tryoutLabel(selected) });
+    }
+    return options;
+  }, [filterSessions, reportSessions, selectedSessionId]);
 
   const groupedSessions = reportSessions.map((session) => ({
     ...session,
@@ -130,20 +164,34 @@ export default function TryoutReport() {
       <Card>
         <CardHeader><CardTitle className="text-base">Filter Laporan Tryout</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] md:items-end">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
             <div className="space-y-1.5">
               <Label htmlFor="tryout-report-search">Cari tryout</Label>
-              <Input id="tryout-report-search" value={search}
-                placeholder="Cari tryout, sesi, atau mapel"
-                onChange={(event) => setSearch(event.target.value)} />
+              <Combobox
+                id="tryout-report-search"
+                value={search}
+                onChange={setSearch}
+                options={tryoutOptions}
+                placeholder="Cari tryout"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tryout-report-jenjang">Jenjang</Label>
+              <SelectNative id="tryout-report-jenjang" value={jenjangId}
+                onChange={(event) => setJenjangId(event.target.value)}>
+                <option value="">Semua jenjang</option>
+                {jenjangs.map((jenjang) => (
+                  <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                ))}
+              </SelectNative>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="tryout-report-session">Sesi tryout</Label>
               <SelectNative id="tryout-report-session" value={selectedSessionId}
                 onChange={(event) => setSelectedSessionId(event.target.value)}>
                 <option value="">Semua sesi</option>
-                {optionSessions.map((session) => (
-                  <option key={session.id} value={session.id}>{sessionLabel(session)}</option>
+                {sessionOptions.map((session) => (
+                  <option key={session.value} value={session.value}>{session.label}</option>
                 ))}
               </SelectNative>
             </div>
@@ -160,22 +208,35 @@ export default function TryoutReport() {
       <Card>
         <CardHeader><CardTitle className="text-base">Unduh Laporan</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-            <div className="space-y-1.5 sm:max-w-sm sm:flex-1">
-              <Label htmlFor="tryout-report-name">Nama tryout</Label>
-              <Input id="tryout-report-name" value={tryoutName}
-                placeholder="Contoh: Tryout TKA"
-                onChange={(event) => setTryoutName(event.target.value)} />
-            </div>
-            <Button type="button" variant="outline" onClick={handleDownload} disabled={downloading}>
-              {downloading ? 'Mengunduh…' : 'Unduh Excel'}
-            </Button>
-          </div>
+          <Button type="button" variant="outline" onClick={() => setDownloadOpen(true)}>
+            Unduh Excel
+          </Button>
           <p className="mt-2 text-xs text-muted-foreground">
-            Filter nama tryout diterapkan pada file Excel yang diunduh.
+            Pilih tryout di popup unduhan. Filter jenjang dan sesi tetap diterapkan.
           </p>
         </CardContent>
       </Card>
+
+      <Dialog open={downloadOpen} onClose={() => setDownloadOpen(false)} title="Unduh Laporan Tryout">
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="tryout-report-name">Nama tryout</Label>
+            <Combobox
+              id="tryout-report-name"
+              value={downloadTryout}
+              onChange={setDownloadTryout}
+              options={tryoutOptions}
+              placeholder="Cari tryout"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDownloadOpen(false)}>Batal</Button>
+            <Button type="button" onClick={handleDownload} disabled={downloading}>
+              {downloading ? 'Mengunduh…' : 'Unduh laporan'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {groupedSessions.length === 0 && (
         <Card>

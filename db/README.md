@@ -4,7 +4,7 @@
 
 Skema ditujukan untuk database `bank_soal_db` dengan user `bank_soal_user` pada PostgreSQL 16 lokal.
 
-Sumber kebenaran skema aktif adalah rangkaian `db/migrations/` yang dijalankan berurutan sampai `030`. `db/schema.sql` adalah arsip Fase 3 yang sudah stale dan **bukan** sumber kebenaran untuk struktur saat ini.
+Sumber kebenaran skema aktif adalah rangkaian `db/migrations/` yang dijalankan berurutan sampai `032`. `db/schema.sql` adalah arsip Fase 3 yang sudah stale dan **bukan** sumber kebenaran untuk struktur saat ini.
 
 Inisialisasi baseline arsip Fase 3 (opsional, bukan langkah untuk mendapatkan skema aktif):
 
@@ -246,6 +246,28 @@ Sesi lama multi-mapel hasil ADR-016 dipecah menjadi beberapa sesi anak: satu map
 
 Backup pra-migrasi wajib dibuat sebelum `030`; rollback ke keadaan `REL-26` memakai dump tersebut, misalnya `pg_restore --clean --if-exists -h 127.0.0.1 -U bank_soal_user -d bank_soal_db /tmp/opencode/bank_soal_db-pre030-2026-11-24.dump`. Setelah restore, jalankan ulang `029` bila dump diambil sebelum migrasi itu. `REL-01…REL-26` tidak dibuka ulang; gate berikutnya adalah `REL-27`.
 
+Jenjang pendidikan dan kredensial peserta (Fase 6w/ADR-019; idempotent, dijalankan setelah `030`):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/031_jenjang_dan_kredensial_peserta.sql
+```
+
+`031` membuat `public.jenjang` dengan seed `SD`, `SMP`, `SMA`, menambah `jenjang_id`/`username` pada `siswa` dan `prospektus` (view `tryout_participants` mengikuti), serta indeks lowercase untuk pencarian username. Migrasi tidak mengisi otomatis baris lama; aplikasi membangkitkan `username` saat peserta dibuat/didaftarkan dan mewajibkan `jenjang_id` pada payload baru.
+
+Permission ekspor kunci jawaban soal (Fase 6x/ADR-020; idempotent, dijalankan setelah `031`):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/032_tryout_questions_key_export.sql
+```
+
+`032` menambah permission `tryout_questions.key_export` tanpa memberikannya ke role lama; admin dapat memberikannya lewat Kelola Role. Total permission aktif menjadi 47.
+
+Backup sebelum `031`/`032`: `/tmp/opencode/bank_soal_db-pre6wx-2026-11-24.dump`. Rollback ke `REL-28` memakai dump tersebut, lalu `REL-29` memakai dump yang sama sebelum menjalankan `032`. `REL-01…REL-28` tidak dibuka ulang; Fase 7 tetap dibatalkan.
+
 Kredensial tersimpan di
 
  `/etc/postgresql/bank_soal_db.credentials` (mode 600). Gunakan variabel lingkungan, jangan menuliskan password di perintah yang terekam di history.
@@ -284,7 +306,9 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - `tryout_session_sheets` menyimpan lembar soal yang dipakai sebuah TO; `tryout_session_questions` tetap diisi dengan turunan soal lembar tersebut agar presentation service tidak berubah. `tryout_session_participants` boleh kosong. Bila sesi aktif memiliki baris soal, daftar soal dan submission dibatasi sesuai daftar; sesi lama tanpa baris tetap memakai perilaku sebelumnya. Permission `tryouts.manage` mengontrol pembuatan TO dan CRUD peserta di CMS.
 - Fase 6t (ADR-016, histori): `tryout_session_mapels` menyimpan relasi sesi–mapel dengan PK `(session_id, mapel_id)`, sehingga satu tryout boleh memuat misalnya MTKA + IPAS tetapi tidak dua mapel sama. Kolom lama `tryout_sessions.mapel_id` tetap ada untuk kompatibilitas pembacaan dan diisi mapel pertama; penulisan/validasi memakai junction. Untuk data baru aturan ini digantikan ADR-017 oleh `030`. `POST /api/v1/tryouts` masih menerima payload flat `mapel_codes[]` legacy dan memecahnya per sesi; response menyertakan `mapels[]` plus field legacy `mapel_code`. Endpoint presentasi `POST /api/v1/presentation/attempts/submit-all` menulis seluruh jawaban non-CBT dalam satu transaksi per sesi tanpa mengembalikan skor.
 - Fase 6u (ADR-017): `tryout_events` adalah induk dari banyak `tryout_sessions`; `tryout_sessions.event_id` wajib terisi dan FK cascade. `tryout_session_mapels` memiliki `UNIQUE(session_id)` sehingga satu sesi tepat satu mapel; `tryout_sessions.mapel_id` hanya mirror legacy. `cbt_duration_minutes` berlaku per sesi dan deadline attempt dipotong oleh `ends_at` induk. `status` hanya turunan API/helper/view, bukan kolom fisik, dan `is_active` tidak berubah karena waktu. `GET /api/v1/tryouts` mengembalikan `event_id`, `status`, dan `sessions[]`; `submission_count` tetap ada di API walaupun kolom `Submission` dihapus dari daftar CMS. `GET /api/v1/reports/tryout/export.xlsx` memakai permission `tryout_reports.read`, menyertakan peserta tanpa submission, dan tidak memuat kunci jawaban.
-- `siswa` menyimpan peserta dengan `jenis='siswa'`, `email` + `password_hash` + `password_plain` + `kelas`, login dengan email/password. `prospektus` menyimpan Peserta Umum dengan struktur kolom identik ditambah `bergabung`/`bergabung_at`; login dengan Nama + PIN (`pin_hash` scrypt, `pin_plain`), `email NULL`, `kelas=0`, WA wajib. Nama Umum unik case-insensitive. `tryout_participants` kini view `UNION ALL` kedua tabel untuk kompatibilitas query lama; seluruh penulisan langsung ke tabel fisik. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
+- Fase 6w (ADR-019): `jenjang` adalah master `SD`/`SMP`/`SMA`; `siswa.jenjang_id` dan `prospektus.jenjang_id` wajib diisi lewat aplikasi untuk data baru. `username` berbentuk `[kode jenjang][4 digit (Hari_ke_dalam_tahun - 1) * 24 + Jam Asia/Jakarta][4 digit WA]` dan dipakai login participant. Ekspor XLSX tidak memuat `NEW PRIMAGAMA YOGYAKARTA`, tanggal identitas, atau tanda tangan; `WAKTU` berasal dari `max(submitted_at)` dalam format `YYYY-MM-DD HH:mm:ss` Asia/Jakarta.
+- Fase 6x (ADR-020): `PATCH /tryouts/{id}` hanya menulis `name`, `starts_at`, dan `ends_at` pada `tryout_events` tanpa mengubah `slug`; `tryout_events` tidak menyimpan kolom status fisik. Ekspor soal PDF membaca relasi `tryout_session_sheets`/`tryout_session_questions` dan kunci dari `question_options.is_correct` (bukan kolom `correct_keys`); permission `tryout_questions.key_export` mengontrol varian berkunci dan tidak diberikan otomatis ke role lama.
+- `siswa` menyimpan peserta dengan `jenis='siswa'`, `email` + `password_hash` + `password_plain` + `kelas`; login memakai `username` yang dibangkitkan, dengan fallback `email`/`nama` untuk klien lama. `prospektus` menyimpan Peserta Umum dengan struktur kolom identik ditambah `bergabung`/`bergabung_at`; login memakai `username` + PIN (`pin_hash` scrypt, `pin_plain`), `email NULL`, `kelas=0`, WA wajib 8–15 digit setelah dibersihkan. Nama Umum unik case-insensitive. `tryout_participants` kini view `UNION ALL` kedua tabel untuk kompatibilitas query lama; seluruh penulisan langsung ke tabel fisik. Role `peserta` dinonaktifkan dan tidak tersedia lagi di halaman Buat User.
 - Fase 6r (ADR-010): kredensial peserta boleh disimpan plaintext di `password_plain`/`pin_plain` dan hanya dikembalikan lewat endpoint detail; password user CMS tetap scrypt di `contributors.password_hash` dan tidak pernah ditampilkan. `POST /prospektus/{id}/daftar` menyalin data ke `siswa` dan menandai `bergabung=true` tanpa mencabut akun Umum. FK `participant_id` diganti trigger validasi/cascade karena satu kolom mereferensi dua tabel.
 - Fase 6s (ADR-011): login participant wajib `tryout_slug` dan akun harus terdaftar di `tryout_session_participants`. `auth_sessions.tryout_session_id` mengikat access token/refresh token ke satu tryout; JWT memuat `tryout_session_id` dan `tryout_slug`. Endpoint `/api/v1/siswa` hanya membaca `public.siswa`, sedangkan `/api/v1/tryouts/{id}/participants` hanya peserta yang terlampir. Konversi `prospektus -> siswa` tetap eksplisit lewat tombol **Daftarkan Siswa** di Prospektus, bukan otomatis dari tryout.
 - Fase 6p (ADR-008) menambahkan `prospek` dan `prospek_at`.
@@ -300,8 +324,8 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - Semua sesi `tryout_sessions` kini memiliki pengaturan CBT: `cbt_enabled`, `cbt_duration_minutes` (1–600 saat aktif), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0 = tanpa batas, maksimal 100). Sesi lama tetap `cbt_enabled=false` dan memakai alur tryout sebelumnya.
 - `tryout_attempts` menyimpan satu attempt per `(session_id, participant_id)` dengan `seed` deterministik, `started_at`, `deadline_at`, `status` (`in_progress`/`submitted`/`expired`), dan `violation_count`. `tryout_cbt_drafts` menyimpan autosave jawaban, `tryout_cbt_flags` menyimpan tanda ragu-ragu, dan `tryout_cbt_violations` menyimpan log pelanggaran fullscreen/tab.
 - Acak soal dan opsi memakai `seed` attempt. Opsi tetap menyimpan `key` asli di database dan dikirim bersama `label` tampilan yang sudah diacak; peserta mengirim `key` asli sehingga penilaian tidak berubah. Skor tidak pernah dikembalikan ke peserta; `v_cbt_attempt_report` dipakai laporan admin.
-- Migrasi `028` menambah 30 permission CRUD untuk `questions`, `question_sheets`, `tryouts`, `participants`, `mapels`, `roles`, `users`, dan `program_belajar`. Total permission 46 dengan 76 pemetaan role-permission. Permission `*.manage` lama tetap dipakai guard backend; `admin` mendapat semua permission baru, `editor` mendapat CRUD soal/lembar soal/program belajar, role lain tidak berubah.
-- Purge operasional 2026-11-24 menghapus soal, opsi, kunci, pernyataan, varian, sumber soal, lembar soal, sesi/relasi/submission/draft/flag/violation tryout, `siswa`, `prospektus`, dan sesi peserta. User admin, 5 role, 46 permission, 3 mapel, 3 `source_types`, dan 3 `presentation_versions` dipertahankan. Backup: `/tmp/opencode/bank_soal_db-pre-purge-20261124-140728.dump` dan `/tmp/opencode/uploads-pre-purge-20261124-140728.tar.gz`.
+- Migrasi `028` menambah 30 permission CRUD untuk `questions`, `question_sheets`, `tryouts`, `participants`, `mapels`, `roles`, `users`, dan `program_belajar`. Total permission saat itu 46 dengan 76 pemetaan role-permission; migrasi `032` menambah `tryout_questions.key_export` sehingga total aktif sekarang 47, tanpa pemetaan role baru. Permission `*.manage` lama tetap dipakai guard backend; `admin` mendapat semua permission dari `028`, `editor` mendapat CRUD soal/lembar soal/program belajar, role lain tidak berubah.
+- Purge operasional 2026-11-24 menghapus soal, opsi, kunci, pernyataan, varian, sumber soal, lembar soal, sesi/relasi/submission/draft/flag/violation tryout, `siswa`, `prospektus`, dan sesi peserta. User admin, 5 role, 46 permission (sebelum `032`), 3 mapel, 3 `source_types`, dan 3 `presentation_versions` dipertahankan. Backup: `/tmp/opencode/bank_soal_db-pre-purge-20261124-140728.dump` dan `/tmp/opencode/uploads-pre-purge-20261124-140728.tar.gz`.
 
 ## Perubahan Schema
 

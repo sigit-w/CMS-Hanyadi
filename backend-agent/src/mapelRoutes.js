@@ -17,9 +17,24 @@ const MAPEL_SELECT = `
   FROM mapels m
 `;
 
+const JENJANG_SELECT = `
+  SELECT j.id, j.kode, j.nama, j.deskripsi, j.is_active, j.created_at,
+         ((SELECT count(*)::int FROM siswa s WHERE s.jenjang_id = j.id)
+          + (SELECT count(*)::int FROM prospektus p WHERE p.jenjang_id = j.id))::int AS participant_count
+  FROM jenjang j
+`;
+
 function requireDescription(value) {
   if (value === undefined || value === null || value === '') return null;
   return requireText(value, 'description', 1000);
+}
+
+function requireJenjangKode(value) {
+  const kode = requireText(value, 'kode jenjang', 8).toUpperCase();
+  if (!/^[A-Z0-9]{1,8}$/.test(kode)) {
+    throw new ApiError('VALIDATION_ERROR', 'Kode jenjang harus 1–8 karakter A-Z atau 0-9');
+  }
+  return kode;
 }
 
 function requireIsActive(value, fallback = true) {
@@ -34,6 +49,12 @@ function isDuplicate(error) {
 async function loadMapel(client, id) {
   const run = client?.query ? client.query.bind(client) : query;
   const { rows } = await run(`${MAPEL_SELECT} WHERE m.id = $1`, [id]);
+  return rows[0];
+}
+
+async function loadJenjang(client, id) {
+  const run = client?.query ? client.query.bind(client) : query;
+  const { rows } = await run(`${JENJANG_SELECT} WHERE j.id = $1`, [id]);
   return rows[0];
 }
 
@@ -112,4 +133,81 @@ mapelRouter.delete('/mapels/:id', manageMapels, asyncHandler(async (req, res) =>
     return found;
   });
   res.json({ ok: true, data: { mapel, deleted: true }, meta: nowMeta() });
+}));
+
+mapelRouter.get('/jenjangs', readMapels, asyncHandler(async (req, res) => {
+  const includeInactive = req.query.include_inactive === 'true' || req.query.include_inactive === '1';
+  if (includeInactive && !req.auth.permissions.includes('mapels.manage')) {
+    throw new ApiError('FORBIDDEN', 'Akses ditolak: memerlukan permission mapels.manage', 403);
+  }
+  const { rows } = await query(
+    `${JENJANG_SELECT} ${includeInactive ? '' : 'WHERE j.is_active = true'} ORDER BY j.id`
+  );
+  res.json({ ok: true, data: { jenjangs: rows }, meta: nowMeta() });
+}));
+
+mapelRouter.post('/jenjangs', manageMapels, asyncHandler(async (req, res) => {
+  const kode = requireJenjangKode(req.body?.kode);
+  const nama = requireText(req.body?.nama, 'nama jenjang', 64);
+  const deskripsi = requireDescription(req.body?.deskripsi);
+  const isActive = requireIsActive(req.body?.is_active);
+
+  const jenjang = await withTransaction(async (client) => {
+    const duplicate = await client.query('SELECT id FROM jenjang WHERE kode = $1', [kode]);
+    if (duplicate.rows[0]) throw new ApiError('CONFLICT', 'Kode jenjang sudah digunakan', 409);
+    try {
+      const { rows } = await client.query(
+        `INSERT INTO jenjang (kode, nama, deskripsi, is_active)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [kode, nama, deskripsi, isActive]
+      );
+      return loadJenjang(client, rows[0].id);
+    } catch (error) {
+      if (isDuplicate(error)) throw new ApiError('CONFLICT', 'Kode jenjang sudah digunakan', 409);
+      throw error;
+    }
+  });
+
+  res.status(201).json({ ok: true, data: { jenjang }, meta: nowMeta() });
+}));
+
+mapelRouter.put('/jenjangs/:id', manageMapels, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const kode = requireJenjangKode(req.body?.kode);
+  const nama = requireText(req.body?.nama, 'nama jenjang', 64);
+  const deskripsi = requireDescription(req.body?.deskripsi);
+  const isActive = requireIsActive(req.body?.is_active);
+
+  const jenjang = await withTransaction(async (client) => {
+    const found = await client.query('SELECT id FROM jenjang WHERE id = $1', [id]);
+    if (!found.rows[0]) throw new ApiError('NOT_FOUND', 'Jenjang tidak ditemukan', 404);
+    const duplicate = await client.query('SELECT id FROM jenjang WHERE kode = $1 AND id <> $2', [kode, id]);
+    if (duplicate.rows[0]) throw new ApiError('CONFLICT', 'Kode jenjang sudah digunakan', 409);
+    try {
+      await client.query(
+        `UPDATE jenjang SET kode = $2, nama = $3, deskripsi = $4, is_active = $5 WHERE id = $1`,
+        [id, kode, nama, deskripsi, isActive]
+      );
+      return loadJenjang(client, id);
+    } catch (error) {
+      if (isDuplicate(error)) throw new ApiError('CONFLICT', 'Kode jenjang sudah digunakan', 409);
+      throw error;
+    }
+  });
+
+  res.json({ ok: true, data: { jenjang }, meta: nowMeta() });
+}));
+
+mapelRouter.delete('/jenjangs/:id', manageMapels, asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id);
+  const jenjang = await withTransaction(async (client) => {
+    const found = await loadJenjang(client, id);
+    if (!found) throw new ApiError('NOT_FOUND', 'Jenjang tidak ditemukan', 404);
+    if (found.participant_count > 0) {
+      throw new ApiError('CONFLICT', 'Jenjang masih dipakai peserta; pindahkan peserta terlebih dahulu', 409);
+    }
+    await client.query('DELETE FROM jenjang WHERE id = $1', [id]);
+    return found;
+  });
+  res.json({ ok: true, data: { jenjang, deleted: true }, meta: nowMeta() });
 }));

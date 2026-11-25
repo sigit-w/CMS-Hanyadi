@@ -26,13 +26,13 @@ Fase 6t (ADR-016, histori): satu tryout dapat memuat 1–10 mapel aktif yang uni
 
 ## Hak Akses
 
-`GET /api/v1/permissions` mengembalikan 46 permission aktif dari tabel `permissions`. Permission `*.manage` lama tetap menjadi guard endpoint existing; permission CRUD baru (`questions.*`, `question_sheets.*`, `tryouts.*`, `participants.*`, `mapels.*`, `roles.*`, `users.*`, `program_belajar.*`) dipakai UI Kelola Role dan tidak mengubah kontrak guard lama. `admin` memiliki seluruh permission; `editor` memiliki CRUD soal, lembar soal, dan program belajar; `validator`, `viewer`, dan `peserta` tidak berubah.
+`GET /api/v1/permissions` mengembalikan 47 permission aktif dari tabel `permissions` (46 setelah migrasi `028` + `tryout_questions.key_export` dari migrasi `032`). Permission `*.manage` lama tetap menjadi guard endpoint existing; permission CRUD baru (`questions.*`, `question_sheets.*`, `tryouts.*`, `participants.*`, `mapels.*`, `roles.*`, `users.*`, `program_belajar.*`) dipakai UI Kelola Role dan tidak mengubah kontrak guard lama. `admin` memiliki seluruh permission lama; `editor` memiliki CRUD soal, lembar soal, dan program belajar; `validator`, `viewer`, dan `peserta` tidak berubah. `tryout_questions.key_export` tidak otomatis diberikan ke role mana pun, termasuk `admin`, dan harus di-assign lewat Kelola Role.
 
 ## Peserta Tryout
 
-Saat membuat peserta Siswa (`jenis='siswa'`), `password` opsional. Jika kosong, sistem memakai default `nama depan@mmyy` (misalnya `Budi@1126`). Password dapat diganti saat pendaftaran maupun lewat reset; minimal 6 karakter.
+Saat membuat peserta Siswa (`jenis='siswa'`), `password` opsional. Jika kosong dan `wa_orang_tua` berisi 8–15 digit setelah formatted, sistem memakai digit WA sebagai password; jika tidak, sistem memakai default `nama depan@mmyy` (misalnya `Budi@1126`). Password dapat diganti saat pendaftaran maupun lewat reset; minimal 6 karakter.
 
-Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, dan `pin` 9 digit. Login memakai `username = nama` dan `password = pin` dengan verifikasi `pin_hash` scrypt; PIN plaintext juga tersimpan di `pin_plain` untuk ditampilkan di endpoint detail. Nama Umum unik tanpa memperhatikan huruf besar/kecil. Payload lama Siswa dan endpoint lama `/tryout-sessions` tetap diterima.
+Peserta Umum (`jenis='umum'`) dibuat dengan `nama`, `sekolah`, `wa_orang_tua`, dan `pin` opsional 8–15 digit; bila kosong, PIN = digit WA. Login memakai `username` yang dibangkitkan sistem dan `password = pin` dengan verifikasi `pin_hash` scrypt; PIN plaintext juga tersimpan di `pin_plain` untuk ditampilkan di endpoint detail. `username = [SD|SMP|SMA][4 digit (Hari_ke_dalam_tahun - 1) * 24 + Jam Asia/Jakarta][4 digit WA]`, dengan jam Asia/Jakarta dan empat digit terakhir WA. Endpoint login menerima `username` dan tetap menerima fallback `email`/`nama` untuk klien lama. Nama Umum unik tanpa memperhatikan huruf besar/kecil. Payload lama Siswa dan endpoint lama `/tryout-sessions` tetap diterima.
 
 Fase 6p (ADR-008) menambahkan `DELETE /api/v1/tryouts/{id}/participants/{participantId}` untuk mengeluarkan peserta dari sebuah tryout. Peserta Siswa hanya kehilangan relasi `tryout_session_participants`; data siswa tidak diubah. Peserta Umum yang dikeluarkan mengalami hal yang sama dan ditandai `prospek=true`, `prospek_at` terisi, `is_active=false`, serta sesinya dicabut. Data tersebut muncul di `GET /api/v1/prospektus`. Untuk daftar peserta pada form tryout yang belum disimpan, `POST /api/v1/participants/{id}/prospek` melakukan hal yang sama tanpa memerlukan ID tryout; Siswa ditolak dengan `400`. Endpoint lama `DELETE /participants/{id}` tetap berarti nonaktifkan peserta secara global dan tidak dipakai untuk aksi tryout.
 
@@ -114,15 +114,28 @@ Fase 6v melanjutkan `REL-27`, gate `REL-28`, tanpa migrasi database dan tanpa Fa
 
 Satu worksheet bernama `Laporan Tryout`:
 
-- Baris 1–3: `HASIL TRYOUT <NAMA TRYOUT>` (huruf besar), `NEW PRIMAGAMA YOGYAKARTA`, dan tanggal berformat `id-ID` huruf besar dari `event_starts_at` atau `session_date` (Asia/Jakarta).
+- Baris 1: `HASIL TRYOUT <NAMA TRYOUT>` (huruf besar). Sejak ADR-019/Fase 6w, baris 2–3 tidak lagi memuat `NEW PRIMAGAMA YOGYAKARTA` atau tanggal berformat `id-ID` dari `event_starts_at`/`session_date`.
 - Baris 6–7: header dua level. Kolom A–E digabung vertikal menjadi `NO`, `NAMA SISWA`, `USER`, `ASAL SEKOLAH`, `WAKTU`. Setiap mapel membentuk grup tiga kolom: baris 6 berisi nama mapel dinamis (huruf besar; dari `mapel_name` atau `mapel_code`, bukan hardcode), baris 7 berisi `B`, `S`, `NILAI`. Grup ditutup kolom gabungan `TOTAL`, `RATA-RATA`, dan `RANKING`.
-- Data mulai baris 8, satu baris per peserta. Urutan: `TOTAL` menurun, lalu `NILAI` tiap mapel menurun sesuai urutan grup, lalu `WAKTU` menaik, lalu nama menurut locale `id-ID`. `NILAI = 100 × B / (B + S)` (2 desimal, `0` bila tanpa jawaban), `TOTAL` adalah jumlah `NILAI`, `RATA-RATA = TOTAL / jumlah grup mapel`, dan `RANKING` adalah posisi setelah pengurutan.
-- Setelah satu baris kosong, catatan kaki: `KETERANGAN :`, `1. Nilai di atas adalah nilai MURNI HASIL TRYOUT`, `2. B = Jumlah benar, S = jumlah salah`, `3. Nilai diurutkan berdasar :`, `- Jumlah nilai`, `- Nilai <mapel>` untuk setiap grup, dan `- Waktu`. Statistik `MAKSIMAL`, `MINIMAL`, `RATA-RATA` per mapel ditulis pada kolom `NILAI` masing-masing. Di bawahnya ada baris tanda tangan `Yogyakarta, <tanggal id-ID>` dan `New Primagama Yogyakarta`.
+- Data mulai baris 8, satu baris per peserta. `WAKTU` = `YYYY-MM-DD HH:mm:ss` zona Asia/Jakarta dari `max(submitted_at)` submission peserta dalam filter, atau `-` bila belum submit. Urutan: `TOTAL` menurun, lalu `NILAI` tiap mapel menurun sesuai urutan grup, lalu `WAKTU` menaik, lalu nama menurut locale `id-ID`. `NILAI = 100 × B / (B + S)` (2 desimal, `0` bila tanpa jawaban), `TOTAL` adalah jumlah `NILAI`, `RATA-RATA = TOTAL / jumlah grup mapel`, dan `RANKING` adalah posisi setelah pengurutan.
+- Setelah satu baris kosong, catatan kaki: `KETERANGAN :`, `1. Nilai di atas adalah nilai MURNI HASIL TRYOUT`, `2. B = Jumlah benar, S = jumlah salah`, `3. Nilai diurutkan berdasar :`, `- Jumlah nilai`, `- Nilai <mapel>` untuk setiap grup, dan `- Waktu`. Statistik `MAKSIMAL`, `MINIMAL`, `RATA-RATA` per mapel ditulis pada kolom `NILAI` masing-masing. Baris tanda tangan `Yogyakarta, <tanggal id-ID>` dan `New Primagama Yogyakarta` sudah dihapus oleh ADR-019.
 - File tidak memuat kunci jawaban atau pembahasan. Tabel di layar CMS tetap 7 kolom Fase 6u (`Nama`, `Sekolah`, `Mapel`, `Jumlah Soal`, `Benar`, `Salah`, `Nilai`); format XLSX ini belum dipakai untuk tampilan layar.
 
 ### Kompatibilitas
 
 `POST /api/v1/tryout-sessions` dan `PATCH /api/v1/tryout-sessions/{id}/activate` tetap dipertahankan untuk klien lama. Payload `POST /api/v1/tryout-sessions` wajib membawa `event_id` yang valid (alias `eventId` diterima). Section **Buat Sesi Tryout** dan **Sesi Tersedia** beserta checkbox `Jadikan sesi aktif` dan tombol `Aktifkan` sudah dihapus dari halaman laporan; operasi tulis pindah ke manajemen tryout. Gate regresi `REL-24`–`REL-27` (401 netral, debounce violation, submit global per sesi, laporan 7 kolom, log tersembunyi) tidak boleh berubah.
+
+## Kontrak Fase 6w (ADR-019) — Jenjang dan Kredensial Peserta
+
+- Migrasi `031` menambah tabel `public.jenjang` dengan seed `SD`, `SMP`, `SMA` serta kolom `jenjang_id`/`username` pada `siswa` dan `prospektus` (view `tryout_participants` mengikuti). Jenjang dikelola lewat `GET`/`POST /api/v1/jenjangs`, `PUT`/`DELETE /api/v1/jenjangs/{id}` dengan permission `mapels.manage`; jenjang yang masih dipakai peserta tidak bisa dihapus.
+- `jenjang_id` wajib saat membuat Siswa maupun Peserta Umum. `GET /api/v1/siswa`, `/participants`, dan `/prospektus` menerima filter opsional `jenjang_id`. `username` dibangkitkan otomatis dari kode jenjang, jam Asia/Jakarta, dan empat digit WA, lalu tampil di detail peserta/prospektus.
+- PIN/WA divalidasi 8–15 digit setelah pembersihan karakter. Login participant memakai `username` dan `password`, dengan fallback `email`/`nama` untuk payload lama; menu CMS `tryout-agent` setelah login mengarah ke `#/mapels`.
+- Ekspor XLSX laporan hanya membatasi tryout yang dipilih lewat dropdown/popup dan tidak memuat `NEW PRIMAGAMA YOGYAKARTA`, tanggal identitas, maupun baris tanda tangan. `WAKTU` memakai `YYYY-MM-DD HH:mm:ss` Asia/Jakarta dari submission terakhir.
+
+## Kontrak Fase 6x (ADR-020) — Edit Tryout dan Ekspor Soal PDF
+
+- `PATCH /api/v1/tryouts/{id}` dengan permission `tryouts.manage` hanya menerima `name`, `starts_at`, dan `ends_at`; `slug`/URL tidak berubah, sesi/mapel/peserta tidak diubah, lembar soal hanya dibaca, dan JWT peserta lama tetap valid. Endpoint tersedia untuk semua status turunan (`terjadwal`, `berlangsung`, `selesai`).
+- `GET /api/v1/tryouts/{id}/questions.zip` memakai permission `tryouts.manage`; `GET /api/v1/tryouts/{id}/questions-with-keys.zip` memakai permission baru `tryout_questions.key_export` dari migrasi `032`. Keduanya mengembalikan satu `application/zip` per klik, berisi satu PDF per sesi tryout.
+- PDF dibangkitkan internal oleh `backend-agent/src/tryoutExport.js` tanpa dependency baru. Setiap PDF memuat `nama lembar soal`, `kode lembar soal`, `mapel`, dan `keterangan`; varian kunci juga menyertakan kunci jawaban dari `question_options.is_correct`. File tidak pernah membocorkan kunci pada varian `questions.zip`.
 
 ## Jenis Soal
 

@@ -4,9 +4,13 @@ import {
   createParticipant,
   createTryout,
   deleteTryout,
+  downloadTryoutQuestions,
+  downloadTryoutQuestionsWithKeys,
+  getJenjangs,
   getMapels,
   getParticipantDetail,
   getProspektus,
+  getQuestionSheet,
   getQuestionSheets,
   getSiswa,
   getTryout,
@@ -14,6 +18,7 @@ import {
   getTryouts,
   markParticipantProspek,
   removeTryoutParticipant,
+  updateTryout,
   updateTryoutCbt
 } from '../api.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -95,14 +100,29 @@ const cbtFormFromTryout = (tryout) => ({
 const emptyUmum = () => ({
   nama: '',
   sekolah: '',
-  pin: generatePin(),
+  jenjang_id: '',
   wa_orang_tua: ''
 });
 
-function generatePin() {
-  const values = new Uint32Array(9);
-  window.crypto.getRandomValues(values);
-  return Array.from(values, (value) => value % 10).join('');
+function waDigits(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits.length >= 8 && digits.length <= 15 ? digits : '';
+}
+
+function sanitizeDownloadName(value) {
+  return String(value ?? 'tryout')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-') || 'tryout';
+}
+
+function editFormFromTryout(tryout) {
+  const toInput = (value) => (value ? new Date(new Date(value).getTime() - 7 * 60 * 60 * 1000).toISOString().slice(0, 16) : '');
+  return {
+    name: tryout.name ?? '',
+    starts_at: toInput(tryout.starts_at ?? tryout.start_at),
+    ends_at: toInput(tryout.ends_at ?? tryout.end_at)
+  };
 }
 
 function formatDateTime(value) {
@@ -170,6 +190,8 @@ export default function TryoutManagement() {
   const [sheetsByMapel, setSheetsByMapel] = useState({});
   const [participants, setParticipants] = useState([]);
   const [prospektus, setProspektus] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
+  const [participantJenjangFilter, setParticipantJenjangFilter] = useState('');
   const [sourceLoading, setSourceLoading] = useState(false);
   const [draftParticipants, setDraftParticipants] = useState([]);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
@@ -192,6 +214,12 @@ export default function TryoutManagement() {
   const [cbtForm, setCbtForm] = useState(cbtFormFromTryout({}));
   const [savingCbt, setSavingCbt] = useState(false);
   const [cbtError, setCbtError] = useState('');
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState(editFormFromTryout({}));
+  const [editSheets, setEditSheets] = useState([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const draftParticipantRows = selectedParticipants
     .map((id) => draftParticipants.find((participant) => String(participant.id) === String(id)))
@@ -209,7 +237,7 @@ export default function TryoutManagement() {
     : participantSource === 'prospektus' ? prospektus : [];
   const searchTerm = participantSearch.trim().toLowerCase();
   const filteredSourceRows = sourceRows.filter((participant) => (
-    [participant.nama, participant.email, participant.kelas, participant.sekolah]
+    [participant.nama, participant.username, participant.jenjang_kode, participant.email, participant.kelas, participant.sekolah]
       .some((value) => String(value ?? '').toLowerCase().includes(searchTerm))
   ));
 
@@ -223,15 +251,17 @@ export default function TryoutManagement() {
     (async () => {
       try {
         setLoading(true);
-        const [mapelData, participantData, tryoutData] = await Promise.all([
+        const [mapelData, participantData, tryoutData, jenjangData] = await Promise.all([
           getMapels(),
           getSiswa(),
-          getTryouts()
+          getTryouts(),
+          getJenjangs()
         ]);
         if (!active) return;
         setMapels(mapelData.mapels);
         setParticipants(participantData.siswa.filter((participant) => participant.is_active));
         setTryouts(tryoutData.tryouts);
+        setJenjangs(jenjangData.jenjangs ?? []);
       } catch (err) {
         if (active) setError(err.message);
       } finally {
@@ -287,9 +317,13 @@ export default function TryoutManagement() {
     async function loadSource() {
       try {
         setSourceLoading(true);
+        const params = {
+          search: participantSearch.trim(),
+          jenjang_id: participantJenjangFilter || null
+        };
         const data = participantSource === 'siswa'
-          ? await getSiswa({ search: participantSearch.trim() })
-          : await getProspektus({ search: participantSearch.trim() });
+          ? await getSiswa(params)
+          : await getProspektus(params);
         if (!active) return;
         if (participantSource === 'siswa') {
           setParticipants((data.siswa ?? []).filter((participant) => participant.is_active));
@@ -313,7 +347,7 @@ export default function TryoutManagement() {
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [participantSource, participantSearch]);
+  }, [participantSource, participantSearch, participantJenjangFilter]);
 
   function updateSession(index, patch) {
     setForm((current) => ({
@@ -362,12 +396,14 @@ export default function TryoutManagement() {
     setUmumError('');
     setUmumTab('manual');
     setParticipantSearch('');
+    setParticipantJenjangFilter('');
     setParticipantTarget(target);
     setPesertaDialog('umum');
   }
 
   function openPesertaSiswa(target = 'draft') {
     setParticipantSearch('');
+    setParticipantJenjangFilter('');
     setParticipantTarget(target);
     setPesertaDialog('siswa');
   }
@@ -487,9 +523,9 @@ export default function TryoutManagement() {
   async function handleCreateUmum(event) {
     event.preventDefault();
     setUmumError('');
-    if (!umumForm.nama.trim() || !umumForm.sekolah.trim()
-      || !/^\d{9}$/.test(umumForm.pin) || !umumForm.wa_orang_tua.trim()) {
-      setUmumError('Lengkapi Nama, Sekolah, PIN 9 digit, dan Nomor WA Orang Tua.');
+    if (!umumForm.nama.trim() || !umumForm.sekolah.trim() || !umumForm.jenjang_id
+      || !waDigits(umumForm.wa_orang_tua)) {
+      setUmumError('Lengkapi Nama, Sekolah, Jenjang, dan Nomor WA Orang Tua 8–15 digit.');
       return;
     }
     setSavingPeserta(true);
@@ -498,7 +534,7 @@ export default function TryoutManagement() {
         jenis: 'umum',
         nama: umumForm.nama.trim(),
         sekolah: umumForm.sekolah.trim(),
-        pin: umumForm.pin,
+        jenjang_id: Number(umumForm.jenjang_id),
         wa_orang_tua: umumForm.wa_orang_tua.trim()
       });
       const participant = created.participant;
@@ -518,7 +554,7 @@ export default function TryoutManagement() {
         ));
         setPesertaDialog(null);
       }
-      setNotice(`Peserta Umum "${participant.nama}" ditambahkan. PIN: ${umumForm.pin}`);
+      setNotice(`Peserta Umum "${participant.nama}" ditambahkan. PIN: ${participant.pin_plain || waDigits(umumForm.wa_orang_tua)}`);
     } catch (err) {
       setUmumError(err.message);
     } finally {
@@ -596,6 +632,81 @@ export default function TryoutManagement() {
     }
   }
 
+  async function openEditTryout(tryout) {
+    setError('');
+    setEditError('');
+    setEditForm(editFormFromTryout(tryout));
+    setEditSheets([]);
+    setEditTarget(tryout);
+    try {
+      const detail = await getTryout(tryout.id);
+      const sheetIds = [...new Set((detail.tryout.sessions ?? []).flatMap((session) => session.sheet_ids ?? []))];
+      const sheets = await Promise.all(sheetIds.map(async (id) => {
+        try {
+          const data = await getQuestionSheet(id);
+          return data.sheet;
+        } catch {
+          return null;
+        }
+      }));
+      setEditSheets(sheets.filter(Boolean));
+    } catch (err) {
+      setEditError(err.message);
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editTarget) return;
+    setEditError('');
+    if (!editForm.name.trim() || !editForm.starts_at || !editForm.ends_at) {
+      setEditError('Lengkapi nama, tanggal mulai, dan tanggal selesai.');
+      return;
+    }
+    if (Date.parse(editForm.ends_at) <= Date.parse(editForm.starts_at)) {
+      setEditError('Tanggal selesai harus setelah tanggal mulai.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const updated = await updateTryout(editTarget.id, {
+        name: editForm.name.trim(),
+        starts_at: editForm.starts_at,
+        ends_at: editForm.ends_at
+      });
+      setNotice(`Tryout "${updated.tryout.name}" diperbarui. URL peserta tetap ${tryoutUrl(updated.tryout.slug)}.`);
+      setEditTarget(null);
+      await refreshTryouts();
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDownloadQuestions(tryout, includeKeys) {
+    const key = `${tryout.id}-${includeKeys ? 'keys' : 'soal'}`;
+    setError('');
+    setDownloadingId(key);
+    try {
+      const blob = includeKeys
+        ? await downloadTryoutQuestionsWithKeys(tryout.id)
+        : await downloadTryoutQuestions(tryout.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${sanitizeDownloadName(tryout.name)}-${includeKeys ? 'soal-dan-kunci' : 'soal'}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice(`Unduhan ${includeKeys ? 'soal dan kunci' : 'soal'} tryout "${tryout.name}" siap.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   async function handleDelete(tryout) {
     if (!window.confirm(`Hapus tryout "${tryout.name}"? Submission lama akan tetap tersimpan tanpa sesi.`)) return;
     setError('');
@@ -658,13 +769,23 @@ export default function TryoutManagement() {
     return (
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
+          <SelectNative className="max-w-[180px]" value={participantJenjangFilter}
+            onChange={(event) => setParticipantJenjangFilter(event.target.value)}>
+            <option value="">Semua jenjang</option>
+            {jenjangs.map((jenjang) => (
+              <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+            ))}
+          </SelectNative>
           <Input
             className="flex-1"
             value={participantSearch}
             placeholder={`Cari nama, email, kelas, atau sekolah ${sourceLabel.toLowerCase()}`}
             onChange={(event) => setParticipantSearch(event.target.value)}
           />
-          <Button type="button" variant="outline" size="sm" onClick={() => setParticipantSearch('')}>
+          <Button type="button" variant="outline" size="sm" onClick={() => {
+            setParticipantSearch('');
+            setParticipantJenjangFilter('');
+          }}>
             Bersihkan
           </Button>
         </div>
@@ -942,19 +1063,20 @@ export default function TryoutManagement() {
                   onChange={(event) => setUmumForm({ ...umumForm, sekolah: event.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>PIN (9 digit)</Label>
-                <div className="flex gap-2">
-                  <Input value={umumForm.pin} readOnly inputMode="numeric" maxLength={9} />
-                  <Button type="button" variant="secondary" onClick={() => setUmumForm({ ...umumForm, pin: generatePin() })}>
-                    Generate ulang
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">PIN otomatis dibuat dan dipakai peserta untuk login bersama Nama.</p>
+                <Label>Jenjang</Label>
+                <SelectNative required value={umumForm.jenjang_id}
+                  onChange={(event) => setUmumForm({ ...umumForm, jenjang_id: event.target.value })}>
+                  <option value="">Pilih jenjang</option>
+                  {jenjangs.map((jenjang) => (
+                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                  ))}
+                </SelectNative>
               </div>
               <div className="space-y-1.5">
                 <Label>Nomor WA Orang Tua</Label>
                 <Input value={umumForm.wa_orang_tua} maxLength={20} placeholder="08xxxxxxxxxx"
                   onChange={(event) => setUmumForm({ ...umumForm, wa_orang_tua: event.target.value })} />
+                <p className="text-xs text-muted-foreground">PIN dan username dibuat dari digit nomor WA ini.</p>
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={closePesertaFlow}>Batal</Button>
@@ -979,6 +1101,8 @@ export default function TryoutManagement() {
         {detailParticipant && (
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detailParticipant.nama}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detailParticipant.username || '-'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{detailParticipant.jenjang_kode ? `${detailParticipant.jenjang_kode} — ${detailParticipant.jenjang_nama || ''}`.trim() : '-'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenis</span><span>{detailParticipant.jenis === 'umum' ? 'Peserta Umum' : 'Peserta Didik'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detailParticipant.sekolah || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Kelas</span><span>{detailParticipant.jenis === 'umum' ? '—' : detailParticipant.kelas || '—'}</span></div>
@@ -1016,6 +1140,66 @@ export default function TryoutManagement() {
             <span className="text-xs text-muted-foreground">Form manual atau pilih siswa/prospektus</span>
           </Button>
         </div>
+      </Dialog>
+
+      <Dialog open={Boolean(editTarget)} onClose={() => setEditTarget(null)} title="Ubah Tryout">
+        {editError && <Alert variant="destructive">{editError}</Alert>}
+        {editTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Status saat ini: <Badge variant={statusVariant(editTarget.status)}>{editTarget.status ?? '—'}</Badge>.
+              Mengubah jadwal dapat mengubah status tryout; URL dan JWT peserta tidak berubah.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Nama Tryout</Label>
+              <Input value={editForm.name} maxLength={128}
+                onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Tanggal &amp; Jam Mulai</Label>
+                <Input type="datetime-local" value={editForm.starts_at}
+                  onChange={(event) => setEditForm({ ...editForm, starts_at: event.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tanggal &amp; Jam Selesai</Label>
+                <Input type="datetime-local" value={editForm.ends_at}
+                  onChange={(event) => setEditForm({ ...editForm, ends_at: event.target.value })} />
+              </div>
+            </div>
+            <fieldset className="space-y-2 rounded-lg border p-4">
+              <legend className="px-1 text-sm font-semibold">Sesi, Mapel, dan Peserta (tidak dapat diubah)</legend>
+              {(editTarget.sessions ?? []).map((session) => (
+                <div key={session.id} className="flex flex-wrap justify-between gap-2 text-sm">
+                  <span>{session.name || 'Sesi tanpa nama'}</span>
+                  <span className="text-muted-foreground">
+                    {mapelLabel(session.mapel_code, session.mapel_name)} · {session.participant_ids?.length ?? 0} peserta
+                  </span>
+                </div>
+              ))}
+              {(editTarget.sessions ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">Tidak ada sesi.</p>
+              )}
+            </fieldset>
+            <fieldset className="space-y-2 rounded-lg border p-4">
+              <legend className="px-1 text-sm font-semibold">Lembar Soal yang Dipakai</legend>
+              {editSheets.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada lembar soal terlampir.</p>
+              ) : editSheets.map((sheet) => (
+                <div key={sheet.id} className="flex flex-wrap justify-between gap-2 text-sm">
+                  <span>{sheet.name}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{sheet.code}</span>
+                </div>
+              ))}
+            </fieldset>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEditTarget(null)}>Batal</Button>
+              <Button type="button" onClick={handleSaveEdit} disabled={savingEdit}>
+                {savingEdit ? 'Menyimpan…' : 'Simpan Perubahan'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Dialog>
 
       <Dialog open={Boolean(cbtTarget)} onClose={() => setCbtTarget(null)} title="Pengaturan CBT Tryout">
@@ -1117,6 +1301,19 @@ export default function TryoutManagement() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => openEditTryout(tryout)}>
+                          Ubah
+                        </Button>
+                        <Button type="button" variant="outline" size="sm"
+                          disabled={downloadingId === `${tryout.id}-soal`}
+                          onClick={() => handleDownloadQuestions(tryout, false)}>
+                          {downloadingId === `${tryout.id}-soal` ? 'Mengunduh…' : 'Unduh Soal'}
+                        </Button>
+                        <Button type="button" variant="outline" size="sm"
+                          disabled={downloadingId === `${tryout.id}-keys`}
+                          onClick={() => handleDownloadQuestions(tryout, true)}>
+                          {downloadingId === `${tryout.id}-keys` ? 'Mengunduh…' : 'Unduh Soal + Kunci'}
+                        </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => openManageParticipants(tryout)}>
                           Kelola Peserta
                         </Button>

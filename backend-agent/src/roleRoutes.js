@@ -13,11 +13,17 @@ const adminOnly = authorize('roles.manage');
 const managePassword = authorize('users.password.write');
 const adminRequiredPermissions = ['roles.manage', 'reports.read', 'mapels.manage'];
 const participantOnlyRole = 'peserta';
+const removedRoleCodes = new Set(['editor', 'validator', 'viewer']);
 
 function rejectParticipantRole(codes) {
   if (codes.includes(participantOnlyRole)) {
     throw new ApiError('VALIDATION_ERROR', 'Role peserta tidak tersedia; buat peserta lewat halaman CRUD Peserta');
   }
+}
+
+function rejectRemovedRole(codes) {
+  const removed = codes.find((code) => removedRoleCodes.has(code));
+  if (removed) throw new ApiError('VALIDATION_ERROR', `Role ${removed} sudah dihapus`);
 }
 
 roleRouter.get('/roles', adminOnly, asyncHandler(async (req, res) => {
@@ -39,6 +45,7 @@ roleRouter.post('/roles', adminOnly, asyncHandler(async (req, res) => {
   }
   if (!name) throw new ApiError('VALIDATION_ERROR', 'Nama role wajib diisi');
   rejectParticipantRole([code]);
+  rejectRemovedRole([code]);
 
   const { rows } = await query(
     `INSERT INTO roles (code, name, description)
@@ -154,6 +161,7 @@ roleRouter.post('/users', adminOnly, asyncHandler(async (req, res) => {
     throw new ApiError('VALIDATION_ERROR', 'Pilih minimal satu role untuk pengguna');
   }
   rejectParticipantRole(roleCodes);
+  rejectRemovedRole(roleCodes);
 
   const passwordHash = await hashPassword(password);
 
@@ -250,6 +258,7 @@ roleRouter.post('/users/:id/roles', adminOnly, asyncHandler(async (req, res) => 
   const roleCode = String(req.body?.code ?? '').trim().toLowerCase();
   const roleId = req.body?.role_id === undefined ? null : parseId(req.body.role_id, 'role_id');
   rejectParticipantRole([roleCode]);
+  rejectRemovedRole([roleCode]);
 
   const result = await withTransaction(async (client) => {
     const user = await client.query('SELECT id FROM contributors WHERE id = $1 AND is_active = true', [userId]);

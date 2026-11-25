@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 const EMPTY_FORM = { username: '', display_name: '', email: '', password: '', roles: [] };
 const EMPTY_PASSWORD_FORM = { password: '', confirm: '' };
-const CMS_ROLES = (roles) => roles.filter((role) => role.is_active && role.code !== 'peserta');
+const REMOVED_ROLE_CODES = new Set(['editor', 'validator', 'viewer']);
+const CMS_ROLES = (roles) => roles.filter((role) => role.is_active && role.code !== 'peserta' && !REMOVED_ROLE_CODES.has(role.code));
 
 export default function UserManagement({ can = () => false }) {
   const [roles, setRoles] = useState([]);

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { createMapel, deleteMapel, getMapels, updateMapel } from '../api.js';
+import {
+  createJenjang, createMapel, deleteJenjang, deleteMapel,
+  getJenjangs, getMapels, updateJenjang, updateMapel
+} from '../api.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,19 +15,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 const EMPTY_FORM = { code: '', name: '', description: '' };
 const EMPTY_EDIT = { code: '', name: '', description: '', is_active: true };
+const EMPTY_JENJANG_FORM = { kode: '', nama: '', deskripsi: '' };
+const EMPTY_JENJANG_EDIT = { kode: '', nama: '', deskripsi: '', is_active: true };
 
 export default function MapelManagement() {
   const [mapels, setMapels] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState(EMPTY_EDIT);
+  const [jenjangs, setJenjangs] = useState([]);
+  const [jenjangForm, setJenjangForm] = useState(EMPTY_JENJANG_FORM);
+  const [editingJenjangId, setEditingJenjangId] = useState(null);
+  const [jenjangEdit, setJenjangEdit] = useState(EMPTY_JENJANG_EDIT);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const data = await getMapels({ include_inactive: true });
+    const [data, jenjangData] = await Promise.all([
+      getMapels({ include_inactive: true }),
+      getJenjangs({ include_inactive: true })
+    ]);
     setMapels(data.mapels);
+    setJenjangs(jenjangData.jenjangs);
   }
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, []);
@@ -64,10 +77,34 @@ export default function MapelManagement() {
     await run(() => deleteMapel(mapel.id), `Mapel ${mapel.name} dihapus`);
   }
 
+  async function handleJenjangCreate(event) {
+    event.preventDefault();
+    const kode = jenjangForm.kode.trim().toUpperCase();
+    await run(async () => {
+      await createJenjang({ ...jenjangForm, kode, is_active: true });
+      setJenjangForm(EMPTY_JENJANG_FORM);
+    }, `Jenjang ${kode} berhasil ditambahkan`);
+  }
+
+  async function handleJenjangUpdate(jenjang) {
+    await run(async () => {
+      await updateJenjang(jenjang.id, {
+        ...jenjangEdit,
+        kode: jenjangEdit.kode.trim().toUpperCase()
+      });
+      setEditingJenjangId(null);
+    }, `Data ${jenjangEdit.nama} diperbarui`);
+  }
+
+  async function handleJenjangDelete(jenjang) {
+    if (!window.confirm(`Hapus jenjang "${jenjang.nama}"?`)) return;
+    await run(() => deleteJenjang(jenjang.id), `Jenjang ${jenjang.nama} dihapus`);
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Kelola Mapel</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Kelola Mapel &amp; Jenjang</h1>
         <p className="text-sm text-muted-foreground">
           Tambah, ubah, nonaktifkan, atau hapus mata pelajaran. Kode mapel 4 karakter dipakai filter soal, import, tryout, dan prefix kode lembar soal.
         </p>
@@ -194,6 +231,122 @@ export default function MapelManagement() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Jenjang Pendidikan</CardTitle>
+          <CardDescription>Kode jenjang dipakai sebagai awalan username peserta. Data awal: SD, SMP, SMA.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-4 md:grid-cols-[140px_1fr_2fr_auto] md:items-end" onSubmit={handleJenjangCreate}>
+            <div className="space-y-2">
+              <Label htmlFor="jenjang-kode">Kode</Label>
+              <Input id="jenjang-kode" required maxLength={8} placeholder="contoh: SD"
+                value={jenjangForm.kode}
+                onChange={(e) => setJenjangForm({ ...jenjangForm, kode: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="jenjang-nama">Nama</Label>
+              <Input id="jenjang-nama" required maxLength={64} placeholder="Nama jenjang"
+                value={jenjangForm.nama}
+                onChange={(e) => setJenjangForm({ ...jenjangForm, nama: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="jenjang-deskripsi">Deskripsi</Label>
+              <Input id="jenjang-deskripsi" maxLength={1000} placeholder="Opsional"
+                value={jenjangForm.deskripsi}
+                onChange={(e) => setJenjangForm({ ...jenjangForm, deskripsi: e.target.value })} />
+            </div>
+            <Button type="submit" disabled={saving}>Tambah Jenjang</Button>
+          </form>
+
+          <div className="mt-6">
+            {jenjangs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Belum ada jenjang.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kode</TableHead>
+                    <TableHead>Nama</TableHead>
+                    <TableHead>Deskripsi</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Peserta</TableHead>
+                    <TableHead>Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jenjangs.map((jenjang) => (
+                    <TableRow key={jenjang.id}>
+                      <TableCell className="font-mono text-xs">
+                        {editingJenjangId === jenjang.id ? (
+                          <Input maxLength={8} value={jenjangEdit.kode}
+                            onChange={(e) => setJenjangEdit({ ...jenjangEdit, kode: e.target.value.toUpperCase() })} />
+                        ) : jenjang.kode}
+                      </TableCell>
+                      <TableCell>
+                        {editingJenjangId === jenjang.id ? (
+                          <Input maxLength={64} value={jenjangEdit.nama}
+                            onChange={(e) => setJenjangEdit({ ...jenjangEdit, nama: e.target.value })} />
+                        ) : jenjang.nama}
+                      </TableCell>
+                      <TableCell>
+                        {editingJenjangId === jenjang.id ? (
+                          <Textarea maxLength={1000} value={jenjangEdit.deskripsi}
+                            onChange={(e) => setJenjangEdit({ ...jenjangEdit, deskripsi: e.target.value })} />
+                        ) : (jenjang.deskripsi || '—')}
+                      </TableCell>
+                      <TableCell>
+                        {editingJenjangId === jenjang.id ? (
+                          <SelectNative value={String(jenjangEdit.is_active)}
+                            onChange={(e) => setJenjangEdit({ ...jenjangEdit, is_active: e.target.value === 'true' })}>
+                            <option value="true">Aktif</option>
+                            <option value="false">Nonaktif</option>
+                          </SelectNative>
+                        ) : (
+                          <Badge variant={jenjang.is_active ? 'default' : 'secondary'}>
+                            {jenjang.is_active ? 'Aktif' : 'Nonaktif'}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{jenjang.participant_count}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          {editingJenjangId === jenjang.id ? (
+                            <>
+                              <Button type="button" size="sm" disabled={saving}
+                                onClick={() => handleJenjangUpdate(jenjang)}>Simpan</Button>
+                              <Button type="button" size="sm" variant="outline"
+                                onClick={() => setEditingJenjangId(null)}>Batal</Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button type="button" size="sm" variant="outline"
+                                onClick={() => {
+                                  setEditingJenjangId(jenjang.id);
+                                  setJenjangEdit({
+                                    kode: jenjang.kode,
+                                    nama: jenjang.nama,
+                                    deskripsi: jenjang.deskripsi ?? '',
+                                    is_active: jenjang.is_active
+                                  });
+                                }}>Ubah</Button>
+                              <Button type="button" size="sm" variant="destructive"
+                                disabled={saving || jenjang.participant_count > 0}
+                                title={jenjang.participant_count > 0 ? 'Jenjang masih dipakai peserta' : undefined}
+                                onClick={() => handleJenjangDelete(jenjang)}>Hapus</Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
