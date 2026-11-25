@@ -12,7 +12,6 @@ import { SelectNative } from '@/components/ui/select-native';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog } from '@/components/ui/dialog';
 
-const MAPEL_LABELS = { MTKA: 'Matematika', BIND: 'Bahasa Indonesia', IPAS: 'IPAS' };
 const STATUS_LABELS = { approved: 'Disetujui', archived: 'Diarsipkan' };
 const QUESTION_TYPE_LABELS = {
   multiple_choice: 'Pilihan ganda',
@@ -42,7 +41,7 @@ function toEditForm(question) {
   const correctKeys = options.filter((option) => option.is_correct).map((option) => option.key);
   return {
     stem: question.stem ?? '',
-    mapel: question.mapel_code ?? 'MTKA',
+    mapel: question.mapel_code ?? '',
     question_type: question.question_type ?? 'multiple_choice',
     difficulty: question.difficulty ?? 'medium',
     options: options.length ? options : defaultOptions(),
@@ -219,6 +218,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
     if (!detail || !editForm) return;
     setEditError(''); setDetailNotice(''); setEditSaving(true);
     try {
+      if (!editForm.mapel) { setEditError('Pilih mapel terlebih dahulu'); return; }
       const isChoice = CHOICE_TYPES.includes(editForm.question_type);
       const isTrueFalse = editForm.question_type === 'true_false';
       let options = [];
@@ -267,7 +267,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
         setPage(nextPage);
       }
       setDetailNotice(mapelChanged
-        ? `Perubahan soal berhasil disimpan. Filter mapel disesuaikan ke ${MAPEL_LABELS[editForm.mapel] ?? editForm.mapel}.`
+        ? `Perubahan soal berhasil disimpan. Filter mapel disesuaikan ke ${mapels.find((item) => item.code === editForm.mapel)?.name ?? editForm.mapel}.`
         : 'Perubahan soal berhasil disimpan.');
       await refreshQuestions(nextFilters, nextPage);
     } catch (err) {
@@ -358,7 +358,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-mono text-muted-foreground">#{question.id}</span>
-                          <Badge variant="outline">{MAPEL_LABELS[question.mapel_code] ?? question.mapel_name}</Badge>
+                          <Badge variant="outline">{question.mapel_name ?? question.mapel_code ?? '—'}</Badge>
                           <Badge variant="secondary" className="capitalize">{STATUS_LABELS[question.status] ?? question.status}</Badge>
                         </div>
                         <p className="text-sm leading-snug line-clamp-2">{question.stem}</p>
@@ -417,7 +417,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{MAPEL_LABELS[detail.mapel_code] ?? detail.mapel_name}</Badge>
+              <Badge variant="outline">{detail.mapel_name ?? detail.mapel_code ?? '—'}</Badge>
               <Badge variant="secondary">{STATUS_LABELS[detail.status] ?? detail.status}</Badge>
               <span className="text-xs text-muted-foreground">{QUESTION_TYPE_LABELS[detail.question_type] ?? detail.question_type} · {detail.difficulty}</span>
             </div>
@@ -484,9 +484,10 @@ export default function Dashboard({ can, refreshKey = 0 }) {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2"><Label>Mapel</Label>
                 <SelectNative value={editForm.mapel} onChange={(event) => updateEditForm({ mapel: event.target.value })}>
-                  {(mapels.length ? mapels.map((item) => ({ code: item.code, name: item.name })) : Object.entries(MAPEL_LABELS).map(([code, name]) => ({ code, name })))
-                    .map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+                  <option value="">Pilih mapel</option>
+                  {mapels.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
                 </SelectNative>
+                {mapels.length === 0 && <p className="text-xs text-muted-foreground">Belum ada mapel tersedia di tabel mapel.</p>}
               </div>
               <div className="space-y-2"><Label>Tipe</Label>
                 <SelectNative value={editForm.question_type} onChange={(event) => handleEditTypeChange(event.target.value)}>

@@ -31,11 +31,6 @@ import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import CredentialCopy from '@/components/CredentialCopy';
 
-const MAPEL_LABELS = {
-  MTKA: 'Matematika',
-  BIND: 'Bahasa Indonesia',
-  IPAS: 'IPAS'
-};
 const TRYOUT_BASE_URL = 'https://tryout.hanyadi.web.id';
 
 function tryoutUrl(slug) {
@@ -47,7 +42,7 @@ function tryoutSessionUrls(tryout) {
 }
 
 function mapelLabel(code, name) {
-  return MAPEL_LABELS[code] ?? name ?? code ?? '—';
+  return name || code || '—';
 }
 
 function tryoutMapelText(tryout) {

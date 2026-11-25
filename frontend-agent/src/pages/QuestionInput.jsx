@@ -15,12 +15,11 @@ const DEFAULT_STATEMENTS = [
   { text: '', is_correct: false }
 ];
 const EMPTY_FORM = {
-  stem: '', mapel: 'MTKA', question_type: 'multiple_choice', difficulty: 'medium',
+  stem: '', mapel: '', question_type: 'multiple_choice', difficulty: 'medium',
   options: [{ key: 'A', content: '' }, { key: 'B', content: '' }, { key: 'C', content: '' }, { key: 'D', content: '' }],
   statements: DEFAULT_STATEMENTS.map((statement) => ({ ...statement })),
   correct_keys: ['A'], correct_key: 'A', answer_text: '', explanation: ''
 };
-const MAPEL_LABELS = { MTKA: 'Matematika', BIND: 'Bahasa Indonesia', IPAS: 'IPAS' };
 
 export default function QuestionInput({ onCreated }) {
   const [mapels, setMapels] = useState([]);
@@ -84,6 +83,7 @@ export default function QuestionInput({ onCreated }) {
     event.preventDefault(); setError(''); setNotice('');
     try {
       if (!form.stem.trim() && !imageFile) { setError('Isi teks pertanyaan atau unggah gambar soal'); return; }
+      if (!form.mapel) { setError('Pilih mapel terlebih dahulu'); return; }
       let options = []; let correctKeys = []; let statements = [];
       if (isTrueFalse) {
         statements = form.statements.map((s) => ({ text: s.text.trim(), is_correct: Boolean(s.is_correct) }));
@@ -166,8 +166,10 @@ export default function QuestionInput({ onCreated }) {
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2"><Label>Mapel</Label>
                   <SelectNative value={form.mapel} onChange={(e) => updateForm({ mapel: e.target.value })}>
-                    {mapels.length === 0 ? Object.entries(MAPEL_LABELS).map(([code, name]) => <option key={code} value={code}>{name}</option>) : mapels.map((m) => <option key={m.id} value={m.code}>{m.name}</option>)}
-                  </SelectNative></div>
+                    <option value="">Pilih mapel</option>
+                    {mapels.map((m) => <option key={m.id} value={m.code}>{m.name}</option>)}
+                  </SelectNative>
+                  {mapels.length === 0 && <p className="text-xs text-muted-foreground">Belum ada mapel tersedia. Tambahkan mapel di Kelola Mapel.</p>}</div>
                 <div className="space-y-2"><Label>Tipe</Label>
                   <SelectNative value={form.question_type} onChange={(e) => handleTypeChange(e.target.value)}>
                     <option value="multiple_choice">Pilihan ganda</option><option value="true_false">Benar/Salah</option><option value="multiple_answer">Pilihan ganda multi-jawaban</option><option value="short_answer">Jawaban singkat</option><option value="essay">Esai</option>
