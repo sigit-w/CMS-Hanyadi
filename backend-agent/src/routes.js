@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { query, withTransaction } from './db.js';
 import { config } from './config.js';
 import { ApiError, asyncHandler } from './errors.js';
-import { insertQuestion, replaceStatements, fetchStatements, QUESTION_SELECT } from './questions.js';
+import { insertQuestion, replaceStatements, fetchStatements, resolveJenjangId, QUESTION_SELECT } from './questions.js';
 import { parseQuestions } from './importer.js';
 import {
   validateQuestionCreate,
@@ -14,6 +14,7 @@ import {
   validateAnswerKey,
   parseId,
   QUESTION_TYPES,
+  requireJenjangCode,
   requireMapelCode,
   STATUSES
 } from './validate.js';
@@ -189,6 +190,7 @@ router.get('/tryout/questions', authorize('tryout.access'), asyncHandler(async (
 
 router.get('/questions', authorize('questions.read'), asyncHandler(async (req, res) => {
   const mapel = req.query.mapel ? requireMapelCode(req.query.mapel) : null;
+  const jenjang = req.query.jenjang ? requireJenjangCode(req.query.jenjang) : null;
   const status = req.query.status || null;
   const search = req.query.search || null;
   const questionType = req.query.question_type || null;
@@ -208,13 +210,15 @@ router.get('/questions', authorize('questions.read'), asyncHandler(async (req, r
       AND ($2::text IS NULL OR q.status = $2)
       AND ($3::text IS NULL OR q.stem ILIKE '%' || $3 || '%')
       AND ($4::text IS NULL OR q.question_type = $4)
+      AND ($5::text IS NULL OR j.kode = $5)
   `;
   const [list, total] = await Promise.all([
-    query(`${QUESTION_SELECT} ${where} ORDER BY q.id DESC LIMIT $5 OFFSET $6`,
-      [mapel, status, search, questionType, limit, offset]),
+    query(`${QUESTION_SELECT} ${where} ORDER BY q.id DESC LIMIT $6 OFFSET $7`,
+      [mapel, status, search, questionType, jenjang, limit, offset]),
     query(`SELECT count(*)::int AS total FROM questions q
-           JOIN mapels m ON m.id = q.mapel_id ${where}`,
-      [mapel, status, search, questionType])
+           JOIN mapels m ON m.id = q.mapel_id
+           JOIN jenjang j ON j.id = q.jenjang_id ${where}`,
+      [mapel, status, search, questionType, jenjang])
   ]);
   const questions = await attachQuestionSheets(list.rows);
 
@@ -283,6 +287,7 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
 
   try {
     const question = await withTransaction(async (client) => {
+      const jenjangId = await resolveJenjangId(client, changes.jenjang);
       let mapelId = null;
       if (changes.mapel) {
         const mapel = await client.query(
@@ -294,6 +299,7 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
 
       await client.query(
         `UPDATE questions SET
+           jenjang_id = $8::bigint,
            mapel_id = COALESCE($2::bigint, mapel_id),
            stem = COALESCE($3, stem),
            question_type = COALESCE($4, question_type),
@@ -302,7 +308,7 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
            image_url = COALESCE($7, image_url)
          WHERE id = $1`,
         [id, mapelId, changes.stem ?? null, changes.question_type ?? null,
-          changes.difficulty ?? null, changes.status ?? null, image?.url ?? null]
+          changes.difficulty ?? null, changes.status ?? null, image?.url ?? null, jenjangId]
       );
 
       if (mapelId !== null && Number(mapelId) !== Number(current.mapel_id)) {

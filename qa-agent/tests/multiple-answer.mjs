@@ -31,6 +31,7 @@ test('MA-01 soal multi-jawaban tersimpan dan langsung approved', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       stem: `QA multi-jawaban ${suffix}`,
+      jenjang: 'SD',
       mapel: 'MTKA',
       question_type: 'multiple_answer',
       difficulty: 'medium',

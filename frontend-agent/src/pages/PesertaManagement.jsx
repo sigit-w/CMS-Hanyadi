@@ -192,7 +192,7 @@ export default function PesertaManagement() {
                   onChange={(e) => setForm({ ...form, jenjang_id: e.target.value })}>
                   <option value="">Pilih jenjang</option>
                   {jenjangs.map((jenjang) => (
-                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                   ))}
                 </SelectNative>
               </div>
@@ -267,7 +267,7 @@ export default function PesertaManagement() {
               onChange={(e) => setJenjangFilter(e.target.value)}>
               <option value="">Semua jenjang</option>
               {jenjangs.map((jenjang) => (
-                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
               ))}
             </SelectNative>
             <Badge variant="secondary">{participants.length} data</Badge>
@@ -308,7 +308,7 @@ export default function PesertaManagement() {
                           onChange={(e) => setEditValues({ ...editValues, jenjang_id: e.target.value })}>
                           <option value="">Tanpa jenjang</option>
                           {jenjangs.map((jenjang) => (
-                            <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                            <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                           ))}
                         </SelectNative>
                       ) : participant.jenjang_kode

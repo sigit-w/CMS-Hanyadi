@@ -67,47 +67,52 @@ Konsekuensi desain:
 
 ## 5. Model Data
 
-Sumber kebenaran skema aktif adalah rangkaian migrasi `db/migrations/` hingga `030_tryout_events_and_sessions.sql`, bukan `db/schema.sql` yang merupakan arsip Fase 3 dan sudah stale. Ringkasan entitas:
+Sumber kebenaran skema aktif adalah rangkaian migrasi `db/migrations/` hingga `034_jenjang_soal_lembar_tryout_program.sql`, bukan `db/schema.sql` yang merupakan arsip Fase 3 dan sudah stale. Ringkasan entitas:
 
 | Entitas | Fungsi |
 |---|---|
 | `contributors` | Pembuat/editor/reviewer soal dan validator |
 | `mapels` | Mapel wajib: `MTKA`, `BIND`, `IPAS` (kode unik 4 kapital, ADR-005/D6) |
+| `jenjang` | Master jenjang `SD`, `SMP`, `SMA` dari migrasi `031`; dipakai peserta sejak Fase 6w dan soal/lembar/tryout/program belajar sejak Fase 6aa |
 | `source_types` | Jenis sumber: `manual`, `file_upload`, `external_collection` |
 | `question_sources` | Detail sumber: nama file, path, MIME, referensi eksternal, metadata |
-| `questions` | Batang soal, tipe, tingkat kesulitan, status (`approved`/`rejected`/`archived`); soal baru otomatis `approved` |
+| `questions` | Batang soal, `jenjang_id` wajib, tipe, tingkat kesulitan, status (`approved`/`rejected`/`archived`); soal baru otomatis `approved` |
+| `question_sheets` | Satu lembar soal dengan `jenjang_id` dan `mapel_id` wajib; `code` unik `LS-<mapel>-<jenjang>-<mmyy>` sejak migrasi `034` |
 | `question_options` | Pilihan jawaban dengan `is_correct` dan urutan |
 | `answer_keys` | Kunci jawaban (opsi benar atau teks) + pembahasan |
 | `presentation_versions` | Daftar versi penyajian (`v1`, `v2`, `v3`) — data historis nonaktif (ADR-004) |
 | `question_version_readiness` | Penanda kesiapan per soal per versi — data historis nonaktif (ADR-004) |
 | `v_question_catalog` | View ringkas untuk daftar soal (frontend & QA) |
-| `tryout_events` | Induk tryout: `id`, `name`, `slug` unik, `starts_at`, `ends_at`; satu induk memiliki banyak `tryout_sessions` (ADR-017) |
+| `tryout_events` | Induk tryout: `id`, `name`, `slug` unik, `jenjang_id` wajib, `starts_at`, `ends_at`; satu induk memiliki banyak `tryout_sessions` (ADR-017/023) |
 | `tryout_sessions` | Anak induk lewat `event_id` FK `ON DELETE CASCADE`; satu sesi tepat satu mapel, pengaturan CBT (termasuk `cbt_duration_minutes`) berlaku per sesi |
 | `tryout_session_mapels` | Relasi sesi–mapel dengan `UNIQUE(session_id)` sejak migrasi `030`; menjamin tepat satu mapel per sesi. PK `(session_id, mapel_id)` warisan ADR-016 tetap ada |
 | `v_tryout_events` | View induk yang menambahkan `status` turunan dari `tryout_event_status(bigint)` |
 
-Relasi utama aktif: `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`, `tryout_events -> tryout_sessions -> tryout_session_mapels -> mapels`. Kolom `tryout_sessions.mapel_id` tetap ada sebagai mirror legacy; sumber kebenaran mapel sesi adalah junction yang dibatasi `UNIQUE(session_id)`. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
+Relasi utama aktif: `jenjang -> questions`, `jenjang -> question_sheets`, `jenjang -> tryout_events`, `jenjang -> program_belajar`, `mapels -> questions`, `question_sources -> questions`, `questions -> question_options`, `questions -> answer_keys`, `tryout_events -> tryout_sessions -> tryout_session_mapels -> mapels`. Kolom `tryout_sessions.mapel_id` tetap ada sebagai mirror legacy; sumber kebenaran mapel sesi adalah junction yang dibatasi `UNIQUE(session_id)`. Relasi `questions -> question_version_readiness -> presentation_versions` hanya histori dan tidak dipakai UI/API.
 
 ## 6. Kontrak REST API (Rancangan Fase 3, diselaraskan Fase 6j)
 
 | Method | Endpoint | Fungsi |
 |---|---|---|
 | GET | `/api/v1/mapels` | Daftar mapel aktif |
-| GET | `/api/v1/questions` | Daftar soal + filter `mapel`, `status`, `source`, pagination |
-| POST | `/api/v1/questions` | Buat soal manual |
+| GET | `/api/v1/questions` | Daftar soal + filter `jenjang` (SD/SMP/SMA), `mapel`, `status`, `source`, pagination |
+| POST | `/api/v1/questions` | Buat soal manual dengan `jenjang` wajib |
 | GET | `/api/v1/questions/:id` | Detail soal + opsi + kunci |
 | PUT | `/api/v1/questions/:id` | Update soal |
 | DELETE | `/api/v1/questions/:id` | Arsipkan soal |
 | POST | `/api/v1/questions/:id/options` | Tambah/replace opsi jawaban |
 | PUT | `/api/v1/questions/:id/answer-key` | Simpan kunci jawaban & pembahasan |
+| GET | `/api/v1/question-sheets/generate-code?mapel=&jenjang=` | Usulkan kode `LS-<mapel>-<jenjang>-<mmyy>` (UTC) |
+| GET | `/api/v1/question-sheets?jenjang=` | Daftar lembar soal dengan filter jenjang opsional |
+| GET | `/api/v1/program-belajar`, POST | Daftar/buat program belajar dengan `jenjang` wajib |
 | GET | `/api/v1/sources` | Daftar sumber soal |
 | POST | `/api/v1/sources/uploads` | Upload file soal |
 | POST | `/api/v1/sources/external` | Catat pengumpulan eksternal |
 | ~~PATCH~~ | ~~`/api/v1/questions/:id/readiness`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/presentation-versions`~~ | **Deprecated (404)** — dihapus Fase 6j (ADR-004) |
 | ~~GET~~ | ~~`/api/v1/questions/:id/variants`~~ | **Deprecated (404)** — presentation service membaca tabel inti |
-| POST | `/api/v1/tryouts` | Buat induk `tryout_events` + banyak sesi lewat `sessions[]` (masing-masing satu `mapel_code`); payload flat legacy `mapel_codes[]`/`mapel_code`, `sheet_ids`, `participant_ids`, dan CBT tetap dipecah per mapel |
-| GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail induk dengan `event_id`, `name`, `slug`, `starts_at`, `ends_at`, `status`, `sessions[]`, kompatibilitas `mapels[]`/`mapel_code`, dan `submission_count` (API only) |
+| POST | `/api/v1/tryouts` | Buat induk `tryout_events` dengan `jenjang` wajib dan `slug` otomatis backend + banyak sesi lewat `sessions[]` (masing-masing satu `mapel_code` dan lembar berjenjang sama); payload flat legacy tetap dipecah per mapel |
+| GET | `/api/v1/tryouts` / `/api/v1/tryouts/:id` | Daftar/detail induk dengan `event_id`, `name`, `slug`, `jenjang_kode`/`jenjang_nama`, `starts_at`, `ends_at`, `status`, `sessions[]`, kompatibilitas `mapels[]`/`mapel_code`, dan `submission_count` (API only) |
 | GET | `/api/v1/tryouts/:id/sessions` | Daftar sesi dari satu induk; `:id` boleh `event_id` atau `session_id` lama |
 | GET | `/api/v1/participants?search=` / `/api/v1/prospektus?search=` | Picker peserta: cari nama, email, kelas, dan sekolah |
 | GET | `/api/v1/tryout-sessions?search=&limit=` | Daftar sesi untuk filter laporan; `search` ILIKE partial pada induk/sesi/mapel, `limit` default 100 maks 200 (permission `tryout_reports.read`) |
@@ -174,7 +179,7 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 
 - **Grouping vs eksekusi.** `tryout_events` tetap induk administratif (nama, jadwal, peserta, CBT, laporan). `tryout_sessions` adalah unit eksekusi dan satu-satunya sumber URL peserta: `https://tryout.hanyadi.web.id/{session_slug}`. Slug induk tidak lagi dipakai untuk undangan/login.
 - **Login dan scope.** `POST /api/v1/auth/login` menerima `tryout_slug` berupa slug sesi. Backend mencari sesi terlebih dahulu; jika hanya slug induk yang cocok, respons `401 TRYOUT_EVENT_SLUG` meminta tautan sesi terbaru. JWT tetap membawa `tryout_session_id` sebagai scope utama (`tryout_slug` lama tetap berisi slug grup untuk kompatibilitas).
-- **Sesi target saja.** `GET /api/v1/presentation/sessions` hanya mengembalikan sesi yang terikat URL/JWT; resolver soal, submit, dan CBT menolak `session_id` lain dengan 403. `tryout-agent` tidak merender tab sesi lain dan tombol `Lanjut sesi berikutnya` disembunyikan. Aset dimuat sebagai `app.js?v=20`.
+- **Sesi target saja.** `GET /api/v1/presentation/sessions` hanya mengembalikan sesi yang terikat URL/JWT; resolver soal, submit, dan CBT menolak `session_id` lain dengan 403. `tryout-agent` tidak merender tab sesi lain dan tombol `Lanjut sesi berikutnya` disembunyikan. Aset dimuat sebagai `app.js?v=23`.
 - **Validasi create.** `POST /api/v1/tryouts` wajib memuat `sessions[]` minimal satu; tiap sesi wajib `mapel_code` dan minimal satu `sheet_ids` aktif. `question_ids`, `mapel_codes`, dan payload flat legacy ditolak. Laporan tryout/XLSX tetap dikelompokkan per tryout seperti `REL-28…REL-30`.
 
 ## 8c. Fase 6v — Filter Laporan dan Format XLSX (ADR-018)
@@ -205,6 +210,15 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - **Kelola Peserta per tryout.** Tombol `Kelola Peserta` pada tryout tersimpan mengarah ke `#/tryouts/{id}/peserta`, bukan popup. Halaman `TryoutParticipantsPage.jsx` memakai komponen UI dan gaya tabel Peserta Umum, menggabungkan Peserta Didik dan Peserta Umum dalam satu tabel, serta menyediakan detail, hapus, dan form tambah inline A/B dengan API yang sama seperti alur draft.
 - **Rename dan gate.** Label, judul, hash, dan marker QA memakai `Peserta Umum`; `#/tryouts/prospektus` tetap redirect ke `#/tryouts/peserta-umum`. Tanpa migrasi skema, regresi penuh 206/206, build frontend sukses, services sehat, backup `/tmp/opencode/bank_soal_db-pre032-2026-11-25.dump`, dan `REL-32` **GO**. `REL-01…REL-31` tidak dibuka ulang.
 
+## 8f. Fase 6aa — Jenjang Wajib pada Konten dan Tryout (ADR-023)
+
+- **Migrasi `034`.** Menambah `jenjang_id BIGINT NOT NULL` dengan FK `ON DELETE RESTRICT` ke `public.jenjang` pada `questions`, `question_sheets`, `tryout_events`, dan `program_belajar`. Seluruh baris lama di-backfill ke `SD` sebelum kolom menjadi wajib; index dibuat pada keempat kolom dan `question_sheets.code` diperlebar menjadi `VARCHAR(16)`. `v_question_catalog` menyertakan `jenjang_kode`/`jenjang_nama`.
+- **Kode lembar.** Format tunggal `LS-<KODE_MAPEL 4 karakter>-<SD|SMP|SMA>-<mmyy>` dengan `mmyy` UTC, cocok dengan `^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$`, contoh `LS-MTKA-SD-1126`. Generator menerima `?mapel=&jenjang=`; kode lama 12 karakter dan varian tanpa jenjang ditolak.
+- **Soal dan impor.** Form Buat Soal menaruh Jenjang sebelum Mapel; `GET /api/v1/questions` menerima filter `jenjang`. Template CSV/XLSX memuat 19 header dengan `jenjang` tepat setelah `mapel`; importer menolak header yang hilang atau salah urutan, sementara payload `content`/`questions[]` tetap ditolak seperti Fase 6z.
+- **Lembar soal.** Urutan form Nama → Jenjang → Mapel → Kode → Waktu → Keterangan. Picker mensyaratkan jenjang dan menolak soal berjenjang beda. `GET /api/v1/question-sheets` menerima filter `jenjang` opsional; Daftar Lembar Soal menampilkan kolom `Jenjang`.
+- **Tryout dan program belajar.** `POST /api/v1/tryouts` mewajibkan `jenjang` dan mengabaikan `slug` payload; slug induk dibangkitkan backend dari nama + ID. Lembar tiap sesi wajib berjenjang sama dengan induk. `GET /api/v1/tryouts` mengembalikan `jenjang_kode`/`jenjang_nama`; daftar CMS menampilkan `Jenjang` dan tidak memakai dialog `Atur CBT` terpisah. Program belajar memakai jenjang wajib pada form, tabel, dan API.
+- **Gate.** Marker statis `Q6AA-01…Q6AA-08` ditambahkan tanpa akses/mutasi DB; regresi penuh akhir 216/216 lolos, 0 fail, termasuk non-regresi TRY-23. Rollback ke `REL-32` memakai dump pra-`034`. Gate `REL-33` **GO** tanpa membuka ulang `REL-01…REL-32`, dan Fase 7 tetap dibatalkan.
+
 ## 9. Non-Fungsional dan Keamanan
 
 - Pool koneksi kecil dan `statement_timeout` untuk melindungi RAM 2GB.
@@ -227,3 +241,4 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 | 6v | Filter sesi laporan, filter `tryout_name`, dan format XLSX baru | Selesai; dokumen aktif diselaraskan dengan ADR-018, gate `REL-28` GO |
 | 6w | Laporan tryout-only, jenjang, username, dan kredensial WA | Selesai; ADR-019 diimplementasikan, migrasi `031`, gate `REL-29` GO |
 | 6x | Edit tryout dan ekspor soal PDF per sesi | Selesai; ADR-020 diimplementasikan, migrasi `032`, gate `REL-30` GO |
+| 6aa | Jenjang wajib pada soal, lembar, tryout, dan program belajar | Dokumen aktif diselaraskan dengan ADR-023, migrasi `034`, gate `REL-33` |

@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
-import { parseId, requireMapelCode, requireMapelCodes } from './validate.js';
+import { parseId, requireJenjangCode, requireMapelCode, requireMapelCodes } from './validate.js';
 import { authorize } from './authMiddleware.js';
-import { normalizeTryoutSlug, generateTryoutSlug } from './auth.js';
+import { generateTryoutSlug } from './auth.js';
+import { resolveJenjangId } from './questions.js';
 import {
   buildQuestionsZip,
   loadSessionExportData,
@@ -58,15 +59,6 @@ function requireName(value) {
     throw new ApiError('VALIDATION_ERROR', 'nama tryout wajib diisi maksimal 128 karakter');
   }
   return value.trim();
-}
-
-function optionalSlug(value) {
-  if (value === undefined || value === null || value === '') return null;
-  try {
-    return normalizeTryoutSlug(value, 'slug');
-  } catch {
-    throw new ApiError('VALIDATION_ERROR', 'slug tidak valid atau termasuk kata yang dicadangkan');
-  }
 }
 
 function requireDate(value) {
@@ -249,8 +241,11 @@ async function loadEvent(client, eventId, responseId) {
   const run = client?.query ? client.query.bind(client) : query;
   const eventResult = await run(
     `SELECT e.id, e.name, e.slug, e.starts_at, e.ends_at,
+            j.kode AS jenjang_kode, j.nama AS jenjang_nama,
             public.tryout_event_status(e.id) AS status, e.created_at, e.updated_at
-     FROM tryout_events e WHERE e.id = $1`,
+     FROM tryout_events e
+     LEFT JOIN jenjang j ON j.id = e.jenjang_id
+     WHERE e.id = $1`,
     [eventId]
   );
   const event = eventResult.rows[0];
@@ -290,6 +285,8 @@ async function loadEvent(client, eventId, responseId) {
     parent_id: Number(event.id),
     name: event.name,
     slug: event.slug,
+    jenjang_kode: event.jenjang_kode,
+    jenjang_nama: event.jenjang_nama,
     starts_at: event.starts_at,
     ends_at: event.ends_at,
     status: event.status,
@@ -638,13 +635,14 @@ tryoutRouter.post('/tryouts/:id/participants', adminOnly, asyncHandler(async (re
 tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
   const body = req.body ?? {};
   const name = requireName(body.name);
-  const requestedSlug = optionalSlug(body.slug);
+  const jenjangCode = requireJenjangCode(body.jenjang ?? body.jenjang_kode);
   const schedule = normalizeSessionDefinitions(body, name);
   const participantIds = optionalIds(body.participant_ids, 'participant_ids');
   const activate = Boolean(body.is_active);
 
   const tryout = await withTransaction(async (client) => {
     const run = client.query.bind(client);
+    const jenjangId = await resolveJenjangId(client, jenjangCode);
     const codes = schedule.definitions.map((definition) => definition.mapelCode);
     if (new Set(codes).size !== codes.length) {
       throw new ApiError('VALIDATION_ERROR', 'Setiap sesi harus memakai mapel yang berbeda');
@@ -666,14 +664,15 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       if (definition.distributeByMapel) {
         if (definition.hasSheets) {
           const sheetRows = await client.query(
-            'SELECT id, mapel_id, archived FROM question_sheets WHERE id = ANY($1::bigint[])',
+            'SELECT id, mapel_id, jenjang_id, archived FROM question_sheets WHERE id = ANY($1::bigint[])',
             [sheetIds]
           );
           if (sheetRows.rows.length !== sheetIds.length
-            || sheetRows.rows.some((row) => row.archived || !allowedMapelIds.has(Number(row.mapel_id)))) {
+            || sheetRows.rows.some((row) => row.archived || !allowedMapelIds.has(Number(row.mapel_id))
+              || Number(row.jenjang_id) !== Number(jenjangId))) {
             throw new ApiError(
               'VALIDATION_ERROR',
-              'Sebagian lembar soal tidak ditemukan, diarsipkan, atau bukan mapel terpilih'
+              'Sebagian lembar soal tidak ditemukan, diarsipkan, bukan mapel, atau bukan jenjang terpilih'
             );
           }
           sheetIds = sheetRows.rows
@@ -681,15 +680,16 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
             .map((row) => Number(row.id));
         } else {
           const questionRows = await client.query(
-            'SELECT id, mapel_id, status FROM questions WHERE id = ANY($1::bigint[])',
+            'SELECT id, mapel_id, jenjang_id, status FROM questions WHERE id = ANY($1::bigint[])',
             [questionIds]
           );
           if (questionRows.rows.length !== questionIds.length
             || questionRows.rows.some((row) => row.status !== 'approved'
-              || !allowedMapelIds.has(Number(row.mapel_id)))) {
+              || !allowedMapelIds.has(Number(row.mapel_id))
+              || Number(row.jenjang_id) !== Number(jenjangId))) {
             throw new ApiError(
               'VALIDATION_ERROR',
-              'Sebagian soal tidak ditemukan, tidak approved, atau bukan mapel terpilih'
+              'Sebagian soal tidak ditemukan, tidak approved, bukan mapel atau jenjang terpilih'
             );
           }
           questionIds = questionRows.rows
@@ -700,13 +700,14 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       if (definition.hasSheets) {
         const sheets = await client.query(
           `SELECT sh.id FROM question_sheets sh
-           WHERE sh.id = ANY($1::bigint[]) AND sh.archived = false AND sh.mapel_id = $2`,
-          [sheetIds, mapelId]
+           WHERE sh.id = ANY($1::bigint[]) AND sh.archived = false AND sh.mapel_id = $2
+             AND sh.jenjang_id = $3`,
+          [sheetIds, mapelId, jenjangId]
         );
         if (sheets.rows.length !== sheetIds.length) {
           throw new ApiError(
             'VALIDATION_ERROR',
-            'Sebagian lembar soal tidak ditemukan, diarsipkan, atau bukan mapel sesi ini'
+            'Sebagian lembar soal tidak ditemukan, diarsipkan, bukan mapel, atau bukan jenjang sesi ini'
           );
         }
         const expanded = await client.query(
@@ -714,8 +715,9 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
            FROM question_sheet_questions qsq
            JOIN questions q ON q.id = qsq.question_id
            WHERE qsq.sheet_id = ANY($1::bigint[]) AND q.status <> 'archived'
+             AND q.jenjang_id = $2
            ORDER BY qsq.question_id`,
-          [sheetIds]
+          [sheetIds, jenjangId]
         );
         questionIds = expanded.rows.map((row) => Number(row.question_id));
         if (questionIds.length === 0 && sheetIds.length > 0) {
@@ -724,13 +726,14 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
       } else {
         const questions = await client.query(
           `SELECT id FROM questions
-           WHERE id = ANY($1::bigint[]) AND status = 'approved' AND mapel_id = $2`,
-          [questionIds, mapelId]
+           WHERE id = ANY($1::bigint[]) AND status = 'approved' AND mapel_id = $2
+             AND jenjang_id = $3`,
+          [questionIds, mapelId, jenjangId]
         );
         if (questions.rows.length !== questionIds.length) {
           throw new ApiError(
             'VALIDATION_ERROR',
-            'Sebagian soal tidak ditemukan, tidak approved, atau bukan mapel sesi ini'
+            'Sebagian soal tidak ditemukan, tidak approved, bukan mapel, atau bukan jenjang sesi ini'
           );
         }
       }
@@ -743,12 +746,12 @@ tryoutRouter.post('/tryouts', adminOnly, asyncHandler(async (req, res) => {
     }
 
     const insertedEvent = await client.query(
-      `INSERT INTO tryout_events (name, slug, starts_at, ends_at)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [name, temporarySlug('event'), schedule.startsAt, schedule.endsAt]
+      `INSERT INTO tryout_events (name, slug, jenjang_id, starts_at, ends_at)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [name, temporarySlug('event'), jenjangId, schedule.startsAt, schedule.endsAt]
     );
     const eventId = Number(insertedEvent.rows[0].id);
-    const eventSlug = requestedSlug ?? generateTryoutSlug(name, eventId);
+    const eventSlug = generateTryoutSlug(name, eventId);
     const slugTaken = await client.query(
       'SELECT id FROM tryout_events WHERE slug = $1 AND id <> $2',
       [eventSlug, eventId]

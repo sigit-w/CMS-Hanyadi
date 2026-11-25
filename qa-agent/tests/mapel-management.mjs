@@ -155,6 +155,7 @@ test('MP-05 mapel yang dipakai soal tidak dapat dihapus', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       stem: `QA soal mapel ${suffix}`,
+      jenjang: 'SD',
       mapel: renamedCode,
       question_type: 'essay',
       answer_text: 'Jawaban uji QA'

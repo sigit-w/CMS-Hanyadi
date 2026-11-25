@@ -156,8 +156,6 @@ export default function MapelManagement() {
                   <TableHead>Nama</TableHead>
                   <TableHead>Deskripsi</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Soal</TableHead>
-                  <TableHead>Tryout</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -195,8 +193,6 @@ export default function MapelManagement() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{mapel.question_count}</TableCell>
-                    <TableCell>{mapel.tryout_count}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
                         {editingId === mapel.id ? (
@@ -273,7 +269,6 @@ export default function MapelManagement() {
                     <TableHead>Nama</TableHead>
                     <TableHead>Deskripsi</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Peserta</TableHead>
                     <TableHead>Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -311,7 +306,6 @@ export default function MapelManagement() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{jenjang.participant_count}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
                           {editingJenjangId === jenjang.id ? (

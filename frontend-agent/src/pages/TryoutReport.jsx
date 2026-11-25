@@ -181,7 +181,7 @@ export default function TryoutReport() {
                 onChange={(event) => setJenjangId(event.target.value)}>
                 <option value="">Semua jenjang</option>
                 {jenjangs.map((jenjang) => (
-                  <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                  <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                 ))}
               </SelectNative>
             </div>

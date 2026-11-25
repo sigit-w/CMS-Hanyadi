@@ -7,6 +7,7 @@ export const QUESTION_TYPES = ['multiple_choice', 'true_false', 'multiple_answer
 export const TRUE_FALSE_MAX_STATEMENTS = 5;
 export const DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const STATUSES = ['approved', 'rejected', 'archived'];
+export const JENJANG_KODES = ['SD', 'SMP', 'SMA'];
 export const IMAGE_ONLY_STEM = '[Gambar soal]';
 
 export function requireText(value, field, max = 10000) {
@@ -32,6 +33,17 @@ export function requireMapelCode(value) {
     throw new ApiError('VALIDATION_ERROR', 'Kode mapel harus tepat 4 karakter A-Z atau 0-9');
   }
   return code;
+}
+
+export function requireJenjangCode(value) {
+  const raw = value === undefined || value === null ? '' : String(value).trim().toUpperCase();
+  if (!raw) {
+    throw new ApiError('VALIDATION_ERROR', 'Jenjang wajib diisi');
+  }
+  if (!JENJANG_KODES.includes(raw)) {
+    throw new ApiError('VALIDATION_ERROR', `Jenjang tidak dikenal: ${raw}; gunakan SD, SMP, atau SMA`);
+  }
+  return raw;
 }
 
 export function requireMapelCodes(value) {
@@ -136,6 +148,7 @@ export function validateQuestionCreate(body, hasImage = false) {
   const stem = hasImage && (rawStem === undefined || rawStem === null || (typeof rawStem === 'string' && !rawStem.trim()))
     ? IMAGE_ONLY_STEM
     : requireText(rawStem, 'stem');
+  const jenjang = requireJenjangCode(body.jenjang ?? body.jenjang_kode);
   const mapel = requireMapelCode(body.mapel ?? body.mapel_code);
   const questionType = requireEnum(body.question_type ?? 'multiple_choice', QUESTION_TYPES, 'question_type');
   const difficulty = requireEnum(body.difficulty ?? 'medium', DIFFICULTIES, 'difficulty');
@@ -178,6 +191,7 @@ export function validateQuestionCreate(body, hasImage = false) {
 
   return {
     stem,
+    jenjang,
     mapel,
     question_type: questionType,
     difficulty,
@@ -194,7 +208,7 @@ export function validateQuestionUpdate(body, currentQuestionType = 'multiple_cho
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ApiError('VALIDATION_ERROR', 'Body harus berupa objek');
   }
-  const result = {};
+  const result = { jenjang: requireJenjangCode(body.jenjang ?? body.jenjang_kode) };
   if (body.stem !== undefined) result.stem = requireText(body.stem, 'stem');
   if (body.mapel !== undefined || body.mapel_code !== undefined) {
     result.mapel = requireMapelCode(body.mapel ?? body.mapel_code);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createQuestion, getMapels, importFile } from '../api.js';
+import { createQuestion, getJenjangs, getMapels, importFile } from '../api.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ const DEFAULT_STATEMENTS = [
   { text: '', is_correct: false }
 ];
 const EMPTY_FORM = {
-  stem: '', mapel: '', question_type: 'multiple_choice', difficulty: 'medium',
+  stem: '', jenjang: '', mapel: '', question_type: 'multiple_choice', difficulty: 'medium',
   options: [{ key: 'A', content: '' }, { key: 'B', content: '' }, { key: 'C', content: '' }, { key: 'D', content: '' }],
   statements: DEFAULT_STATEMENTS.map((statement) => ({ ...statement })),
   correct_keys: ['A'], correct_key: 'A', answer_text: '', explanation: ''
@@ -23,6 +23,7 @@ const EMPTY_FORM = {
 
 export default function QuestionInput({ onCreated }) {
   const [mapels, setMapels] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedFile, setSelectedFile] = useState(null);
   const [imageFile, setImageFile] = useState(null);
@@ -31,7 +32,14 @@ export default function QuestionInput({ onCreated }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  useEffect(() => { getMapels().then((d) => setMapels(d.mapels)).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    Promise.all([getMapels(), getJenjangs()])
+      .then(([mapelData, jenjangData]) => {
+        setMapels(mapelData.mapels ?? []);
+        setJenjangs(jenjangData.jenjangs ?? []);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
   useEffect(() => {
     if (!imageFile) { setImagePreview(''); return undefined; }
     const preview = URL.createObjectURL(imageFile);
@@ -83,6 +91,7 @@ export default function QuestionInput({ onCreated }) {
     event.preventDefault(); setError(''); setNotice('');
     try {
       if (!form.stem.trim() && !imageFile) { setError('Isi teks pertanyaan atau unggah gambar soal'); return; }
+      if (!form.jenjang) { setError('Pilih jenjang terlebih dahulu'); return; }
       if (!form.mapel) { setError('Pilih mapel terlebih dahulu'); return; }
       let options = []; let correctKeys = []; let statements = [];
       if (isTrueFalse) {
@@ -104,6 +113,7 @@ export default function QuestionInput({ onCreated }) {
       }
       const payload = {
         stem: form.stem,
+        jenjang: form.jenjang,
         mapel: form.mapel,
         question_type: form.question_type,
         difficulty: form.difficulty
@@ -128,24 +138,26 @@ export default function QuestionInput({ onCreated }) {
 
   async function handleImport(event) {
     event.preventDefault(); setError(''); setNotice('');
-    if (!selectedFile) { setError('Pilih file CSV atau XLSX terlebih dahulu'); return; }
+    if (!selectedFile) { setError('Pilih file CSV atau XLSX dengan kolom jenjang terlebih dahulu'); return; }
     if (!/\.(csv|xlsx)$/i.test(selectedFile.name)) {
-      setError('Impor soal hanya menerima file CSV atau XLSX');
+      setError('Impor soal hanya menerima file CSV atau XLSX yang memuat kolom jenjang');
       return;
     }
     try {
       const data = await importFile(selectedFile, sourceType);
-      setNotice(`Import berhasil: ${data.created} soal dari sumber #${data.source_id}`);
+      setNotice(`Import berhasil: ${data.created} soal dari sumber #${data.source_id} dengan kolom jenjang SD/SMP/SMA sesuai template.`);
       setSelectedFile(null);
       onCreated?.();
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      setError(`Impor soal gagal. Periksa kolom jenjang (SD/SMP/SMA) setelah mapel: ${err.message}`);
+    }
   }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Buat Soal</h1>
-        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file CSV/XLSX. Daftar soal diperbarui otomatis di bawah halaman ini.</p>
+        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file CSV/XLSX. Daftar soal dengan filter jenjang diperbarui otomatis di bawah halaman ini.</p>
       </div>
       {error && <Alert variant="destructive">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
@@ -173,7 +185,13 @@ export default function QuestionInput({ onCreated }) {
                 )}
               </div>
               <Separator />
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2"><Label>Jenjang</Label>
+                  <SelectNative value={form.jenjang} onChange={(e) => updateForm({ jenjang: e.target.value })}>
+                    <option value="">Pilih jenjang</option>
+                    {jenjangs.map((jenjang) => <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>)}
+                  </SelectNative>
+                  {jenjangs.length === 0 && <p className="text-xs text-muted-foreground">Belum ada jenjang tersedia.</p>}</div>
                 <div className="space-y-2"><Label>Mapel</Label>
                   <SelectNative value={form.mapel} onChange={(e) => updateForm({ mapel: e.target.value })}>
                     <option value="">Pilih mapel</option>
@@ -255,7 +273,7 @@ export default function QuestionInput({ onCreated }) {
         </Card>
 
         <Card className="h-fit">
-          <CardHeader><CardTitle>Impor Soal</CardTitle><CardDescription>Unggah file CSV atau XLSX. Payload tidak diterima.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Impor Soal</CardTitle><CardDescription>Unggah file CSV atau XLSX dengan kolom jenjang setelah mapel. Payload tidak diterima.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border p-3 text-xs">
               <p className="font-medium">Template impor</p>

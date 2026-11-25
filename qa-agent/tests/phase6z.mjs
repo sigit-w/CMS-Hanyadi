@@ -18,6 +18,8 @@ const TEMPLATE_XLSX = `${ROOT}/frontend-agent/public/templates/template-soal.xls
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const suffix = crypto.randomBytes(6).toString('hex');
+const activeSheetSuffix = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+const archivedSheetSuffix = String((Number(activeSheetSuffix) + crypto.randomInt(1, 10000)) % 10000).padStart(4, '0');
 const siswaName = `QA6Z Siswa ${suffix}`;
 const siswaEmail = `qa6z.siswa.${suffix}@example.test`;
 const siswaPassword = `Siswa${suffix}A`;
@@ -81,6 +83,7 @@ async function createQuestion(stem) {
     method: 'POST',
     body: JSON.stringify({
       stem,
+      jenjang: 'SD',
       mapel: 'MTKA',
       question_type: 'essay',
       difficulty: 'easy',
@@ -98,6 +101,7 @@ async function createSheet(code, question) {
     body: JSON.stringify({
       name: `QA6Z Lembar ${code} ${suffix}`,
       code,
+      jenjang: 'SD',
       mapel_code: 'MTKA',
       description: `Lembar uji Fase 6z ${code}`,
       duration_minutes: 30,
@@ -215,8 +219,8 @@ after(async () => {
 
 test('Q6Z-01 usage_count menghitung lembar aktif dan mengecualikan lembar terarsip', async () => {
   const question = await createQuestion(`QA6Z usage ${suffix}`);
-  const activeSheetCode = `Q6Z${suffix.slice(0, 8).toUpperCase()}A`;
-  const archivedSheetCode = `Q6Z${suffix.slice(0, 8).toUpperCase()}B`;
+  const activeSheetCode = `LS-MTKA-SD-${activeSheetSuffix}`;
+  const archivedSheetCode = `LS-MTKA-SD-${archivedSheetSuffix}`;
   const activeSheet = await createSheet(activeSheetCode, question);
   const archivedSheet = await createSheet(archivedSheetCode, question);
 
@@ -295,7 +299,7 @@ test('Q6Z-03 template XLSX bawaan berhasil diimpor', async () => {
 test('Q6Z-04 payload content dan questions[] ditolak VALIDATION_ERROR', async () => {
   const content = await api('/api/v1/import', {
     method: 'POST',
-    body: JSON.stringify({ content: 'stem,mapel\nSoal,MTKA' })
+    body: JSON.stringify({ content: 'stem,mapel,jenjang\nSoal,MTKA,SD' })
   });
   assert.equal(content.status, 400, JSON.stringify(content.body));
   assert.equal(content.body.error.code, 'VALIDATION_ERROR');
@@ -304,7 +308,7 @@ test('Q6Z-04 payload content dan questions[] ditolak VALIDATION_ERROR', async ()
     method: 'POST',
     body: JSON.stringify({
       source: { type: 'external_collection', label: `QA6Z payload ${suffix}`, external_ref: `6Z-${suffix}` },
-      questions: [{ stem: `QA6Z payload ${suffix}`, mapel: 'MTKA', question_type: 'essay', answer_text: 'x' }]
+      questions: [{ stem: `QA6Z payload ${suffix}`, jenjang: 'SD', mapel: 'MTKA', question_type: 'essay', answer_text: 'x' }]
     })
   });
   assert.equal(questions.status, 400, JSON.stringify(questions.body));
@@ -321,7 +325,7 @@ test('Q6Z-04 payload content dan questions[] ditolak VALIDATION_ERROR', async ()
 test('Q6Z-05 ekstensi dan format selain CSV/XLSX ditolak VALIDATION_ERROR', async () => {
   const cases = [
     ['soal.json', '{"stem":"x"}', 'application/json'],
-    ['soal.txt', 'stem,mapel\nSoal,MTKA', 'text/plain'],
+    ['soal.txt', 'stem,mapel,jenjang\nSoal,MTKA,SD', 'text/plain'],
     ['soal.bin', '\u0000\u0001data', 'application/octet-stream'],
     ['soal.xml', '<soal/>', 'application/xml']
   ];

@@ -1,5 +1,15 @@
 import { ApiError } from './errors.js';
 
+export async function resolveJenjangId(client, code) {
+  const { rows } = await client.query(
+    'SELECT id FROM jenjang WHERE kode = $1 AND is_active = true', [code]
+  );
+  if (!rows[0]) {
+    throw new ApiError('VALIDATION_ERROR', `Jenjang tidak ditemukan atau tidak aktif: ${code}`);
+  }
+  return rows[0].id;
+}
+
 export async function insertQuestion(client, data, sourceId = null, imageUrl = null) {
   const mapel = await client.query(
     'SELECT id FROM mapels WHERE code = $1 AND is_active = true', [data.mapel]
@@ -7,24 +17,25 @@ export async function insertQuestion(client, data, sourceId = null, imageUrl = n
   if (!mapel.rows[0]) {
     throw new ApiError('VALIDATION_ERROR', 'Mapel tidak ditemukan atau tidak aktif');
   }
+  const jenjangId = await resolveJenjangId(client, data.jenjang);
   const { rows } = await client.query(
-    `INSERT INTO questions (mapel_id, source_id, stem, image_url, question_type, difficulty, status)
-      VALUES ($1, $2, $3, $4, $5, $6, 'approved')
-     RETURNING id, stem, image_url, status, created_at`,
-    [mapel.rows[0].id, sourceId, data.stem, imageUrl, data.question_type, data.difficulty]
+    `INSERT INTO questions (jenjang_id, mapel_id, source_id, stem, image_url, question_type, difficulty, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved')
+     RETURNING id`,
+    [jenjangId, mapel.rows[0].id, sourceId, data.stem, imageUrl, data.question_type, data.difficulty]
   );
-  const question = rows[0];
+  const questionId = rows[0].id;
 
   if (data.question_type === 'true_false') {
-    await replaceStatements(client, question.id, data.statements);
-    return question;
+    await replaceStatements(client, questionId, data.statements);
+    return loadQuestion(client, questionId);
   }
 
   for (const option of data.options) {
     await client.query(
       `INSERT INTO question_options (question_id, option_key, content, is_correct, position)
        VALUES ($1, $2, $3, $4, $5)`,
-      [question.id, option.key, option.content, option.is_correct, option.position]
+      [questionId, option.key, option.content, option.is_correct, option.position]
     );
   }
 
@@ -32,7 +43,7 @@ export async function insertQuestion(client, data, sourceId = null, imageUrl = n
   if (data.correct_key) {
     const found = await client.query(
       'SELECT id FROM question_options WHERE question_id = $1 AND option_key = $2',
-      [question.id, data.correct_key]
+      [questionId, data.correct_key]
     );
     correctOptionId = found.rows[0]?.id ?? null;
   }
@@ -46,11 +57,16 @@ export async function insertQuestion(client, data, sourceId = null, imageUrl = n
          answer_text = EXCLUDED.answer_text,
          explanation = EXCLUDED.explanation,
          updated_at = now()`,
-      [question.id, correctOptionId, data.answer_text ?? null, data.explanation ?? null]
+      [questionId, correctOptionId, data.answer_text ?? null, data.explanation ?? null]
     );
   }
 
-  return question;
+  return loadQuestion(client, questionId);
+}
+
+export async function loadQuestion(client, questionId) {
+  const { rows } = await client.query(`${QUESTION_SELECT} WHERE q.id = $1`, [questionId]);
+  return rows[0];
 }
 
 export async function replaceStatements(client, questionId, statements) {
@@ -85,8 +101,9 @@ export async function fetchStatements(client, questionId, includeCorrect = false
 
 export const QUESTION_SELECT = `
   SELECT q.id, q.stem, q.image_url, q.question_type, q.difficulty, q.status,
-         m.code AS mapel_code, m.name AS mapel_name,
-         st.code AS source_type, qs.label AS source_label,
+          m.code AS mapel_code, m.name AS mapel_name,
+          j.kode AS jenjang_kode, j.nama AS jenjang_nama,
+          st.code AS source_type, qs.label AS source_label,
          (ak.id IS NOT NULL) AS has_answer_key,
          (SELECT count(*) FROM question_options o WHERE o.question_id = q.id) AS option_count,
          (SELECT count(*) FROM question_statements s WHERE s.question_id = q.id) AS statement_count,
@@ -95,6 +112,7 @@ export const QUESTION_SELECT = `
          q.created_at, q.updated_at
   FROM questions q
   JOIN mapels m ON m.id = q.mapel_id
+  JOIN jenjang j ON j.id = q.jenjang_id
   LEFT JOIN question_sources qs ON qs.id = q.source_id
   LEFT JOIN source_types st ON st.id = qs.type_id
   LEFT JOIN answer_keys ak ON ak.question_id = q.id

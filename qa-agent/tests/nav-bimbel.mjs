@@ -45,3 +45,16 @@ test('N-03 item dipindah dari grup lama', () => {
   assert.ok(!setting.includes('Kelola Program Belajar'));
   assert.ok(!setting.includes("hash: '#/program-belajar'"));
 });
+
+test('N-04 marker jenjang hadir pada form soal, lembar, tryout, dan program belajar', () => {
+  const sources = [
+    ['soal', '../../frontend-agent/src/pages/QuestionInput.jsx', 'Daftar soal dengan filter jenjang'],
+    ['lembar soal', '../../frontend-agent/src/pages/QuestionSheets.jsx', 'id="sheet-jenjang"'],
+    ['tryout', '../../frontend-agent/src/pages/TryoutManagement.jsx', 'Slug Grup Tryout (otomatis, bukan URL peserta)'],
+    ['program belajar', '../../frontend-agent/src/pages/ProgramBelajarManagement.jsx', 'id="program-jenjang"']
+  ];
+  for (const [label, path, marker] of sources) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.ok(source.includes(marker), `Marker jenjang form ${label} tidak ditemukan`);
+  }
+});

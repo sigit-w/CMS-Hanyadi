@@ -27,7 +27,7 @@ async function importFile(filename, content, mimeType, fields = {}) {
 }
 
 function essay(mapel, stem) {
-  return { stem, mapel, question_type: 'essay', answer_text: 'Jawaban uji QA' };
+  return { stem, jenjang: 'SD', mapel, question_type: 'essay', answer_text: 'Jawaban uji QA' };
 }
 
 before(async () => {
@@ -134,8 +134,8 @@ test('S-31 filter tiga mapel wajib konsisten', async () => {
 test('S-32 sumber impor CSV tercatat di PostgreSQL', async () => {
   const label = `QA-EDGE-${Date.now()}`;
   const csv = [
-    'stem,mapel,type,answer_text',
-    `"Soal sumber edge QA",IPAS,essay,"Jawaban uji QA"`
+    'stem,mapel,jenjang,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation',
+    `"Soal sumber edge QA",IPAS,SD,essay,,,,,,,,Jawaban uji QA,,,,,,,`
   ].join('\n');
   const imported = await importFile('sumber-edge.csv', csv, 'text/csv', {
     label,
@@ -158,7 +158,7 @@ test('S-33 update status dan arsip soal', async () => {
   assert.equal(created.status, 201);
   const id = created.body.data.question.id;
   const updated = await api(`/api/v1/questions/${id}`, {
-    method: 'PUT', body: JSON.stringify({ status: 'approved' })
+    method: 'PUT', body: JSON.stringify({ jenjang: 'SD', status: 'approved' })
   });
   assert.equal(updated.status, 200, JSON.stringify(updated.body));
   const archived = await api(`/api/v1/questions/${id}`, { method: 'DELETE' });
@@ -173,6 +173,7 @@ test('S-34 correct_key tidak ada di opsi ditolak 400', async () => {
     method: 'POST',
     body: JSON.stringify({
       stem: 'QA kunci di luar opsi',
+      jenjang: 'SD',
       mapel: 'MTKA',
       question_type: 'multiple_choice',
       options: [

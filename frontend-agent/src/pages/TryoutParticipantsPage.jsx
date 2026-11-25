@@ -234,7 +234,7 @@ export default function TryoutParticipantsPage({ tryoutId, onBack }) {
             onChange={(event) => setSourceJenjangFilter(event.target.value)}>
             <option value="">Semua jenjang</option>
             {jenjangs.map((jenjang) => (
-              <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+              <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
             ))}
           </SelectNative>
           <Input className="flex-1" value={sourceSearch}
@@ -289,18 +289,18 @@ export default function TryoutParticipantsPage({ tryoutId, onBack }) {
       <Card>
         <CardHeader><CardTitle className="text-base">Daftar Peserta</CardTitle></CardHeader>
         <CardContent className="pt-6">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama, username, atau sekolah"
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input className="w-full sm:max-w-sm" value={search} placeholder="Cari nama, username, atau sekolah"
               aria-label="Cari peserta tryout" onChange={(event) => setSearch(event.target.value)} />
-            <Label htmlFor="tryout-peserta-jenjang">Jenjang</Label>
-            <SelectNative id="tryout-peserta-jenjang" value={jenjangFilter}
+            <SelectNative id="tryout-peserta-jenjang" aria-label="Filter jenjang peserta"
+              className="w-full sm:w-36" value={jenjangFilter}
               onChange={(event) => setJenjangFilter(event.target.value)}>
               <option value="">Semua jenjang</option>
               {jenjangs.map((jenjang) => (
-                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
               ))}
             </SelectNative>
-            <Badge variant="secondary" className="h-9 px-3">{visible.length} data</Badge>
+            <Badge variant="secondary" className="h-9 shrink-0 px-3 sm:ml-auto">{visible.length} data</Badge>
           </div>
           {visible.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada peserta pada tryout ini.</p>
@@ -418,7 +418,7 @@ export default function TryoutParticipantsPage({ tryoutId, onBack }) {
                         onChange={(event) => setUmumForm({ ...umumForm, jenjang_id: event.target.value })}>
                         <option value="">Pilih jenjang</option>
                         {jenjangs.map((jenjang) => (
-                          <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                          <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                         ))}
                       </SelectNative>
                     </div>

@@ -28,6 +28,8 @@ let umumPin;
 let tryoutId;
 let sessionId;
 let questionId;
+let mtkaSheetId;
+let ipasSheetId;
 const participantIds = [];
 
 async function api(pathname, options = {}) {
@@ -128,18 +130,37 @@ before(async () => {
   const active = await activeTryoutContext(query);
   await attachQaParticipants(query, active.id, [siswaId, umumId]);
 
+  const sheets = await query(
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
+     FROM question_sheets sh
+     JOIN mapels m ON m.id = sh.mapel_id
+     JOIN jenjang j ON j.id = sh.jenjang_id
+     WHERE sh.archived = false AND m.code = ANY($1::text[])
+       AND EXISTS (SELECT 1 FROM question_sheet_questions qsq WHERE qsq.sheet_id = sh.id)
+     ORDER BY sh.id DESC`,
+    [['MTKA', 'IPAS']]
+  );
+  for (const row of sheets.rows) {
+    if (row.mapel_code === 'MTKA' && !mtkaSheetId) mtkaSheetId = Number(row.id);
+    if (row.mapel_code === 'IPAS' && !ipasSheetId) ipasSheetId = Number(row.id);
+  }
+  assert.ok(mtkaSheetId && ipasSheetId, 'Fixture QA memerlukan lembar aktif MTKA dan IPAS');
+  const mtkaSheet = sheets.rows.find((row) => Number(row.id) === mtkaSheetId);
+  assert.ok(sheets.rows.every((row) => row.jenjang_kode === mtkaSheet.jenjang_kode));
+
   const startsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const endsAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const createdTryout = await api('/api/v1/tryouts', {
     method: 'POST',
     body: JSON.stringify({
       name: `QA6W Tryout ${suffix}`,
+      jenjang: mtkaSheet.jenjang_kode,
       starts_at: startsAt,
       ends_at: endsAt,
       participant_ids: [siswaId, umumId],
       sessions: [
-        { name: `QA6W MTKA ${suffix}`, mapel_code: 'MTKA', sheet_ids: [66] },
-        { name: `QA6W IPAS ${suffix}`, mapel_code: 'IPAS', sheet_ids: [67] }
+        { name: `QA6W MTKA ${suffix}`, mapel_code: 'MTKA', sheet_ids: [mtkaSheetId] },
+        { name: `QA6W IPAS ${suffix}`, mapel_code: 'IPAS', sheet_ids: [ipasSheetId] }
       ]
     })
   });
@@ -149,7 +170,7 @@ before(async () => {
 
   const question = await query(
     'SELECT question_id FROM question_sheet_questions WHERE sheet_id = $1 ORDER BY question_id LIMIT 1',
-    [66]
+    [mtkaSheetId]
   );
   assert.ok(question.rows[0]);
   questionId = Number(question.rows[0].question_id);
@@ -178,6 +199,10 @@ test('Q6W-01 marker frontend dan generator username sesuai ADR-019', () => {
   const reportPage = readFileSync(new URL('../../frontend-agent/src/pages/TryoutReport.jsx', import.meta.url), 'utf8');
   const tryoutHtml = readFileSync(new URL('../../tryout-agent/index.html', import.meta.url), 'utf8');
   const tryoutApp = readFileSync(new URL('../../tryout-agent/app.js', import.meta.url), 'utf8');
+  const questionPage = readFileSync(new URL('../../frontend-agent/src/pages/QuestionInput.jsx', import.meta.url), 'utf8');
+  const sheetPage = readFileSync(new URL('../../frontend-agent/src/pages/QuestionSheets.jsx', import.meta.url), 'utf8');
+  const tryoutPage = readFileSync(new URL('../../frontend-agent/src/pages/TryoutManagement.jsx', import.meta.url), 'utf8');
+  const programPage = readFileSync(new URL('../../frontend-agent/src/pages/ProgramBelajarManagement.jsx', import.meta.url), 'utf8');
 
   assert.match(app, /Kelola Mapel & Jenjang/);
   assert.doesNotMatch(app, /Kelola Mapel &amp; Jenjang/);
@@ -192,6 +217,18 @@ test('Q6W-01 marker frontend dan generator username sesuai ADR-019', () => {
   assert.match(tryoutHtml, /Username peserta/);
   assert.match(tryoutHtml, /Contoh: SD00151234/);
   assert.match(tryoutApp, /username: elements\.loginUsername\.value/);
+  for (const [source, marker] of [
+    [questionPage, 'Pilih jenjang terlebih dahulu'],
+    [questionPage, 'jenjang: form.jenjang'],
+    [sheetPage, 'id="sheet-jenjang"'],
+    [sheetPage, 'LS-MTKA-SD-1126'],
+    [tryoutPage, 'Slug Grup Tryout (otomatis, bukan URL peserta)'],
+    [tryoutPage, 'jenjang: form.jenjang'],
+    [programPage, 'id="program-jenjang"'],
+    [programPage, 'Pilih jenjang terlebih dahulu']
+  ]) {
+    assert.ok(source.includes(marker), `Marker jenjang "${marker}" tidak ditemukan`);
+  }
 
   assert.equal(generateParticipantUsername('SD', '081234561234', new Date('2026-01-01T08:00:00Z')), 'SD00151234');
   assert.equal(waDigits('0812-3456-1234'), '081234561234');

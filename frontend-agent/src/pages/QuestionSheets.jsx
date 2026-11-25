@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   createQuestionSheet,
   deleteQuestionSheet,
+  getJenjangs,
   getMapels,
   getQuestion,
   getQuestionSheet,
@@ -21,8 +22,8 @@ import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog } from '@/components/ui/dialog';
 
-const EMPTY_FORM = { name: '', mapel_code: '', code: '', description: '', duration_minutes: 60 };
-const CODE_PATTERN = /^[A-Z0-9-]{12}$/;
+const EMPTY_FORM = { name: '', jenjang: '', mapel_code: '', code: '', description: '', duration_minutes: 60 };
+const CODE_PATTERN = /^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$/;
 const PAGE_SIZE = 20;
 const DETAIL_BATCH_SIZE = 5;
 
@@ -35,6 +36,11 @@ async function loadQuestions(ids) {
   }
   return result;
 }
+
+function jenjangLabel(item) {
+  return [item?.jenjang_kode, item?.jenjang_nama].filter(Boolean).join(' — ') || '—';
+}
+
 const QUESTION_TYPE_LABELS = {
   multiple_choice: 'Pilihan ganda',
   true_false: 'Benar/Salah',
@@ -48,6 +54,7 @@ export default function QuestionSheets() {
   const [sheetPage, setSheetPage] = useState(1);
   const [sheetPagination, setSheetPagination] = useState({ total: 0 });
   const [mapels, setMapels] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
   const [status, setStatus] = useState('active');
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -82,8 +89,10 @@ export default function QuestionSheets() {
     let active = true;
     (async () => {
       try {
-        const mapelData = await getMapels();
-        if (active) setMapels(mapelData.mapels ?? []);
+        const [mapelData, jenjangData] = await Promise.all([getMapels(), getJenjangs()]);
+        if (!active) return;
+        setMapels(mapelData.mapels ?? []);
+        setJenjangs(jenjangData.jenjangs ?? []);
       } catch (err) {
         if (active) setError(err.message);
       }
@@ -102,18 +111,24 @@ export default function QuestionSheets() {
 
   useEffect(() => {
     let active = true;
-    if (!form.mapel_code) {
+    if (!form.jenjang || !form.mapel_code) {
       setPicker([]);
       setPickerLoading(false);
       return () => { active = false; };
     }
     setPickerLoading(true);
-    getQuestionSheetPicker({ mapel: form.mapel_code, search: pickerSearch, question_type: pickerQuestionType, limit: 50 })
+    getQuestionSheetPicker({
+      jenjang: form.jenjang,
+      mapel: form.mapel_code,
+      search: pickerSearch,
+      question_type: pickerQuestionType,
+      limit: 50
+    })
       .then((data) => { if (active) setPicker(data.questions ?? []); })
       .catch((err) => { if (active) setError(err.message); })
       .finally(() => { if (active) setPickerLoading(false); });
     return () => { active = false; };
-  }, [form.mapel_code, pickerSearch, pickerQuestionType]);
+  }, [form.jenjang, form.mapel_code, pickerSearch, pickerQuestionType]);
 
   async function run(action, message) {
     setError('');
@@ -145,20 +160,38 @@ export default function QuestionSheets() {
     setNotice('');
   }
 
-  async function handleMapelChange(event) {
+  async function refreshCode(jenjang, mapelCode) {
+    if (!jenjang || !mapelCode) return;
+    try {
+      const data = await getQuestionSheetCode(mapelCode, jenjang);
+      setForm((current) => (
+        current.jenjang === jenjang && current.mapel_code === mapelCode
+          ? { ...current, code: data.code }
+          : current
+      ));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleJenjangChange(event) {
+    const jenjang = event.target.value;
+    setForm((current) => ({ ...current, jenjang, code: '' }));
+    setSelectedQuestions([]);
+    setPickerSearch('');
+    setPickerQuestionType('');
+    setError('');
+    refreshCode(jenjang, form.mapel_code);
+  }
+
+  function handleMapelChange(event) {
     const mapelCode = event.target.value;
     setForm((current) => ({ ...current, mapel_code: mapelCode, code: '' }));
     setSelectedQuestions([]);
     setPickerSearch('');
     setPickerQuestionType('');
     setError('');
-    if (!mapelCode) return;
-    try {
-      const data = await getQuestionSheetCode(mapelCode);
-      setForm((current) => current.mapel_code === mapelCode ? { ...current, code: data.code } : current);
-    } catch (err) {
-      setError(err.message);
-    }
+    refreshCode(form.jenjang, mapelCode);
   }
 
   async function startEdit(sheet) {
@@ -167,6 +200,7 @@ export default function QuestionSheets() {
       const questions = await loadQuestions(detailSheet.sheet.question_ids ?? []);
       setForm({
         name: detailSheet.sheet.name,
+        jenjang: detailSheet.sheet.jenjang_kode ?? '',
         mapel_code: detailSheet.sheet.mapel_code,
         code: detailSheet.sheet.code,
         description: detailSheet.sheet.description ?? '',
@@ -188,6 +222,10 @@ export default function QuestionSheets() {
     const exists = selectedQuestions.some((item) => item.id === question.id);
     if (exists) {
       setSelectedQuestions(selectedQuestions.filter((item) => item.id !== question.id));
+      return;
+    }
+    if ((question.jenjang_kode ?? question.jenjang) !== form.jenjang) {
+      setError('Soal yang dipilih harus berjenjang sama dengan lembar soal.');
       return;
     }
     if (question.mapel_code !== form.mapel_code) {
@@ -227,12 +265,16 @@ export default function QuestionSheets() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (!form.jenjang) {
+      setError('Pilih jenjang terlebih dahulu.');
+      return;
+    }
     if (!form.mapel_code) {
       setError('Pilih mapel terlebih dahulu.');
       return;
     }
     if (!CODE_PATTERN.test(form.code)) {
-      setError('Kode lembar soal harus tepat 12 karakter A-Z, 0-9, atau tanda hubung.');
+      setError('Kode lembar soal harus berformat LS-<mapel 4 karakter>-<SD|SMP|SMA>-<mmyy>, contoh LS-MTKA-SD-1126.');
       return;
     }
     const minutes = Number(form.duration_minutes);
@@ -246,6 +288,8 @@ export default function QuestionSheets() {
     }
     const payload = {
       name: form.name,
+      jenjang: form.jenjang,
+      jenjang_code: form.jenjang,
       mapel_code: form.mapel_code,
       code: form.code,
       description: form.description,
@@ -275,7 +319,7 @@ export default function QuestionSheets() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Lembar Soal</h1>
         <p className="text-sm text-muted-foreground">
-          Isi nama, pilih mapel, gunakan kode otomatis yang bisa diubah, lalu pilih soal dari mapel tersebut. Klik baris soal untuk melihat detail.
+          Isi nama, pilih jenjang, pilih mapel, gunakan kode otomatis yang bisa diubah, lalu pilih soal sesuai jenjang dan mapel. Klik baris soal untuk melihat detail.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
@@ -285,7 +329,7 @@ export default function QuestionSheets() {
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
           <div>
             <CardTitle>{editingId ? 'Ubah Lembar Soal' : 'Lembar Soal Baru'}</CardTitle>
-            <CardDescription>Kode 12 karakter termasuk tanda hubung; contoh LS-MTKA-1126.</CardDescription>
+            <CardDescription>Kode otomatis berformat LS-[mapel]-[jenjang]-[mmyy], contoh LS-MTKA-SD-1126.</CardDescription>
           </div>
           <Button type="button" variant="outline" onClick={startCreate}>Kosongkan Form</Button>
         </CardHeader>
@@ -298,6 +342,13 @@ export default function QuestionSheets() {
                   value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="sheet-jenjang">Jenjang</Label>
+                <SelectNative id="sheet-jenjang" required value={form.jenjang} onChange={handleJenjangChange}>
+                  <option value="">Pilih jenjang terlebih dahulu</option>
+                  {jenjangs.map((jenjang) => <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>)}
+                </SelectNative>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="sheet-mapel">Mapel</Label>
                 <SelectNative id="sheet-mapel" required value={form.mapel_code} onChange={handleMapelChange}>
                   <option value="">Pilih mapel terlebih dahulu</option>
@@ -306,11 +357,12 @@ export default function QuestionSheets() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sheet-code">Kode Lembar Soal</Label>
-                <Input id="sheet-code" required maxLength={12} pattern="[A-Z0-9-]{12}" className="font-mono"
-                  placeholder="Otomatis setelah mapel dipilih" disabled={!form.mapel_code}
+                <Input id="sheet-code" required maxLength={16} pattern="LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}" className="font-mono"
+                  placeholder="Otomatis setelah jenjang dan mapel dipilih"
+                  disabled={!form.jenjang || !form.mapel_code}
                   value={form.code}
                   onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} />
-                <p className="text-xs text-muted-foreground">Kode generation mengikuti mapel; tetap bisa diubah manual.</p>
+                <p className="text-xs text-muted-foreground">Kode generation mengikuti jenjang dan mapel; contoh LS-MTKA-SD-1126.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sheet-duration">Waktu Pengerjaan (menit)</Label>
@@ -327,15 +379,15 @@ export default function QuestionSheets() {
             </div>
 
             <div className="space-y-3 rounded-md border p-4">
-              {!form.mapel_code ? (
+              {!form.jenjang || !form.mapel_code ? (
                 <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  Pilih mapel terlebih dahulu untuk menampilkan soal.
+                  Pilih jenjang dan mapel terlebih dahulu untuk menampilkan soal.
                 </div>
               ) : (
                 <>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="min-w-[220px] flex-1 space-y-2">
-                      <Label htmlFor="picker-search">Cari Soal pada Mapel Ini</Label>
+                      <Label htmlFor="picker-search">Cari Soal pada Jenjang dan Mapel Ini</Label>
                       <Input id="picker-search" placeholder="Kata kunci pada teks soal"
                         value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
                     </div>
@@ -355,7 +407,7 @@ export default function QuestionSheets() {
                       {selectedQuestions.map((question) => (
                         <Button key={question.id} type="button" size="sm" variant="outline"
                           onClick={() => toggleQuestion(question)}>
-                          #{question.id} · {question.mapel_code} · hapus
+                          #{question.id} · {jenjangLabel(question)} · {question.mapel_code} · hapus
                         </Button>
                       ))}
                     </div>
@@ -364,13 +416,14 @@ export default function QuestionSheets() {
                   {pickerLoading ? (
                     <p className="text-sm text-muted-foreground">Memuat soal...</p>
                   ) : picker.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Tidak ada soal approved yang cocok pada mapel ini.</p>
+                    <p className="text-sm text-muted-foreground">Tidak ada soal approved yang cocok pada jenjang dan mapel ini.</p>
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Soal</TableHead>
                           <TableHead>Tipe</TableHead>
+                          <TableHead>Jenjang</TableHead>
                           <TableHead>Mapel</TableHead>
                           <TableHead>Aksi</TableHead>
                         </TableRow>
@@ -380,6 +433,7 @@ export default function QuestionSheets() {
                           <TableRow key={question.id} className="cursor-pointer" onClick={() => openDetail(question)}>
                             <TableCell className="max-w-[420px] truncate text-sm">{question.stem}</TableCell>
                             <TableCell className="text-xs">{QUESTION_TYPE_LABELS[question.question_type] ?? question.question_type}</TableCell>
+                            <TableCell className="text-xs">{jenjangLabel(question)}</TableCell>
                             <TableCell className="text-xs">{question.mapel_code}</TableCell>
                             <TableCell>
                               <Button type="button" size="sm" variant="outline"
@@ -423,6 +477,7 @@ export default function QuestionSheets() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
+                  <TableHead>Jenjang</TableHead>
                   <TableHead>Kode</TableHead>
                   <TableHead>Mapel</TableHead>
                   <TableHead>Waktu</TableHead>
@@ -435,6 +490,7 @@ export default function QuestionSheets() {
                 {sheets.map((sheet) => (
                   <TableRow key={sheet.id} className="cursor-pointer" onClick={() => openSheetDetail(sheet)}>
                     <TableCell>{sheet.name}</TableCell>
+                    <TableCell>{jenjangLabel(sheet)}</TableCell>
                     <TableCell className="font-mono text-xs">{sheet.code}</TableCell>
                     <TableCell>{sheet.mapel_name}</TableCell>
                     <TableCell>{sheet.duration_minutes} menit</TableCell>
@@ -475,6 +531,7 @@ export default function QuestionSheets() {
         {detail && !detailLoading && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{jenjangLabel(detail)}</Badge>
               <Badge variant="outline">{detail.mapel_name ?? detail.mapel_code}</Badge>
               <Badge variant="secondary">{QUESTION_TYPE_LABELS[detail.question_type] ?? detail.question_type}</Badge>
               <span className="text-xs text-muted-foreground">{detail.difficulty}</span>
@@ -515,6 +572,7 @@ export default function QuestionSheets() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">{sheetDetail.name}</Badge>
+              <Badge variant="outline">{jenjangLabel(sheetDetail)}</Badge>
               <Badge variant="secondary">{sheetDetail.mapel_name}</Badge>
               <span className="text-xs text-muted-foreground">{sheetDetail.questions.length} soal dipilih · {sheetDetail.duration_minutes} menit</span>
             </div>

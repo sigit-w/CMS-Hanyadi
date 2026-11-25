@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Trash2 } from 'lucide-react';
-import { deleteQuestion, getMapels, getQuestion, getQuestions, updateQuestion } from '../api.js';
+import { deleteQuestion, getJenjangs, getMapels, getQuestion, getQuestions, updateQuestion } from '../api.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ const QUESTION_TYPE_LABELS = {
   short_answer: 'Jawaban singkat',
   essay: 'Esai'
 };
-const INITIAL_FILTERS = { mapel: '', status: 'approved', search: '', question_type: '' };
+const INITIAL_FILTERS = { jenjang: '', mapel: '', status: 'approved', search: '', question_type: '' };
 const PAGE_SIZE = 20;
 const CHOICE_TYPES = ['multiple_choice', 'multiple_answer'];
 const DEFAULT_STATEMENTS = [
@@ -41,6 +41,7 @@ function toEditForm(question) {
   const correctKeys = options.filter((option) => option.is_correct).map((option) => option.key);
   return {
     stem: question.stem ?? '',
+    jenjang: question.jenjang_kode ?? '',
     mapel: question.mapel_code ?? '',
     question_type: question.question_type ?? 'multiple_choice',
     difficulty: question.difficulty ?? 'medium',
@@ -56,6 +57,10 @@ function toEditForm(question) {
   };
 }
 
+function jenjangLabel(question) {
+  return [question.jenjang_kode, question.jenjang_nama].filter(Boolean).join(' — ') || '—';
+}
+
 function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -64,6 +69,7 @@ function formatDate(value) {
 
 export default function Dashboard({ can, refreshKey = 0 }) {
   const [mapels, setMapels] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [pagination, setPagination] = useState({ total: 0 });
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -93,9 +99,10 @@ export default function Dashboard({ can, refreshKey = 0 }) {
     (async () => {
       try {
         setLoading(true);
-        const mapelData = await getMapels();
+        const [mapelData, jenjangData] = await Promise.all([getMapels(), getJenjangs()]);
         if (!active) return;
         setMapels(mapelData.mapels ?? []);
+        setJenjangs(jenjangData.jenjangs ?? []);
         await refreshQuestions(INITIAL_FILTERS, 1);
       } catch (err) {
         if (active) setError(err.message);
@@ -218,6 +225,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
     if (!detail || !editForm) return;
     setEditError(''); setDetailNotice(''); setEditSaving(true);
     try {
+      if (!editForm.jenjang) { setEditError('Pilih jenjang terlebih dahulu'); return; }
       if (!editForm.mapel) { setEditError('Pilih mapel terlebih dahulu'); return; }
       const isChoice = CHOICE_TYPES.includes(editForm.question_type);
       const isTrueFalse = editForm.question_type === 'true_false';
@@ -243,6 +251,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
       }
       const payload = {
         stem: editForm.stem,
+        jenjang: editForm.jenjang,
         mapel: editForm.mapel,
         question_type: editForm.question_type,
         difficulty: editForm.difficulty
@@ -270,14 +279,24 @@ export default function Dashboard({ can, refreshKey = 0 }) {
       setEditImage(null);
       setEditing(false);
       const mapelChanged = Boolean(filters.mapel) && filters.mapel !== editForm.mapel;
-      const nextFilters = mapelChanged ? { ...filters, mapel: editForm.mapel } : filters;
-      const nextPage = mapelChanged ? 1 : page;
-      if (mapelChanged) {
+      const jenjangChanged = Boolean(filters.jenjang) && filters.jenjang !== editForm.jenjang;
+      const filtersChanged = mapelChanged || jenjangChanged;
+      const nextFilters = filtersChanged ? {
+        ...filters,
+        ...(mapelChanged ? { mapel: editForm.mapel } : {}),
+        ...(jenjangChanged ? { jenjang: editForm.jenjang } : {})
+      } : filters;
+      const nextPage = filtersChanged ? 1 : page;
+      if (filtersChanged) {
         setFilters(nextFilters);
         setPage(nextPage);
       }
-      setDetailNotice(mapelChanged
-        ? `Perubahan soal berhasil disimpan. Filter mapel disesuaikan ke ${mapels.find((item) => item.code === editForm.mapel)?.name ?? editForm.mapel}.`
+      const adjustedFilters = [
+        mapelChanged ? `mapel ${mapels.find((item) => item.code === editForm.mapel)?.name ?? editForm.mapel}` : null,
+        jenjangChanged ? `jenjang ${jenjangs.find((item) => item.kode === editForm.jenjang)?.nama ?? editForm.jenjang}` : null
+      ].filter(Boolean);
+      setDetailNotice(adjustedFilters.length
+        ? `Perubahan soal berhasil disimpan. Filter ${adjustedFilters.join(' dan ')} disesuaikan.`
         : 'Perubahan soal berhasil disimpan.');
       await refreshQuestions(nextFilters, nextPage);
     } catch (err) {
@@ -307,10 +326,16 @@ export default function Dashboard({ can, refreshKey = 0 }) {
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Filter</CardTitle>
-            <CardDescription>Persempit daftar soal berdasarkan mapel, tipe soal, status, dan kata kunci.</CardDescription>
+            <CardDescription>Persempit daftar soal berdasarkan jenjang, mapel, tipe soal, status, dan kata kunci.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="space-y-2"><Label>Jenjang</Label>
+                <SelectNative value={filters.jenjang} onChange={(e) => applyFilter({ jenjang: e.target.value })}>
+                  <option value="">Semua jenjang</option>
+                  {jenjangs.map((jenjang) => <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>)}
+                </SelectNative>
+              </div>
               <div className="space-y-2"><Label>Mapel</Label>
                 <SelectNative value={filters.mapel} onChange={(e) => applyFilter({ mapel: e.target.value })}>
                   <option value="">Semua mapel</option>
@@ -368,6 +393,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-mono text-muted-foreground">#{question.id}</span>
+                          <Badge variant="outline">{jenjangLabel(question)}</Badge>
                           <Badge variant="outline">{question.mapel_name ?? question.mapel_code ?? '—'}</Badge>
                           <Badge variant="secondary" className="capitalize">{STATUS_LABELS[question.status] ?? question.status}</Badge>
                         </div>
@@ -427,6 +453,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{jenjangLabel(detail)}</Badge>
               <Badge variant="outline">{detail.mapel_name ?? detail.mapel_code ?? '—'}</Badge>
               <Badge variant="secondary">{STATUS_LABELS[detail.status] ?? detail.status}</Badge>
               <span className="text-xs text-muted-foreground">{QUESTION_TYPE_LABELS[detail.question_type] ?? detail.question_type} · {detail.difficulty}</span>
@@ -491,7 +518,13 @@ export default function Dashboard({ can, refreshKey = 0 }) {
                 <img src={detail.image_url} alt="Gambar soal saat ini" className="max-h-48 rounded-md border object-contain" />
               )}
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2"><Label>Jenjang</Label>
+                <SelectNative value={editForm.jenjang} onChange={(event) => updateEditForm({ jenjang: event.target.value })}>
+                  <option value="">Pilih jenjang</option>
+                  {jenjangs.map((item) => <option key={item.id} value={item.kode}>{item.kode}</option>)}
+                </SelectNative>
+              </div>
               <div className="space-y-2"><Label>Mapel</Label>
                 <SelectNative value={editForm.mapel} onChange={(event) => updateEditForm({ mapel: event.target.value })}>
                   <option value="">Pilih mapel</option>

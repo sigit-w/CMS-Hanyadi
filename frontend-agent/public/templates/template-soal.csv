@@ -1,5 +1,5 @@
-stem,mapel,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation
-"Berapa hasil dari 2 + 2?",MTKA,multiple_choice,easy,"3","4","5","6","B","","","Empat karena 2 + 2 = 4.","","","","","",""
-"Manakah contoh bilangan genap?",BIND,multiple_answer,medium,"2","3","4","5","","A,C","","2 dan 4 habis dibagi 2.","","","","","",""
-"Pernyataan berikut tentang air.",IPAS,true_false,easy,"","","","","","","","","Air membeku pada 0 derajat Celsius.",true,"Titik beku air.","Air mendidih pada 0 derajat Celsius.",false,"Titik didih air 100 derajat Celsius."
-"Hasil dari 6 kali 2 adalah?",MTKA,short_answer,easy,"","","","","","","12","Perkalian 6 * 2 = 12.","","","","","",""
+stem,mapel,jenjang,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation
+"Berapa hasil dari 2 + 2?",MTKA,SD,multiple_choice,easy,"3","4","5","6","B","","","Empat karena 2 + 2 = 4.","","","","","",""
+"Manakah contoh bilangan genap?",BIND,SMP,multiple_answer,medium,"2","3","4","5","","A,C","","2 dan 4 habis dibagi 2.","","","","","",""
+"Pernyataan berikut tentang air.",IPAS,SMA,true_false,easy,"","","","","","","","","Air membeku pada 0 derajat Celsius.",true,"Titik beku air.","Air mendidih pada 0 derajat Celsius.",false,"Titik didih air 100 derajat Celsius."
+"Hasil dari 6 kali 2 adalah?",MTKA,SD,short_answer,easy,"","","","","","","12","Perkalian 6 * 2 = 12.","","","","","",""

@@ -213,12 +213,12 @@ test('QS-04 Peserta Umum tetap di prospektus sampai dikonversi eksplisit', async
 });
 
 test('QS-05 presentation-service memakai tryout binding, bukan sesi aktif global', async () => {
-  const list = await api('/api/v1/tryout/questions?limit=1', {
+  const list = await api('/api/v1/tryout/questions?limit=50', {
     headers: { Cookie: participantCookie }
   });
   assert.equal(list.status, 200, JSON.stringify(list.body));
-  assert.ok(list.body.data.questions.length > 0);
-  const questionId = list.body.data.questions[0].id;
+  const questionId = list.body.data.questions.find((item) => item.question_type !== 'true_false')?.id;
+  assert.ok(questionId, JSON.stringify(list.body));
 
   const question = await fetch(`${PRESENTATION_BASE}/api/v1/presentation/questions/${questionId}`, {
     headers: { Cookie: participantCookie }

@@ -42,6 +42,16 @@ function mapelLabel(code, name) {
   return name || code || '—';
 }
 
+function jenjangLabel(tryout) {
+  return [tryout.jenjang_kode, tryout.jenjang_nama].filter(Boolean).join(' — ') || '—';
+}
+
+function slugPreview(name) {
+  const base = String(name ?? '')
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return base ? `${base.slice(0, 25)}-…` : '';
+}
+
 function tryoutMapelText(tryout) {
   const mapels = Array.isArray(tryout.mapels) ? tryout.mapels : [];
   const labels = mapels.length > 0
@@ -87,7 +97,7 @@ const emptySession = () => ({
 
 const emptyForm = () => ({
   name: '',
-  slug: '',
+  jenjang: '',
   starts_at: jakartaInputDate(),
   ends_at: jakartaInputDate(2),
   sessions: [emptySession()]
@@ -199,6 +209,7 @@ export default function TryoutManagement() {
   const [detailParticipant, setDetailParticipant] = useState(null);
   const [tryouts, setTryouts] = useState([]);
   const [statusFilter, setStatusFilter] = useState('berlangsung');
+  const [jenjangFilter, setJenjangFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -224,7 +235,8 @@ export default function TryoutManagement() {
   const usedMapelCodes = [...new Set(form.sessions.map((session) => session.mapel_code).filter(Boolean))];
   const sheetCodesKey = [...usedMapelCodes].sort().join('|');
   const visibleTryouts = tryouts.filter((tryout) => (
-    statusFilter === 'semua' || tryout.status === statusFilter
+    (statusFilter === 'semua' || tryout.status === statusFilter)
+    && (!jenjangFilter || tryout.jenjang_kode === jenjangFilter)
   ));
   const participantSource = pesertaDialog === 'siswa' || (pesertaDialog === 'umum' && umumTab === 'siswa')
     ? 'siswa'
@@ -271,14 +283,23 @@ export default function TryoutManagement() {
   useEffect(() => {
     let active = true;
     const codes = sheetCodesKey ? sheetCodesKey.split('|') : [];
-    if (codes.length === 0) {
+    if (codes.length === 0 || !form.jenjang) {
       setSheetsByMapel({});
+      setForm((current) => ({
+        ...current,
+        sessions: current.sessions.map((session) => ({ ...session, sheet_ids: [] }))
+      }));
       return undefined;
     }
     async function loadSheets() {
       try {
         const results = await Promise.all(codes.map(async (code) => {
-          const data = await getQuestionSheets({ status: 'active', mapel: code, limit: 100 });
+          const data = await getQuestionSheets({
+            status: 'active',
+            jenjang: form.jenjang,
+            mapel: code,
+            limit: 100
+          });
           return [code, data.sheets];
         }));
         if (!active) return;
@@ -306,7 +327,7 @@ export default function TryoutManagement() {
       document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('focus', refreshOnVisible);
     };
-  }, [sheetCodesKey]);
+  }, [sheetCodesKey, form.jenjang]);
 
   useEffect(() => {
     if (!participantSource) return undefined;
@@ -353,6 +374,15 @@ export default function TryoutManagement() {
         position === index ? { ...session, ...patch } : session
       ))
     }));
+  }
+
+  function changeJenjang(jenjang) {
+    setForm((current) => ({
+      ...current,
+      jenjang,
+      sessions: current.sessions.map((session) => ({ ...session, sheet_ids: [] }))
+    }));
+    setSheetsByMapel({});
   }
 
   function changeSessionMapel(index, code) {
@@ -494,8 +524,10 @@ export default function TryoutManagement() {
   }
 
   function validateForm() {
-    if (!form.name.trim() || !form.starts_at || !form.ends_at) {
-      return 'Lengkapi Nama Tryout, slug jika diinginkan, dan jadwal tryout.';
+    if (!form.name.trim()) return 'Nama tryout wajib diisi.';
+    if (!form.jenjang) return 'Pilih jenjang terlebih dahulu sebelum mengisi jadwal tryout.';
+    if (!form.starts_at || !form.ends_at) {
+      return 'Lengkapi tanggal & jam mulai serta tanggal & jam selesai tryout.';
     }
     if (Date.parse(form.ends_at) <= Date.parse(form.starts_at)) {
       return 'Tanggal & jam selesai harus setelah tanggal & jam mulai.';
@@ -535,7 +567,7 @@ export default function TryoutManagement() {
       const name = form.name.trim();
       const created = await createTryout({
         name,
-        slug: form.slug.trim() || undefined,
+        jenjang: form.jenjang,
         starts_at: form.starts_at,
         ends_at: form.ends_at,
         participant_ids: selectedParticipants.map(Number),
@@ -658,7 +690,7 @@ export default function TryoutManagement() {
             onChange={(event) => setParticipantJenjangFilter(event.target.value)}>
             <option value="">Semua jenjang</option>
             {jenjangs.map((jenjang) => (
-              <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+              <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
             ))}
           </SelectNative>
           <Input
@@ -730,9 +762,19 @@ export default function TryoutManagement() {
                   onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Slug Grup Tryout (opsional, bukan URL peserta)</Label>
-                <Input value={form.slug} placeholder="contoh: tryout-november"
-                  onChange={(event) => setForm({ ...form, slug: event.target.value })} />
+                <Label>Jenjang</Label>
+                <SelectNative value={form.jenjang} onChange={(event) => changeJenjang(event.target.value)}>
+                  <option value="">Pilih jenjang terlebih dahulu</option>
+                  {jenjangs.map((jenjang) => (
+                    <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>
+                  ))}
+                </SelectNative>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Slug Grup Tryout (otomatis, bukan URL peserta)</Label>
+                <Input readOnly value={slugPreview(form.name)} placeholder="Slug dibuat otomatis setelah nama diisi"
+                  className="bg-muted" />
+                <p className="text-xs text-muted-foreground">Slug dihasilkan backend saat tryout disimpan dan tidak dikirim manual.</p>
               </div>
               <div className="space-y-1.5">
                 <Label>Tanggal &amp; Jam Mulai</Label>
@@ -791,9 +833,9 @@ export default function TryoutManagement() {
                         Lembar Soal ({session.sheet_ids.length} dipilih)
                       </legend>
                       {!session.mapel_code ? (
-                        <p className="text-sm text-muted-foreground">Pilih mapel pada sesi ini untuk memuat lembar soal.</p>
+                        <p className="text-sm text-muted-foreground">Pilih jenjang dan mapel pada sesi ini untuk memuat lembar soal.</p>
                       ) : sheetOptions.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif pada mapel sesi ini.</p>
+                        <p className="text-sm text-muted-foreground">Belum ada lembar soal aktif untuk jenjang dan mapel sesi ini.</p>
                       ) : (
                         <div className="max-h-56 space-y-2 overflow-y-auto">
                           {sheetOptions.map((sheet) => (
@@ -953,7 +995,7 @@ export default function TryoutManagement() {
                   onChange={(event) => setUmumForm({ ...umumForm, jenjang_id: event.target.value })}>
                   <option value="">Pilih jenjang</option>
                   {jenjangs.map((jenjang) => (
-                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                    <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                   ))}
                 </SelectNative>
               </div>
@@ -1051,8 +1093,15 @@ export default function TryoutManagement() {
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">
           <CardTitle className="text-base">Daftar Tryout</CardTitle>
-          <Badge variant="secondary">{visibleTryouts.length} tryout</Badge>
-          <SelectNative aria-label="Filter status tryout" className="ml-auto w-36"
+            <Badge variant="secondary">{visibleTryouts.length} tryout</Badge>
+            <SelectNative aria-label="Filter jenjang tryout" className="w-32"
+              value={jenjangFilter} onChange={(event) => setJenjangFilter(event.target.value)}>
+              <option value="">Semua jenjang</option>
+              {jenjangs.map((jenjang) => (
+                <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>
+              ))}
+            </SelectNative>
+            <SelectNative aria-label="Filter status tryout" className="ml-auto w-36"
             value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="berlangsung">Berlangsung</option>
             <option value="terjadwal">Terjadwal</option>
@@ -1063,7 +1112,9 @@ export default function TryoutManagement() {
         <CardContent>
           {visibleTryouts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {statusFilter === 'semua' ? 'Belum ada tryout.' : `Tidak ada tryout berstatus ${statusFilter}.`}
+              {statusFilter === 'semua' && !jenjangFilter
+                ? 'Belum ada tryout.'
+                : 'Tidak ada tryout untuk filter yang dipilih.'}
             </p>
           ) : (
             <Table>
@@ -1074,7 +1125,7 @@ export default function TryoutManagement() {
                   <TableHead>Mulai</TableHead>
                   <TableHead>Selesai</TableHead>
                   <TableHead>Mapel</TableHead>
-                  <TableHead>Soal</TableHead>
+                  <TableHead>Jenjang</TableHead>
                   <TableHead>Peserta</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Status</TableHead>
@@ -1086,26 +1137,28 @@ export default function TryoutManagement() {
                   <TableRow key={tryout.id}>
                     <TableCell>#{tryout.id} {tryout.name}</TableCell>
                     <TableCell>
-                      <div className="space-y-2">
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0"
-                          aria-label="Salin semua URL sesi" title="Salin semua URL sesi"
-                          onClick={() => handleCopySessionUrls(tryout)}
-                          disabled={tryoutSessionUrls(tryout).length === 0}>
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        {(tryout.sessions ?? []).length === 0 && (
-                          <span className="text-xs text-muted-foreground">Tidak ada sesi</span>
-                        )}
-                        {(tryout.sessions ?? []).map((session) => (
-                          <Input key={session.id} aria-label={`URL sesi ${session.name || tryout.name}`}
-                            value={tryoutUrl(session.slug)} readOnly className="h-8 w-56 text-xs" />
-                        ))}
-                      </div>
+                      {(tryout.sessions ?? []).length === 0 ? (
+                        <span className="text-xs text-muted-foreground">Tidak ada sesi</span>
+                      ) : (
+                        <div className="flex items-start gap-2">
+                          <div className="font-mono text-xs leading-tight">
+                            {(tryout.sessions ?? []).map((session) => (
+                              <div key={session.id}>{tryoutUrl(session.slug)}</div>
+                            ))}
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                            aria-label="Salin semua URL sesi" title="Salin semua URL sesi"
+                            onClick={() => handleCopySessionUrls(tryout)}
+                            disabled={tryoutSessionUrls(tryout).length === 0}>
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>{formatDateTime(tryout.starts_at ?? tryout.start_at)}</TableCell>
                     <TableCell>{formatDateTime(tryout.ends_at ?? tryout.end_at)}</TableCell>
                     <TableCell>{tryoutMapelText(tryout)}</TableCell>
-                    <TableCell>{tryout.question_count}</TableCell>
+                    <TableCell>{jenjangLabel(tryout)}</TableCell>
                     <TableCell>{tryout.participant_count}</TableCell>
                     <TableCell>
                       <Badge variant={tryoutHasCbt(tryout) ? 'default' : 'secondary'}>

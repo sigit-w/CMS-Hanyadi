@@ -228,7 +228,7 @@ CREATE INDEX IF NOT EXISTS idx_tryout_cbt_violations_attempt
 CREATE TABLE IF NOT EXISTS question_sheets (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
-    code VARCHAR(12) NOT NULL UNIQUE,
+    code VARCHAR(16) NOT NULL UNIQUE,
     description TEXT,
     duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
     mapel_id BIGINT NOT NULL REFERENCES mapels(id) ON DELETE RESTRICT,
@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS question_sheets (
     created_by BIGINT REFERENCES contributors(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT question_sheets_code_format CHECK (length(code) = 12 AND code ~ '^[A-Z0-9-]{12}$'),
+    CONSTRAINT question_sheets_code_format CHECK (length(code) IN (15, 16) AND code ~ '^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$'),
     CONSTRAINT question_sheets_name_not_blank CHECK (length(btrim(name)) > 0)
 );
 

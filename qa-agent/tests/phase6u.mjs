@@ -34,6 +34,7 @@ const schedule = {
 };
 
 const sheetIds = {};
+let sheetJenjang = 'SD';
 const questionIds = {};
 const eventIds = [];
 const participantIds = [];
@@ -88,6 +89,7 @@ async function createTryout(key, payload) {
     body: JSON.stringify({
       name: `QA 6u ${key} ${suffix}`,
       slug: `qa-6u-${key}-${suffix}`,
+      jenjang: sheetJenjang,
       ...payload
     })
   });
@@ -147,10 +149,11 @@ before(async () => {
   }
 
   const sheets = await query(
-    `SELECT sh.id, m.code AS mapel_code
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
        FROM question_sheets sh
        JOIN mapels m ON m.id = sh.mapel_id
-      WHERE sh.archived = false AND m.code = ANY($1::text[])
+       JOIN jenjang j ON j.id = sh.jenjang_id
+       WHERE sh.archived = false AND m.code = ANY($1::text[])
         AND EXISTS (
           SELECT 1 FROM question_sheet_questions qsq
           JOIN questions q ON q.id = qsq.question_id
@@ -164,6 +167,9 @@ before(async () => {
     if (!sheetIds[row.mapel_code]) sheetIds[row.mapel_code] = Number(row.id);
   }
   assert.ok(sheetIds.MTKA && sheetIds.IPAS, 'Fixture QA memerlukan lembar aktif MTKA dan IPAS');
+  const mtkaSheet = sheets.rows.find((row) => row.mapel_code === 'MTKA');
+  sheetJenjang = mtkaSheet.jenjang_kode;
+  assert.ok(sheets.rows.every((row) => row.jenjang_kode === sheetJenjang));
   for (const code of ['MTKA', 'IPAS']) {
     const rows = await query(
       `SELECT q.id
@@ -434,7 +440,7 @@ test('Q6U-06 daftar tryout tidak memiliki kolom Submission pengganti', async () 
   const cms = readFileSync(CMS_FILE, 'utf8');
   const table = cms.slice(cms.indexOf('Daftar Tryout'));
   assert.deepEqual(headerTexts(table), [
-    'Nama', 'URL Peserta per Sesi', 'Mulai', 'Selesai', 'Mapel', 'Soal', 'Peserta', 'Mode', 'Status', 'Aksi'
+    'Nama', 'URL Peserta per Sesi', 'Mulai', 'Selesai', 'Mapel', 'Jenjang', 'Peserta', 'Mode', 'Status', 'Aksi'
   ]);
   assert.doesNotMatch(table, /Submission/i);
 

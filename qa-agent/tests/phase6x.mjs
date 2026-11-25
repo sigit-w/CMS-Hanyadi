@@ -11,7 +11,7 @@ const roleCode = `qa6xrole_${suffix}`;
 const exportUsername = `qa6x_${suffix}`;
 const exportPassword = crypto.randomBytes(18).toString('base64url');
 const bindQuestionStem = `QA6X soal BIND ${suffix}`;
-const bindSheetCode = `QA${suffix.slice(0, 10).toUpperCase()}`;
+const bindSheetCode = `LS-BIND-SD-${String(crypto.randomInt(0, 10000)).padStart(4, '0')}`;
 const bindSheetName = `QA6X Lembar BIND ${suffix}`;
 const participantWa = `0814${String(crypto.randomInt(0, 100000000)).padStart(8, '0')}`;
 const participantUsernameSeed = suffix.slice(0, 8).toUpperCase();
@@ -28,6 +28,10 @@ let participantUsername;
 let tryoutId;
 let originalSlug;
 let originalSessionSlug;
+let mtkaSheetId;
+let ipasSheetId;
+let mtkaSheetCode;
+let ipasSheetCode;
 let sessionIds = [];
 let originalName;
 
@@ -60,6 +64,7 @@ async function createQuestion() {
     method: 'POST',
     body: JSON.stringify({
       stem: bindQuestionStem,
+      jenjang: 'SD',
       mapel: 'BIND',
       question_type: 'multiple_choice',
       options: [
@@ -79,6 +84,7 @@ async function createSheet(question) {
     body: JSON.stringify({
       name: bindSheetName,
       code: bindSheetCode,
+      jenjang: 'SD',
       mapel_code: 'BIND',
       description: `Lembar uji ${participantUsernameSeed}`,
       duration_minutes: 30,
@@ -165,6 +171,29 @@ before(async () => {
   assert.equal(createdUser.status, 201, JSON.stringify(createdUser.body));
   exportCookie = await login(exportUsername, exportPassword);
 
+  const sheets = await query(
+    `SELECT sh.id, sh.code, m.code AS mapel_code, j.kode AS jenjang_kode
+     FROM question_sheets sh
+     JOIN mapels m ON m.id = sh.mapel_id
+     JOIN jenjang j ON j.id = sh.jenjang_id
+     WHERE sh.archived = false AND m.code = ANY($1::text[])
+       AND EXISTS (SELECT 1 FROM question_sheet_questions qsq WHERE qsq.sheet_id = sh.id)
+     ORDER BY sh.id DESC`,
+    [['MTKA', 'IPAS']]
+  );
+  for (const row of sheets.rows) {
+    if (row.mapel_code === 'MTKA' && !mtkaSheetId) {
+      mtkaSheetId = Number(row.id);
+      mtkaSheetCode = row.code;
+    }
+    if (row.mapel_code === 'IPAS' && !ipasSheetId) {
+      ipasSheetId = Number(row.id);
+      ipasSheetCode = row.code;
+    }
+  }
+  assert.ok(mtkaSheetId && ipasSheetId, 'Fixture QA memerlukan lembar aktif MTKA dan IPAS');
+  assert.ok(sheets.rows.every((row) => row.jenjang_kode === 'SD'));
+
   const startsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const endsAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   originalName = `QA6X Tryout ${suffix}`;
@@ -172,12 +201,13 @@ before(async () => {
     method: 'POST',
     body: JSON.stringify({
       name: originalName,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       participant_ids: [participantId],
       sessions: [
-        { name: `QA6X MTKA ${suffix}`, mapel_code: 'MTKA', sheet_ids: [66] },
-        { name: `QA6X IPAS ${suffix}`, mapel_code: 'IPAS', sheet_ids: [67] },
+        { name: `QA6X MTKA ${suffix}`, mapel_code: 'MTKA', sheet_ids: [mtkaSheetId] },
+        { name: `QA6X IPAS ${suffix}`, mapel_code: 'IPAS', sheet_ids: [ipasSheetId] },
         { name: `QA6X BIND ${suffix}`, mapel_code: 'BIND', sheet_ids: [sheetId] }
       ]
     })
@@ -336,8 +366,8 @@ test('Q6X-04 ekspor tiga sesi: soal tanpa kunci dan soal dengan kunci', async ()
     }
     assert.ok(!text.includes('Kunci jawaban:'), `PDF ${index + 1} membocorkan kunci`);
   }
-  assert.ok(plainTexts.some((text) => text.includes('LS-MTKA-1126')));
-  assert.ok(plainTexts.some((text) => text.includes('LS-IPAS-1126')));
+  assert.ok(plainTexts.some((text) => text.includes(mtkaSheetCode)));
+  assert.ok(plainTexts.some((text) => text.includes(ipasSheetCode)));
   assert.ok(plainTexts.some((text) => text.includes(bindSheetCode)));
   assert.ok(plainTexts.some((text) => text.includes(bindSheetName)));
 

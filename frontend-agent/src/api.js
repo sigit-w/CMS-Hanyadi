@@ -143,10 +143,8 @@ export const getQuestionSheets = (params) => {
   return request(`/question-sheets${query ? `?${query}` : ''}`);
 };
 export const getQuestionSheet = (id) => request(`/question-sheets/${id}`);
-export const getQuestionSheetCode = (mapel) => {
-  const query = mapel ? `?${new URLSearchParams({ mapel }).toString()}` : '';
-  return request(`/question-sheets/generate-code${query}`);
-};
+export const getQuestionSheetCode = (mapel, jenjang) =>
+  request(withQuery('/question-sheets/generate-code', { mapel, jenjang }));
 export const getQuestionSheetPicker = (params) => {
   const query = new URLSearchParams(params).toString();
   return request(`/question-sheets/question-picker${query ? `?${query}` : ''}`);

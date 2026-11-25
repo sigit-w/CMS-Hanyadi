@@ -10,6 +10,8 @@ import { query, pool } from '../../backend-agent/src/db.js';
 const BACKEND = API_BASE;
 const PRESENTATION = PRESENTATION_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
+const sheetCodeSuffix = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+const activeSheetCodeSuffix = String((Number(sheetCodeSuffix) + crypto.randomInt(1, 10000)) % 10000).padStart(4, '0');
 const participantEmail = `qa_tr_participant_${suffix}@qa.test`;
 const viewerUsername = `qa_tr_viewer_${suffix}`;
 const viewerRoleCode = `qa_trviewer_${suffix}`;
@@ -67,6 +69,7 @@ async function login(username) {
 function mcPayload(stem) {
   return {
     stem,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'multiple_choice',
     difficulty: 'easy',
@@ -99,6 +102,7 @@ async function createSheet(code, mapel, questions) {
     body: JSON.stringify({
       name: `QA TR Lembar ${mapel} ${suffix}`,
       code,
+      jenjang: 'SD',
       mapel_code: mapel,
       description: `Lembar uji ${suffix}`,
       duration_minutes: 30,
@@ -146,12 +150,12 @@ before(async () => {
   viewerHeaders = await login(viewerUsername);
   await createQuestion(`QA sesi benar ${suffix}`);
   await createQuestion(`QA sesi salah ${suffix}`);
-  await createSheet(`QATR${suffix.slice(0, 8).toUpperCase()}`, 'MTKA', questionIds);
+  await createSheet(`LS-MTKA-SD-${sheetCodeSuffix}`, 'MTKA', questionIds);
 
   const eventName = `QA TR Event ${suffix}`;
   const event = await query(
-    `INSERT INTO tryout_events (name, slug, starts_at, ends_at)
-     VALUES ($1, $2, now() - interval '1 hour', now() + interval '2 hours')
+    `INSERT INTO tryout_events (name, slug, jenjang_id, starts_at, ends_at)
+     VALUES ($1, $2, (SELECT id FROM jenjang WHERE kode = 'SD'), now() - interval '1 hour', now() + interval '2 hours')
      RETURNING id`,
     [eventName, `qa-tr-event-${suffix}`]
   );
@@ -335,6 +339,7 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA ${suffix}`,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       sessions: [{
@@ -372,6 +377,7 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA salah mapel ${suffix}`,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       sessions: [{ mapel_code: 'IPAS', sheet_ids: [sheetIds[0]] }],
@@ -385,6 +391,7 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA peserta invalid ${suffix}`,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       sessions: [{ mapel_code: 'MTKA', sheet_ids: [sheetIds[0]] }],
@@ -396,7 +403,7 @@ test('TR-05 endpoint tryouts membuat TO beserta soal dan peserta dengan RBAC', a
 
 test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () => {
   const activeSheetId = await createSheet(
-    `QATRONE${suffix.slice(0, 5).toUpperCase()}`,
+    `LS-MTKA-SD-${activeSheetCodeSuffix}`,
     'MTKA',
     [questionIds[0]]
   );
@@ -405,6 +412,7 @@ test('TR-06 daftar soal dan submit mengikuti soal/peserta TO aktif', async () =>
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO aktif QA ${suffix}`,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       sessions: [{

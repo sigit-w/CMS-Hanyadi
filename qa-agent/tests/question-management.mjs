@@ -80,6 +80,7 @@ async function createRole(code, name, permissions) {
 function essay(stem) {
   return {
     stem,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'essay',
     difficulty: 'easy',

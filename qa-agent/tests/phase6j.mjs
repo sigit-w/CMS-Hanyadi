@@ -37,6 +37,7 @@ async function presentation(path, options = {}) {
 function essay(stem, extra = {}) {
   return {
     stem,
+    jenjang: 'SD',
     mapel: mapelCode,
     question_type: 'essay',
     difficulty: 'medium',
@@ -67,8 +68,8 @@ before(async () => {
 
   const eventName = `QA6J Event ${suffix}`;
   const event = await query(
-    `INSERT INTO tryout_events (name, slug, starts_at, ends_at)
-     VALUES ($1, $2, now() - interval '1 hour', now() + interval '2 hours')
+    `INSERT INTO tryout_events (name, slug, jenjang_id, starts_at, ends_at)
+     VALUES ($1, $2, (SELECT id FROM jenjang WHERE kode = 'SD'), now() - interval '1 hour', now() + interval '2 hours')
      RETURNING id`,
     [eventName, `qa6j-event-${suffix}`]
   );
@@ -110,10 +111,14 @@ test('J-01 create soal manual langsung approved', async () => {
 });
 
 test('J-02 impor CSV langsung approved', async () => {
+  const row = (number) => [
+    `"QA6J impor ${number} ${suffix}"`, mapelCode, 'SD', 'essay', 'medium',
+    '', '', '', '', '', '', 'Jawaban uji QA', '', '', '', '', '', '', ''
+  ].join(',');
   const csv = [
-    'stem,mapel,type,difficulty,answer_text',
-    `"QA6J impor 1 ${suffix}",${mapelCode},essay,medium,"Jawaban uji QA"`,
-    `"QA6J impor 2 ${suffix}",${mapelCode},essay,medium,"Jawaban uji QA"`
+    'stem,mapel,jenjang,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation',
+    row(1),
+    row(2)
   ].join('\n');
   const form = new FormData();
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'qa6j.csv');
@@ -140,7 +145,7 @@ test('J-03 draft/review ditolak di update dan filter', async () => {
     const update = await api(`/api/v1/questions/${manualId}`, {
       method: 'PUT',
       headers: await adminHeaders(),
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ jenjang: 'SD', status })
     });
     assert.equal(update.status, 400, JSON.stringify(update.body));
     assert.equal(update.body.error.code, 'VALIDATION_ERROR');

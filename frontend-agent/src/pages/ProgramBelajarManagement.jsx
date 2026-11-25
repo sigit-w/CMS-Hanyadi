@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   createProgramBelajar,
   deleteProgramBelajar,
+  getJenjangs,
   getProgramsBelajar,
   updateProgramBelajar
 } from '../api.js';
@@ -18,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 const EMPTY_SCHEDULE = { day: 'Senin', start_time: '08:00', end_time: '10:00' };
 const EMPTY_FORM = {
-  name: '', kelas: '', description: '', biaya: '',
+  name: '', jenjang: '', kelas: '', description: '', biaya: '',
   schedules: [{ ...EMPTY_SCHEDULE }]
 };
 const currency = new Intl.NumberFormat('id-ID', {
@@ -28,6 +29,7 @@ const currency = new Intl.NumberFormat('id-ID', {
 function toForm(program) {
   return {
     name: program.name ?? '',
+    jenjang: program.jenjang_kode ?? '',
     kelas: String(program.kelas ?? ''),
     description: program.description ?? '',
     biaya: String(Number(program.biaya ?? 0)),
@@ -41,6 +43,7 @@ function toForm(program) {
 
 function validateForm(form) {
   if (!form.name.trim()) return 'Nama program wajib diisi';
+  if (!form.jenjang) return 'Pilih jenjang terlebih dahulu';
   const kelas = Number(form.kelas);
   if (!Number.isInteger(kelas) || kelas < 1 || kelas > 12) return 'Kelas harus angka bulat 1 sampai 12';
   const biaya = Number(form.biaya || 0);
@@ -62,6 +65,7 @@ function validateForm(form) {
 
 export default function ProgramBelajarManagement() {
   const [programs, setPrograms] = useState([]);
+  const [jenjangs, setJenjangs] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState('');
@@ -75,7 +79,9 @@ export default function ProgramBelajarManagement() {
 
   useEffect(() => {
     let active = true;
-    load().catch((err) => { if (active) setError(err.message); });
+    Promise.all([load(), getJenjangs()])
+      .then(([, jenjangData]) => { if (active) setJenjangs(jenjangData.jenjangs ?? []); })
+      .catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
   }, []);
 
@@ -124,6 +130,7 @@ export default function ProgramBelajarManagement() {
     if (validationError) { setError(validationError); return; }
     const payload = {
       name: form.name.trim(),
+      jenjang: form.jenjang,
       kelas: Number(form.kelas),
       description: form.description.trim(),
       biaya: Number(form.biaya || 0),
@@ -170,6 +177,14 @@ export default function ProgramBelajarManagement() {
                 <Label htmlFor="program-name">Nama Program</Label>
                 <Input id="program-name" required maxLength={128} placeholder="Contoh: Kelas Intensif Matematika"
                   value={form.name} onChange={(event) => updateForm({ name: event.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="program-jenjang">Jenjang</Label>
+                <SelectNative id="program-jenjang" value={form.jenjang}
+                  onChange={(event) => updateForm({ jenjang: event.target.value })}>
+                  <option value="">Pilih jenjang</option>
+                  {jenjangs.map((jenjang) => <option key={jenjang.id} value={jenjang.kode}>{jenjang.kode}</option>)}
+                </SelectNative>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="program-kelas">Kelas (maks. 2 digit, maks. 12)</Label>
@@ -248,6 +263,7 @@ export default function ProgramBelajarManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama Program</TableHead>
+                  <TableHead>Jenjang</TableHead>
                   <TableHead>Kelas</TableHead>
                   <TableHead>Jadwal</TableHead>
                   <TableHead>Deskripsi</TableHead>
@@ -259,6 +275,7 @@ export default function ProgramBelajarManagement() {
                 {programs.map((program) => (
                   <TableRow key={program.id}>
                     <TableCell className="font-medium">{program.name}</TableCell>
+                    <TableCell>{[program.jenjang_kode, program.jenjang_nama].filter(Boolean).join(' — ') || '—'}</TableCell>
                     <TableCell>{program.kelas}</TableCell>
                     <TableCell>
                       <div className="space-y-1">

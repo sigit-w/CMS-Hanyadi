@@ -40,6 +40,7 @@ function jakartaInput(offsetHours = 0) {
 function mcPayload(stem) {
   return {
     stem,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'multiple_choice',
     difficulty: 'easy',
@@ -67,7 +68,8 @@ async function createGradingSheet() {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Grading Lembar ${suffix}`,
-      code: `QAGRAD${suffix.slice(0, 6).toUpperCase()}`,
+      code: `LS-MTKA-SD-${String(crypto.randomInt(0, 10000)).padStart(4, '0')}`,
+      jenjang: 'SD',
       mapel_code: 'MTKA',
       description: `Lembar uji grading ${suffix}`,
       duration_minutes: 30,
@@ -193,6 +195,7 @@ test('U-03 soal tanpa gambar dibuat untuk pengujian penilaian server', async () 
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Grading ${suffix}`,
+      jenjang: 'SD',
       starts_at: jakartaInput(1),
       ends_at: jakartaInput(3),
       sessions: [{

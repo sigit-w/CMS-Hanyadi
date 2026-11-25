@@ -29,6 +29,7 @@ const draftPin = String(crypto.randomInt(0, 1_000_000_000)).padStart(9, '0');
 
 let sheetId;
 let mapelCode;
+let sheetJenjang;
 let siswaId;
 let umumId;
 let draftId;
@@ -81,9 +82,10 @@ before(async () => {
   }
   qaTryout = await activeTryoutContext(query);
   const sheets = await query(
-    `SELECT sh.id, m.code AS mapel_code
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
      FROM question_sheets sh
      JOIN mapels m ON m.id = sh.mapel_id
+     JOIN jenjang j ON j.id = sh.jenjang_id
      WHERE sh.archived = false
        AND EXISTS (
          SELECT 1 FROM question_sheet_questions qsq
@@ -95,6 +97,7 @@ before(async () => {
   assert.ok(sheets.rows[0], 'Harus ada lembar soal aktif berisi soal untuk fixture QA');
   sheetId = sheets.rows[0].id;
   mapelCode = sheets.rows[0].mapel_code;
+  sheetJenjang = sheets.rows[0].jenjang_kode;
 });
 
 after(async () => {
@@ -212,6 +215,7 @@ test('PR-04 hapus Umum dari tryout tersimpan masuk prospektus', async () => {
     method: 'POST',
     body: JSON.stringify({
       name: `TO QA 6P ${suffix}`,
+      jenjang: sheetJenjang,
       starts_at: jakartaInput(),
       ends_at: jakartaInput(2),
       sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],

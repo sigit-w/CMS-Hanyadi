@@ -12,11 +12,13 @@ import {
 import { query, pool } from '../../backend-agent/src/db.js';
 
 const suffix = crypto.randomBytes(6).toString('hex');
+const bindSheetCodeSuffix = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+const mtkaSheetCodeSuffix = String((Number(bindSheetCodeSuffix) + crypto.randomInt(1, 10000)) % 10000).padStart(4, '0');
 const participantName = `QA6Y Peserta ${suffix}`;
 const participantEmail = `qa6y-${suffix}@example.test`;
 const participantPassword = crypto.randomBytes(18).toString('base64url');
 const participantWa = `0814${String(crypto.randomInt(0, 100000000)).padStart(8, '0')}`;
-const eventSlug = `qa6y-${suffix}`;
+let eventSlug;
 
 let smaJenjangId;
 let participantId;
@@ -46,6 +48,7 @@ async function createQuestion(mapel, stem) {
     method: 'POST',
     body: JSON.stringify({
       stem,
+      jenjang: 'SD',
       mapel,
       question_type: 'multiple_choice',
       options: [
@@ -64,7 +67,8 @@ async function createSheet(mapel, code, question) {
     method: 'POST',
     body: JSON.stringify({
       name: `QA6Y Lembar ${mapel} ${suffix}`,
-      code: `QA${mapel}${suffix.slice(0, 6).toUpperCase()}`,
+      code: `LS-${mapel}-SD-${mapel === 'BIND' ? bindSheetCodeSuffix : mtkaSheetCodeSuffix}`,
+      jenjang: 'SD',
       mapel_code: mapel,
       description: `Lembar uji ${code}`,
       duration_minutes: 30,
@@ -124,6 +128,7 @@ test('Q6Y-01 create tryout wajib sessions[] dan sheet_ids', async () => {
     body: JSON.stringify({
       name: `QA6Y tanpa sesi ${suffix}`,
       slug: `qa6y-tanpa-${suffix}`,
+      jenjang: 'SD',
       starts_at: '2026-11-25T08:00:00+07:00',
       ends_at: '2026-11-25T10:00:00+07:00'
     })
@@ -135,6 +140,7 @@ test('Q6Y-01 create tryout wajib sessions[] dan sheet_ids', async () => {
     method: 'POST',
     body: JSON.stringify({
       name: `QA6Y question_ids ${suffix}`,
+      jenjang: 'SD',
       starts_at: '2026-11-25T08:00:00+07:00',
       ends_at: '2026-11-25T10:00:00+07:00',
       sessions: [{ mapel_code: 'BIND', question_ids: [questionIds[0]] }]
@@ -147,6 +153,7 @@ test('Q6Y-01 create tryout wajib sessions[] dan sheet_ids', async () => {
     method: 'POST',
     body: JSON.stringify({
       name: `QA6Y sheet kosong ${suffix}`,
+      jenjang: 'SD',
       starts_at: '2026-11-25T08:00:00+07:00',
       ends_at: '2026-11-25T10:00:00+07:00',
       sessions: [{ mapel_code: 'BIND', sheet_ids: [] }]
@@ -162,6 +169,7 @@ test('Q6Y-02 tryout dua sesi dibuat dengan URL sesi berbeda', async () => {
     body: JSON.stringify({
       name: `QA6Y Tryout ${suffix}`,
       slug: eventSlug,
+      jenjang: 'SD',
       starts_at: '2026-11-25T08:00:00+07:00',
       ends_at: '2026-11-26T08:00:00+07:00',
       participant_ids: [participantId],
@@ -174,6 +182,7 @@ test('Q6Y-02 tryout dua sesi dibuat dengan URL sesi berbeda', async () => {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const tryout = created.body.data.tryout;
   tryoutId = Number(tryout.id);
+  eventSlug = tryout.slug;
   sessionIds = tryout.sessions.map((session) => Number(session.id));
   assert.equal(sessionIds.length, 2);
   assert.notEqual(tryout.sessions[0].slug, tryout.sessions[1].slug);

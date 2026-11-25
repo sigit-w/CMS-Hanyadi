@@ -24,7 +24,8 @@
     fullscreenArmed: false,
     pendingSaves: new Set(),
     lastFocusLossAt: 0,
-    suppressFocusViolations: false
+    suppressFocusViolations: false,
+    suppressViolations: false
   };
 
   const elements = {
@@ -339,6 +340,7 @@
     state.fullscreenArmed = false;
     state.pendingSaves = new Set();
     state.lastFocusLossAt = 0;
+    state.suppressViolations = false;
     elements.timerDisplay.hidden = true;
     elements.finalizeButton.hidden = true;
     elements.finalizeButton.disabled = false;
@@ -347,7 +349,7 @@
     elements.loadMore.hidden = true;
     elements.questionList.replaceChildren();
     elements.nav.replaceChildren();
-    elements.questionBody.textContent = 'Pilih soal di sebelah kiri untuk mulai.';
+    elements.questionBody.textContent = 'Memuat soal…';
     elements.questionBody.className = 'question-body empty';
     elements.completionPanel.hidden = true;
   }
@@ -443,8 +445,10 @@
       state.questions = append ? [...state.questions, ...data.questions] : data.questions;
       state.total = data.pagination.total;
       state.page = page;
-      renderList();
       renderFinalizeButton();
+      if (!state.activeId && state.questions.length) {
+        await openQuestion(questionId(state.questions[0]));
+      }
     } catch (error) {
       if (error instanceof SessionError) {
         showLogin(sessionMessage(error));
@@ -733,8 +737,10 @@
 
   async function finishCbt() {
     if (state.locked) return;
-    if (!askConfirmation('Kumpulkan jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
+    const previousSuppress = state.suppressViolations;
+    state.suppressViolations = true;
     try {
+      if (!askConfirmation('Kumpulkan jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
       await flushDrafts();
       const result = await api('/presentation/cbt/attempt/finalize', {
         method: 'POST',
@@ -751,6 +757,8 @@
         return;
       }
       toast(error.message, true);
+    } finally {
+      state.suppressViolations = previousSuppress;
     }
   }
 
@@ -814,7 +822,7 @@
   }
 
   async function recordViolation(type, detail = {}) {
-    if (!isCbt() || state.locked) return;
+    if (!isCbt() || state.locked || state.suppressViolations) return;
     if ((type === 'tab_hidden' || type === 'window_blur') && state.suppressFocusViolations) return;
     if (type === 'tab_hidden' || type === 'window_blur') {
       if (Date.now() - state.lastFocusLossAt < 750) return;

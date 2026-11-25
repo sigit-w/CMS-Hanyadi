@@ -39,6 +39,7 @@ async function request(base, pathname, options = {}) {
 function payload(stem, statements) {
   return {
     stem,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'true_false',
     difficulty: 'easy',
@@ -281,7 +282,7 @@ test('TF-05 pernyataan soal true_false existing dapat diperbarui', async () => {
   const updated = await request(BACKEND, `/api/v1/questions/${questionIds[0]}`, {
     method: 'PUT',
     headers: await adminHeaders(),
-    body: JSON.stringify({ statements })
+    body: JSON.stringify({ jenjang: 'SD', statements })
   });
   assert.equal(updated.status, 200, JSON.stringify(updated.body));
 

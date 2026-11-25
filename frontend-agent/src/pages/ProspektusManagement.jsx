@@ -144,7 +144,7 @@ export default function ProspektusManagement() {
               onChange={(event) => setJenjangFilter(event.target.value)}>
               <option value="">Semua jenjang</option>
               {jenjangs.map((jenjang) => (
-                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
               ))}
             </SelectNative>
             <Badge variant="secondary" className="h-9 px-3">{visible.length} data</Badge>
@@ -248,7 +248,7 @@ export default function ProspektusManagement() {
                     onChange={(event) => setForm({ ...form, jenjang_id: event.target.value })}>
                     <option value="">Ikuti jenjang peserta</option>
                     {jenjangs.map((jenjang) => (
-                      <option key={jenjang.id} value={jenjang.id}>{jenjang.kode} — {jenjang.nama}</option>
+                      <option key={jenjang.id} value={jenjang.id}>{jenjang.kode}</option>
                     ))}
                   </SelectNative>
                 </div>

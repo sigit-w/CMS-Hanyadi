@@ -20,9 +20,17 @@ Merancang dan membangun REST API yang terhubung ke PostgreSQL `bank_soal_db`, te
 
 ## Mapel yang Didukung
 
-Seed awal: `MTKA`, `BIND`, `IPAS`. Kode mapel unik tepat 4 karakter `^[A-Z0-9]{4}$` dan langsung dipakai sebagai prefix kode lembar soal `LS-<KODE_MAPEL>-mmyy`. Endpoint CRUD memakai permission `mapels.manage` (default admin).
+Seed awal: `MTKA`, `BIND`, `IPAS`. Kode mapel unik tepat 4 karakter `^[A-Z0-9]{4}$`; sejak Fase 6aa kode mapel dipakai bersama kode jenjang pada format lembar `LS-<KODE_MAPEL>-<SD|SMP|SMA>-<mmyy>` dengan `mmyy` UTC, contoh `LS-MTKA-SD-1126`. Endpoint CRUD memakai permission `mapels.manage` (default admin).
 
 Fase 6t (ADR-016, histori): satu tryout dapat memuat 1–10 mapel aktif yang unik. `POST /api/v1/tryouts` menerima `mapel_codes: ["MTKA", "IPAS"]`; field lama `mapel_code` tetap diterima sebagai satu elemen dan harus sama bila keduanya dikirim. Relasi tersimpan di tabel `public.tryout_session_mapels(session_id, mapel_id)` (PK gabungan, FK cascade) yang di-backfill oleh migrasi `db/migrations/029_tryout_multi_mapel.sql`. Kolom lama `tryout_sessions.mapel_id` hanya untuk kompatibilitas pembacaan dan diisi mapel pertama. `GET /api/v1/tryouts` dan `GET /api/v1/tryouts/{id}` mengembalikan `mapels: [{ id, code, name }]` (urutan kode) beserta `mapel_id`, `mapel_code`, `mapel_name` legacy. `tryout_count` pada `GET /api/v1/mapels` dihitung dari junction. `sheet_ids` harus berasal dari mapel terpilih; soal yang dikirim langsung lewat `question_ids` harus `approved`. Untuk data baru aturan "satu tryout banyak mapel" digantikan ADR-017: payload flat tetap dipecah menjadi satu sesi per mapel.
+
+## Kontrak Fase 6aa (ADR-023) — Jenjang Wajib
+
+- Migrasi `034_jenjang_soal_lembar_tryout_program.sql` menambah `jenjang_id BIGINT NOT NULL` dengan FK ke `public.jenjang` pada `questions`, `question_sheets`, `tryout_events`, dan `program_belajar`. Baris lama di-backfill ke `SD` sebelum kolom menjadi wajib; `question_sheets.code` diperlebar menjadi `VARCHAR(16)` dan `v_question_catalog` menyertakan `jenjang_kode`/`jenjang_nama`.
+- `POST /api/v1/questions` dan `PUT /api/v1/questions/{id}` mewajibkan `jenjang` (`SD`/`SMP`/`SMA`, alias `jenjang_kode`). `GET /api/v1/questions` menerima filter opsional `jenjang` yang memakai `j.kode`. Template CSV/XLSX memuat 19 header dengan `jenjang` tepat setelah `mapel`; header lain atau payload `content`/`questions[]` ditolak `400 VALIDATION_ERROR`.
+- Kode lembar hanya `^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$`. `GET /api/v1/question-sheets/generate-code?mapel=<4 karakter>&jenjang=<SD|SMP|SMA>` memakai UTC `mmyy`; kode eksplisit pada create/update wajib cocok dan jenjangnya sama dengan `jenjang` payload. `GET /api/v1/question-sheets/question-picker` mewajibkan `jenjang`; `GET /api/v1/question-sheets` menerima filter `jenjang` opsional.
+- `POST /api/v1/tryouts` mewajibkan `jenjang` dan mengabaikan field `slug` dari payload; slug induk dibangkitkan backend dari nama + ID. Setiap `sheet_ids` sesi harus berjenjang sama dengan induk; daftar/detail tryout mengembalikan `jenjang_kode`/`jenjang_nama`. CMS menampilkan kolom `Jenjang` dan tidak memakai dialog `Atur CBT` terpisah.
+- `GET`/`POST`/`PUT /api/v1/program-belajar` memakai `jenjang` wajib dengan kode tiga nilai tersebut; daftar/detail mengembalikan `jenjang_kode`/`jenjang_nama`.
 
 ## Hak Akses
 
@@ -50,8 +58,8 @@ Fase 6s (ADR-011), diperbarui Fase 6y (ADR-021): `POST /api/v1/auth/login` untuk
 
 ```json
 {
+  "jenjang": "SD",
   "name": "Tryout Contoh",
-  "slug": "tryout-contoh",
   "starts_at": "2026-11-25T08:00:00+07:00",
   "ends_at": "2026-11-25T10:00:00+07:00",
   "participant_ids": [11, 12],
@@ -77,8 +85,9 @@ Fase 6s (ADR-011), diperbarui Fase 6y (ADR-021): `POST /api/v1/auth/login` untuk
 
 - Tiap elemen `sessions[]` memuat tepat satu `mapel_code` (wajib), minimal satu `sheet_ids` aktif (wajib), `name?`, `start_at?`/`end_at?` dalam rentang induk, serta `cbt_enabled`, `cbt_duration_minutes` (1–600 saat CBT), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0–100) **per sesi**. `question_ids` dan `mapel_codes[]` di dalam sesi ditolak; mapel duplikat antarsesi ditolak; maksimal 20 sesi; `sheet_ids` harus ber-mapel sama dengan sesinya.
 - Fase 6y menghapus dukungan payload flat legacy: `sessions[]` wajib berisi minimal satu sesi, dan field top-level `sheet_ids`/`question_ids`/`mapel_codes`/`session_date` ditolak. Respons `201` memuat `data.tryout` dengan `event_id` dan `sessions[]`; setiap `sessions[].slug` adalah URL peserta.
+- Fase 6aa/ADR-023 menambahkan `jenjang` wajib di luar contoh historis di atas; field `slug` pada payload diabaikan karena slug induk dibangkitkan backend, dan lembar pada tiap sesi harus berjenjang sama.
 
-**`GET /api/v1/tryouts`** mengembalikan satu baris per induk: `event_id`, `name`, `slug`, `starts_at`, `ends_at`, `status`, dan `sessions[]`. Field kompatibilitas `mapels[]` (agregat mapel sesi), `mapel_code`/`mapel_id`/`mapel_name` (mapel pertama), `start_at`/`end_at`, `session_id`, dan `submission_count` tetap ada. `submission_count` hanya untuk kebutuhan API/laporan/internal. **`GET /api/v1/tryouts/:id`** menerima `event_id` maupun `session_id` lama dan mengembalikan bentuk yang sama; **`GET /api/v1/tryouts/:id/sessions`** mengembalikan `{ tryout_event_id, sessions[] }`. Slug induk hanya groupings admin; URL undangan/login memakai `sessions[].slug`, slug induk ditolak jelas, dan JWT/sesi menyimpan `tryout_session_id` sebagai scope utama.
+**`GET /api/v1/tryouts`** mengembalikan satu baris per induk: `event_id`, `name`, `slug`, `jenjang_kode`/`jenjang_nama` (ADR-023), `starts_at`, `ends_at`, `status`, dan `sessions[]`. Field kompatibilitas `mapels[]` (agregat mapel sesi), `mapel_code`/`mapel_id`/`mapel_name` (mapel pertama), `start_at`/`end_at`, `session_id`, dan `submission_count` tetap ada. `submission_count` hanya untuk kebutuhan API/laporan/internal. **`GET /api/v1/tryouts/:id`** menerima `event_id` maupun `session_id` lama dan mengembalikan bentuk yang sama; **`GET /api/v1/tryouts/:id/sessions`** mengembalikan `{ tryout_event_id, sessions[] }`. Slug induk hanya groupings admin; URL undangan/login memakai `sessions[].slug`, slug induk ditolak jelas, dan JWT/sesi menyimpan `tryout_session_id` sebagai scope utama.
 
 **Picker peserta:** `GET /api/v1/participants?search=`, `GET /api/v1/siswa?search=`, dan `GET /api/v1/prospektus?search=` mencari nama, email, kelas, dan sekolah (case-insensitive). Dialog Peserta Umum menampilkan siswa aktif dan prospektus aktif; ID prospektus aktif boleh dilampirkan langsung, sedangkan yang `bergabung=true` dipetakan ke ID `siswa` hasil konversi agar tidak duplikat. Guard hanya menolak peserta `is_active=false`.
 

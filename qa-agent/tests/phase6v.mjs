@@ -8,6 +8,7 @@ import { query } from '../../backend-agent/src/db.js';
 
 const REPORT_FILE = '/opt/virtual-office-bank-soal/frontend-agent/src/pages/TryoutReport.jsx';
 const createdSessionIds = [];
+let tkaEvent;
 const FORBIDDEN_MARKERS = [
   'Buat Sesi Tryout',
   'Sesi Tersedia',
@@ -106,10 +107,35 @@ function findRow(sheet, predicate) {
   return found;
 }
 
+async function loadTkaEvent() {
+  if (tkaEvent) return tkaEvent;
+  const { rows } = await query(
+    `SELECT id, name FROM tryout_events WHERE name ILIKE '%TKA%' ORDER BY id DESC LIMIT 1`
+  );
+  assert.ok(rows[0], 'Fixture QA memerlukan event tryout dengan nama TKA');
+  tkaEvent = { id: Number(rows[0].id), name: String(rows[0].name) };
+  return tkaEvent;
+}
+
 async function tkaSessions() {
+  const event = await loadTkaEvent();
   const result = await api('/api/v1/tryout-sessions?search=TKA');
   assert.equal(result.status, 200, JSON.stringify(result.body));
-  return result.body.data.sessions.filter((session) => String(session.event_id) === '48');
+  return result.body.data.sessions.filter((session) => Number(session.event_id) === event.id);
+}
+
+async function tkaParticipants() {
+  const event = await loadTkaEvent();
+  const { rows } = await query(
+    `SELECT DISTINCT p.id, p.nama, p.sekolah
+     FROM tryout_participants p
+     JOIN tryout_session_participants sp ON sp.participant_id = p.id
+     JOIN tryout_sessions s ON s.id = sp.session_id
+     WHERE s.event_id = $1
+     ORDER BY p.id`,
+    [event.id]
+  );
+  return rows;
 }
 
 before(async () => {
@@ -120,6 +146,7 @@ before(async () => {
 });
 
 after(async () => {
+  await query("DELETE FROM tryout_attempts WHERE seed = 'qa6v'");
   if (createdSessionIds.length) {
     await query('DELETE FROM tryout_sessions WHERE id = ANY($1::bigint[])', [createdSessionIds]);
   }
@@ -170,10 +197,15 @@ test('Q6V-01 marker laporan bersih dan endpoint legacy tetap merespons', async (
 });
 
 test('Q6V-02 pencarian sesi server-side, wildcard, batas limit, dan marker filter', async () => {
+  const event = await loadTkaEvent();
   const sessions = await tkaSessions();
-  assert.deepEqual(sessions.map((session) => String(session.id)).sort(), ['375', '376']);
+  const stored = await query('SELECT id FROM tryout_sessions WHERE event_id = $1 ORDER BY id', [event.id]);
+  assert.deepEqual(
+    sessions.map((session) => String(session.id)).sort(),
+    stored.rows.map((row) => String(row.id)).sort()
+  );
   for (const session of sessions) {
-    assert.equal(session.event_name, 'TKA Nov');
+    assert.equal(session.event_name, event.name);
     for (const field of ['event_id', 'event_name', 'mapel_code', 'mapel_name']) {
       assert.ok(field in session, `field ${field} tidak ada pada sesi ${session.id}`);
     }
@@ -207,22 +239,34 @@ test('Q6V-02 pencarian sesi server-side, wildcard, batas limit, dan marker filte
 });
 
 test('Q6V-03 filter tryout_name, AND dengan session_id, dan ekspor semua', async () => {
+  const event = await loadTkaEvent();
+  const sessions = await tkaSessions();
+  const names = (await tkaParticipants()).map((row) => String(row.nama));
+  assert.ok(names.length > 0, 'Fixture QA memerlukan peserta pada event TKA');
+
   const { response, sheet } = await exportXlsx('?tryout_name=TKA');
   assert.match(response.headers.get('content-disposition') ?? '', /filename="laporan-tryout-[^"]*tka[^"]*\.xlsx"/i);
   const texts = allText(sheet).join(' | ');
-  assert.match(texts, /HASIL TRYOUT TKA NOV/);
-  for (const name of ['Arashela Yevana', 'Ashel']) {
+  assert.ok(texts.includes(`HASIL TRYOUT ${event.name.toUpperCase()}`), `judul TKA tidak ada: ${event.name}`);
+  for (const name of names) {
     assert.ok(texts.includes(name), `${name} tidak ada pada ekspor TKA`);
   }
-  assert.deepEqual(groupHeaders(sheet), ['MATEMATIKA', 'IPAS']);
+  assert.deepEqual(
+    groupHeaders(sheet),
+    [...new Set(sessions.map((session) => String(session.mapel_name).toUpperCase()))]
+  );
 
-  const scoped = await exportXlsx('?session_id=376&tryout_name=TKA');
+  const ipasSession = sessions.find((session) => session.mapel_code === 'IPAS');
+  assert.ok(ipasSession, 'Fixture QA memerlukan sesi IPAS pada event TKA');
+  const scoped = await exportXlsx(`?session_id=${ipasSession.id}&tryout_name=TKA`);
   assert.equal(scoped.response.status, 200);
-  assert.deepEqual(groupHeaders(scoped.sheet), ['IPAS']);
+  assert.deepEqual(groupHeaders(scoped.sheet), [String(ipasSession.mapel_name).toUpperCase()]);
 
-  const combined = await exportXlsx('?session_id=375&tryout_name=IPAS');
+  const otherSession = sessions.find((session) => Number(session.id) !== Number(ipasSession.id));
+  assert.ok(otherSession, 'Fixture QA memerlukan sesi lain pada event TKA');
+  const combined = await exportXlsx(`?session_id=${otherSession.id}&tryout_name=IPAS`);
   const combinedTexts = allText(combined.sheet).join(' | ');
-  for (const name of ['Arashela Yevana', 'Ashel']) {
+  for (const name of names) {
     assert.ok(!combinedTexts.includes(name), `${name} masih ada walaupun AND filter tidak cocok`);
   }
   const combinedNotes = findRow(combined.sheet, (row) => cellText(row.getCell(1)) === 'KETERANGAN :');
@@ -232,13 +276,25 @@ test('Q6V-03 filter tryout_name, AND dengan session_id, dan ekspor semua', async
   const all = await exportXlsx('?tryout_name=');
   assert.match(all.response.headers.get('content-disposition') ?? '', /filename="laporan-tryout-semua\.xlsx"/);
   const allTexts = allText(all.sheet).join(' | ');
-  for (const name of ['Arashela Yevana', 'Ashel']) {
+  for (const name of names) {
     assert.ok(allTexts.includes(name), `${name} tidak ada pada ekspor semua`);
   }
 });
 
 test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', async () => {
   const sessions = await tkaSessions();
+  const participants = await tkaParticipants();
+  for (const session of sessions) {
+    for (const participant of participants) {
+      await query(
+        `INSERT INTO tryout_attempts (session_id, participant_id, seed, started_at, deadline_at, submitted_at, status)
+         VALUES ($1, $2, 'qa6v', '2026-11-24T09:00:00Z', '2026-11-24T12:00:00Z', '2026-11-24T11:00:00Z', 'submitted')
+         ON CONFLICT (session_id, participant_id) DO NOTHING`,
+        [session.id, participant.id]
+      );
+    }
+  }
+  const schools = [...new Set(participants.map((row) => String(row.sekolah)).filter(Boolean))];
   const expectedGroups = [...new Set(sessions.map((session) => String(session.mapel_name).toUpperCase()))];
   const { sheet } = await exportXlsx('?tryout_name=TKA');
 
@@ -284,11 +340,7 @@ test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', a
   assert.ok(notesRow.number > 8);
   const report = await api('/api/v1/reports/tryout');
   assert.equal(report.status, 200, JSON.stringify(report.body));
-  const expectedNames = [...new Set(
-    report.body.data.summary
-      .filter((row) => sessions.some((session) => String(session.id) === String(row.session_id)))
-      .map((row) => String(row.participant))
-  )].sort();
+  const expectedNames = [...new Set(participants.map((row) => String(row.nama)))].sort();
 
   const dataRows = [];
   for (let number = 8; number < notesRow.number; number += 1) {
@@ -300,7 +352,7 @@ test('Q6V-04 struktur XLSX dua level, grup mapel, statistik, dan tanpa kunci', a
   const scoreValues = groupColumns.map(() => []);
   dataRows.forEach((row, index) => {
     assert.equal(Number(row.getCell(1).value), index + 1);
-    assert.equal(cellText(row.getCell(4)), 'SD KW');
+      assert.ok(schools.includes(cellText(row.getCell(4))), `asal sekolah ${cellText(row.getCell(4))} tidak dikenal`);
     assert.match(cellText(row.getCell(5)), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     let total = 0;
     groupColumns.forEach((start, groupIndex) => {

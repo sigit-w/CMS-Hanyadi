@@ -17,6 +17,7 @@ async function api(path, options = {}) {
 function mcPayload(stem = 'Soal uji otomatis 2 + 2 = ?') {
   return {
     stem,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'multiple_choice',
     difficulty: 'easy',
@@ -95,6 +96,7 @@ test('S-07 upsert kunci esai tanpa opsi', async () => {
     method: 'POST',
     body: JSON.stringify({
       stem: 'Jelaskan fotosintesis',
+      jenjang: 'SD',
       mapel: 'IPAS',
       question_type: 'essay',
       answer_text: 'Proses pembuatan makanan oleh tumbuhan'
@@ -160,9 +162,9 @@ test('S-10 impor payload JSON ditolak 400 VALIDATION_ERROR', async () => {
 
 test('S-11 impor CSV dari file', async () => {
   const csv = [
-    'stem,mapel,type,difficulty,option_a,option_b,option_c,option_d,correct_key,explanation',
-    'Soal impor CSV,MTKA,multiple_choice,easy,1,2,3,4,B,Benar 2',
-    'Soal IPAS CSV,IPAS,multiple_choice,medium,Air,Api,Tanah,Angin,A,Penguji'
+    'stem,mapel,jenjang,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation',
+    'Soal impor CSV,MTKA,SD,multiple_choice,easy,1,2,3,4,B,,,Benar 2,,,,,,',
+    'Soal IPAS CSV,IPAS,SD,multiple_choice,medium,Air,Api,Tanah,Angin,A,,,Penguji,,,,,,'
   ].join('\n');
   const form = new FormData();
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'soal.csv');

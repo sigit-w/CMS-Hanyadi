@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Bank Soal CMS API
   version: 0.4.0
-  description: 'Fase 6u/6v — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel. status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Fase 6w / ADR-019 menambah jenjang SD/SMP/SMA, username dan kredensial WA 8–15 digit, login participant memakai username dengan fallback email/nama, serta ekspor XLSX tryout-only tanpa identitas/tanggal dan dengan WAKTU Asia/Jakarta dari submission terakhir. Fase 6x / ADR-020 menambah PATCH /tryouts/{id} hanya untuk name/starts_at/ends_at tanpa mengubah slug, serta unduhan satu ZIP berisi PDF per sesi; varian berkunci memakai permission tryout_questions.key_export. Endpoint create/activate legacy tetap dipertahankan.'
+  description: 'Fase 6u/6v — tryout_events adalah induk banyak tryout_sessions; satu sesi tepat satu mapel. status terjadwal/berlangsung/selesai adalah field turunan API, bukan kolom fisik; deadline CBT = min(start_at sesi + durasi sesi, ends_at induk). Fase 6w / ADR-019 menambah jenjang SD/SMP/SMA, username dan kredensial WA 8–15 digit, login participant memakai username dengan fallback email/nama, serta ekspor XLSX tryout-only tanpa identitas/tanggal dan dengan WAKTU Asia/Jakarta dari submission terakhir. Fase 6x / ADR-020 menambah PATCH /tryouts/{id} hanya untuk name/starts_at/ends_at tanpa mengubah slug, serta unduhan satu ZIP berisi PDF per sesi; varian berkunci memakai permission tryout_questions.key_export. Fase 6aa / ADR-023 mewajibkan jenjang pada soal, lembar soal, tryout, dan program belajar; semua respons content mengembalikan jenjang_kode/jenjang_nama, kode lembar berformat LS-<mapel>-<jenjang>-<mmyy> dengan mmyy UTC, dan slug tryout selalu dibangkitkan backend. Endpoint create/activate legacy tetap dipertahankan.'
 security:
   - cookieAuth: []
 servers:
@@ -365,7 +365,7 @@ paths:
   /api/v1/tryouts:
     get:
       summary: Daftar tryout induk beserta sesi dan status turunan (tryouts.manage)
-      description: 'Satu baris per tryout_events. Response memuat event_id, name, slug, starts_at, ends_at, status (terjadwal/berlangsung/selesai), sessions[], kompatibilitas mapels[]/mapel_code, dan submission_count (API only). CMS tidak merender submission_count sebagai kolom Submission.'
+      description: 'Satu baris per tryout_events. Response memuat event_id, name, slug, jenjang_kode/jenjang_nama, starts_at, ends_at, status (terjadwal/berlangsung/selesai), sessions[], kompatibilitas mapels[]/mapel_code, dan submission_count (API only). CMS tidak merender submission_count sebagai kolom Submission.'
       responses:
         '200':
           description: Daftar induk tryout
@@ -380,7 +380,7 @@ paths:
         '403': { description: Tidak memiliki permission tryouts.manage }
     post:
       summary: Buat induk tryout dan banyak sesi (tryouts.manage)
-      description: 'Fase 6y / ADR-021: kirim name, slug grup?, starts_at, ends_at, participant_ids?, dan sessions[] minimal satu. Tiap sesi wajib memuat tepat satu mapel_code dan minimal satu sheet_ids aktif; question_ids dan payload flat legacy ditolak. Slug sesi dibangkitkan otomatis dan dipakai sebagai URL peserta. Respons memuat data.tryout dengan event_id, status turunan, sessions[], dan mapels[]/mapel_code legacy.'
+      description: 'Fase 6y / ADR-021: kirim jenjang, name, starts_at, ends_at, participant_ids?, dan sessions[] minimal satu. Fase 6aa / ADR-023: jenjang wajib SD/SMP/SMA; slug induk selalu dibangkitkan backend dari nama + ID (field slug diabaikan). Tiap sesi wajib memuat tepat satu mapel_code dan minimal satu sheet_ids aktif berjenjang sama; question_ids dan payload flat legacy ditolak. Slug sesi dibangkitkan otomatis dan dipakai sebagai URL peserta. Respons memuat data.tryout dengan event_id, jenjang_kode/jenjang_nama, status turunan, sessions[], dan mapels[]/mapel_code legacy.'
       requestBody:
         required: true
         content:
@@ -396,14 +396,14 @@ paths:
                 type: object
                 properties:
                   tryout: { $ref: '#/components/schemas/TryoutEvent' }
-        '400': { description: 'Validasi jadwal, minimal satu sesi, minimal satu sheet_ids per sesi, mapel (satu mapel per sesi, duplikat antarsesi), question_ids/legacy ditolak, lembar, atau peserta gagal' }
+        '400': { description: 'Validasi jenjang (wajib SD/SMP/SMA), jadwal, minimal satu sesi, minimal satu sheet_ids per sesi, mapel (satu mapel per sesi, duplikat antarsesi), lembar beda jenjang, question_ids/legacy ditolak, atau peserta gagal' }
         '403': { description: Tidak memiliki permission tryouts.manage }
   /api/v1/tryouts/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
       summary: Detail induk tryout beserta sessions[] (tryouts.manage)
-      description: 'Parameter id menerima event_id atau session_id lama. Respons memuat event_id, name, slug, starts_at, ends_at, status turunan, sessions[], mapels[]/mapel_code legacy, dan submission_count (API only).'
+      description: 'Parameter id menerima event_id atau session_id lama. Respons memuat event_id, name, slug, jenjang_kode/jenjang_nama, starts_at, ends_at, status turunan, sessions[], mapels[]/mapel_code legacy, dan submission_count (API only).'
       responses:
         '200':
           description: Detail tryout
@@ -661,39 +661,42 @@ paths:
         '404': { description: Sesi tidak tersedia untuk akun ini }
   /api/v1/question-sheets/generate-code:
     get:
-      summary: Usulkan kode lembar soal berdasarkan mapel (question_sheets.manage)
+      summary: Usulkan kode lembar soal berdasarkan jenjang dan mapel (question_sheets.manage)
       parameters:
+        - { name: jenjang, in: query, required: true, schema: { $ref: '#/components/schemas/JenjangKode' }, description: 'Kode jenjang dari GET /api/v1/jenjangs.' }
         - { name: mapel, in: query, required: true, description: 'kode mapel 4 karakter dari GET /api/v1/mapels', schema: { type: string, pattern: '^[A-Z0-9]{4}$' } }
       responses:
-        '200': { description: 'Kode usulan LS-<KODE_MAPEL>-mmyy dari mapels.code' }
-        '400': { description: Mapel wajib diisi atau tidak ditemukan }
+        '200': { description: 'Kode usulan LS-<KODE_MAPEL>-<KODE_JENJANG>-mmyy; mmyy UTC dan cocok dengan ^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$' }
+        '400': { description: Jenjang atau mapel wajib diisi, tidak valid, atau tidak ditemukan }
         '403': { description: Tidak memiliki permission question_sheets.manage }
   /api/v1/question-sheets/question-picker:
     get:
-      summary: Pilih soal approved untuk lembar soal (question_sheets.manage)
+      summary: Pilih soal approved untuk lembar soal, difilter jenjang wajib dan mapel (question_sheets.manage)
       parameters:
+        - { name: jenjang, in: query, required: true, schema: { $ref: '#/components/schemas/JenjangKode' }, description: 'Wajib; hanya soal pada jenjang ini.' }
         - { name: mapel, in: query, schema: { type: string } }
         - { name: search, in: query, schema: { type: string } }
         - { name: question_type, in: query, schema: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] } }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
       responses:
-        '200': { description: Daftar soal beserta pagination }
-        '400': { description: Tipe soal tidak valid }
+        '200': { description: Daftar soal beserta pagination dan jenjang_kode/jenjang_nama }
+        '400': { description: Jenjang atau tipe soal tidak valid }
         '403': { description: Tidak memiliki permission question_sheets.manage }
   /api/v1/question-sheets:
     get:
-      summary: Daftar lembar soal aktif atau arsip (question_sheets.manage)
+      summary: Daftar lembar soal aktif atau arsip dengan jenjang_kode/jenjang_nama (question_sheets.manage)
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [active, archived], default: active } }
         - { name: mapel, in: query, schema: { type: string } }
+        - { name: jenjang, in: query, schema: { $ref: '#/components/schemas/JenjangKode' }, description: 'Filter opsional kode jenjang.' }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
       responses:
-        '200': { description: Daftar lembar soal beserta pagination }
+        '200': { description: Daftar lembar soal beserta pagination dan jenjang_kode/jenjang_nama }
         '403': { description: Tidak memiliki permission question_sheets.manage }
     post:
-      summary: Buat lembar soal beserta pilihan soal satu mapel (question_sheets.manage)
+      summary: Buat lembar soal beserta pilihan soal satu mapel dan jenjang (question_sheets.manage)
       requestBody:
         required: true
         content:
@@ -709,9 +712,9 @@ paths:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
-      summary: Detail lembar soal beserta daftar question_ids (question_sheets.manage)
+      summary: Detail lembar soal beserta daftar question_ids dan jenjang (question_sheets.manage)
       responses:
-        '200': { description: Detail lembar soal }
+        '200': { description: 'Detail lembar soal dengan jenjang_kode/jenjang_nama' }
         '404': { description: Lembar soal tidak ditemukan }
     put:
       summary: Ubah lembar soal dan daftar soalnya secara transaksional (question_sheets.manage)
@@ -731,6 +734,52 @@ paths:
       responses:
         '200': { description: Lembar soal diarsipkan }
         '404': { description: Lembar soal tidak ditemukan }
+  /api/v1/program-belajar:
+    get:
+      summary: Daftar program belajar beserta jenjang_kode/jenjang_nama (program_belajar.manage)
+      responses:
+        '200': { description: Daftar program belajar }
+        '403': { description: Tidak memiliki permission program_belajar.manage }
+    post:
+      summary: Buat program belajar dengan jenjang wajib (program_belajar.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProgramBelajarWrite'
+      responses:
+        '201': { description: Program belajar dibuat }
+        '400': { description: Validasi jenjang, nama, kelas, jadwal, atau biaya gagal }
+        '403': { description: Tidak memiliki permission program_belajar.manage }
+  /api/v1/program-belajar/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Detail program belajar beserta jenjang_kode/jenjang_nama (program_belajar.manage)
+      responses:
+        '200': { description: Detail program belajar }
+        '403': { description: Tidak memiliki permission program_belajar.manage }
+        '404': { description: Program belajar tidak ditemukan }
+    put:
+      summary: Ubah program belajar dengan jenjang wajib (program_belajar.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProgramBelajarWrite'
+      responses:
+        '200': { description: Program belajar diperbarui }
+        '400': { description: Validasi jenjang, nama, kelas, jadwal, atau biaya gagal }
+        '403': { description: Tidak memiliki permission program_belajar.manage }
+        '404': { description: Program belajar tidak ditemukan }
+    delete:
+      summary: Hapus program belajar (program_belajar.manage)
+      responses:
+        '200': { description: Program belajar dihapus }
+        '403': { description: Tidak memiliki permission program_belajar.manage }
+        '404': { description: Program belajar tidak ditemukan }
   /api/v1/jenjangs:
     get:
       summary: Daftar jenjang pendidikan aktif (questions.read atau mapels.manage)
@@ -845,9 +894,10 @@ paths:
         '409': { description: Mapel masih dipakai soal atau tryout }
   /api/v1/questions:
     get:
-      summary: 'Daftar soal dengan filter; sheets berisi lembar aktif dan usage_count menghitung jumlah lembar aktif yang memakai soal (arsip tidak dihitung)'
+      summary: 'Daftar soal dengan filter jenjang/mapel; sheets berisi lembar aktif dan usage_count menghitung jumlah lembar aktif yang memakai soal (arsip tidak dihitung)'
       parameters:
         - { name: mapel, in: query, schema: { type: string } }
+        - { name: jenjang, in: query, schema: { $ref: '#/components/schemas/JenjangKode' }, description: 'Filter kode jenjang SD/SMP/SMA.' }
         - name: status
           in: query
           description: "Gunakan archived untuk melihat soal yang dihapus"
@@ -859,9 +909,9 @@ paths:
         - { name: limit, in: query, schema: { type: integer, default: 20 } }
       responses:
         '200':
-          description: Daftar soal + pagination
+          description: Daftar soal + pagination dengan jenjang_kode/jenjang_nama
         '400':
-          description: Status atau tipe soal tidak valid
+          description: Status, tipe soal, atau jenjang tidak valid
     post:
       summary: Buat soal manual dengan status approved otomatis (JSON atau multipart dengan payload + image PNG/JPEG/WebP/GIF; stem boleh kosong bila ada image)
       requestBody:
@@ -870,9 +920,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [mapel, question_type]
+              required: [jenjang, mapel, question_type]
               properties:
                 stem: { type: string, nullable: true }
+                jenjang: { $ref: '#/components/schemas/JenjangKode' }
                 mapel: { type: string, pattern: '^[A-Z0-9]{4}$' }
                 question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
                 difficulty: { type: string, enum: [easy, medium, hard], default: medium }
@@ -902,29 +953,31 @@ paths:
                 explanation: { type: string, nullable: true }
       responses:
         '201':
-          description: Soal dibuat
+          description: 'Soal dibuat; respons memuat jenjang_kode/jenjang_nama'
         '400':
           description: Validasi gagal
   /api/v1/questions/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
-      summary: Detail soal, opsi, dan kunci jawaban
+      summary: 'Detail soal, opsi, dan kunci jawaban; memuat jenjang_kode/jenjang_nama'
       responses:
         '200':
           description: Detail soal
         '404':
           description: Tidak ditemukan
     put:
-      summary: Update soal (stem, mapel, tipe, kesulitan, opsi, kunci, pembahasan, gambar)
+      summary: Update soal (jenjang wajib; stem, mapel, tipe, kesulitan, opsi, kunci, pembahasan, gambar opsional)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [jenjang]
               properties:
                 stem: { type: string }
+                jenjang: { $ref: '#/components/schemas/JenjangKode' }
                 mapel: { type: string }
                 question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay] }
                 difficulty: { type: string, enum: [easy, medium, hard] }
@@ -990,7 +1043,7 @@ paths:
   /api/v1/import:
     post:
       summary: 'Impor soal dari file CSV atau XLSX saja (questions.write); payload tidak diterima'
-      description: 'Fase 6z: format ditentukan dari ekstensi file. Template valid tersedia di /templates/template-soal.csv dan /templates/template-soal.xlsx.'
+      description: 'Fase 6aa/ADR-023: 19 header wajib dengan jenjang tepat setelah mapel: stem,mapel,jenjang,type,difficulty,option_a,option_b,option_c,option_d,correct_key,correct_keys,answer_text,explanation,statement_1,statement_1_correct,statement_1_explanation,statement_2,statement_2_correct,statement_2_explanation. Nilai jenjang harus SD/SMP/SMA. Template valid tersedia di /templates/template-soal.csv dan /templates/template-soal.xlsx.'
       requestBody:
         required: true
         content:
@@ -1002,7 +1055,7 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: 'File .csv atau .xlsx; header wajib stem dan mapel.'
+                  description: 'File .csv atau .xlsx; header wajib 19 kolom dengan jenjang setelah mapel.'
                 label:
                   type: string
                   description: 'Label sumber opsional.'
@@ -1019,7 +1072,7 @@ paths:
         '201':
           description: Soal berhasil diimpor
         '400':
-          description: 'VALIDATION_ERROR untuk payload/format selain CSV/XLSX; INVALID_IMPORT/EMPTY_IMPORT untuk isi file tidak valid'
+          description: 'VALIDATION_ERROR untuk payload/format, header tanpa jenjang, atau nilai jenjang di luar SD/SMP/SMA; INVALID_IMPORT/EMPTY_IMPORT untuk isi file tidak valid lainnya'
         '403':
           description: Tidak memiliki permission questions.write
         '413':
@@ -1164,6 +1217,10 @@ components:
       type: string
       enum: [approved, rejected, archived]
       description: approved adalah status publish; draft dan review tidak digunakan
+    JenjangKode:
+      type: string
+      enum: [SD, SMP, SMA]
+      description: Kode jenjang konten Fase 6aa / ADR-023; huruf kecil diterima backend dan dinormalisasi menjadi huruf besar.
     TrueFalseStatement:
       type: object
       required: [text, is_correct]
@@ -1193,17 +1250,18 @@ components:
           properties:
             name: { type: string, maxLength: 128, description: 'Opsional; default "<nama tryout> - <mapel_code>".' }
             mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'Tepat satu kode mapel aktif untuk sesi ini.' }
-            sheet_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Lembar aktif ber-mapel sama dengan sesi; alternatif question_ids.' }
-            question_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Kompatibilitas; soal harus approved dan ber-mapel sama dengan sesi.' }
+            sheet_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Lembar aktif dengan mapel dan jenjang sama dengan sesi/induk; alternatif question_ids.' }
+            question_ids: { type: array, minItems: 1, items: { type: integer }, description: 'Kompatibilitas; soal harus approved dengan mapel dan jenjang sama dengan sesi/induk.' }
             start_at: { type: string, format: date-time, nullable: true, description: 'Opsional; harus berada dalam rentang induk.' }
             end_at: { type: string, format: date-time, nullable: true, description: 'Opsional; harus berada dalam rentang induk dan setelah start_at.' }
             mapel_codes: { type: array, items: { type: string }, deprecated: true, description: 'Ditolak di Fase 6u: satu sesi hanya satu mapel_code.' }
     TryoutWrite:
       type: object
-      required: [name, starts_at, ends_at, sessions]
+      required: [jenjang, name, starts_at, ends_at, sessions]
       properties:
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
         name: { type: string, maxLength: 128 }
-        slug: { type: string, maxLength: 32, pattern: '^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$', description: 'Opsional; slug unik induk. Di-generate dari nama + ID bila kosong.' }
+        slug: { type: string, readOnly: true, description: 'Ditolak/diabaikan; slug induk selalu dibangkitkan backend dari nama + ID.' }
         starts_at: { type: string, format: date-time, description: 'Batas awal induk (Asia/Jakarta).' }
         ends_at: { type: string, format: date-time, description: 'Batas akhir induk; setelah waktu ini status selesai dan sesi baru ditolak.' }
         participant_ids: { type: array, maxItems: 200, items: { type: integer }, description: 'Opsional; ID dari /api/v1/participants, siswa, atau prospektus aktif.' }
@@ -1288,6 +1346,8 @@ components:
         parent_id: { type: integer }
         name: { type: string }
         slug: { type: string, description: 'Slug grup tryout (admin); bukan URL peserta. Gunakan sessions[].slug untuk URL/login.' }
+        jenjang_kode: { $ref: '#/components/schemas/JenjangKode' }
+        jenjang_nama: { type: string, description: 'Nama jenjang dari master jenjang.' }
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         status: { $ref: '#/components/schemas/TryoutEventStatus' }
@@ -1338,18 +1398,39 @@ components:
             submitted: { type: boolean }
     QuestionSheetWrite:
       type: object
-      required: [name, mapel_code, duration_minutes, question_ids]
+      required: [name, jenjang, mapel_code, duration_minutes, question_ids]
       properties:
         name: { type: string, maxLength: 128 }
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
         mapel_code: { type: string, pattern: '^[A-Z0-9]{4}$', description: 'kode mapel 4 karakter dari GET /api/v1/mapels; harus sama dengan mapel seluruh soal' }
-        code: { type: string, pattern: '^[A-Z0-9-]{12}$', description: 'Opsional saat create; generator berdasarkan mapel dipakai bila kosong' }
+        code: { type: string, pattern: '^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$', description: 'Opsional saat create; generator LS-<mapel>-<jenjang>-<mmyy> UTC dipakai bila kosong; jenjang pada kode harus sama dengan field jenjang.' }
         description: { type: string, maxLength: 1000, nullable: true }
         duration_minutes: { type: integer, minimum: 1, description: 'Angka bebas dalam menit, bukan preset' }
         question_ids:
           type: array
           minItems: 1
           items: { type: integer }
-          description: 'Semua soal harus dari satu mapel yang sama'
+          description: 'Semua soal harus dari satu mapel dan jenjang yang sama dengan lembar soal'
+    ProgramBelajarWrite:
+      type: object
+      required: [jenjang, name, kelas, schedules]
+      properties:
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
+        name: { type: string, maxLength: 128 }
+        kelas: { type: integer, minimum: 1, maximum: 12 }
+        description: { type: string, maxLength: 1000, nullable: true }
+        biaya: { type: number, minimum: 0, maximum: 999999999999.99, default: 0 }
+        schedules:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [day, start_time, end_time]
+            properties:
+              day: { type: string, enum: [Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu] }
+              start_time: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', description: 'HH:MM 24 jam.' }
+              end_time: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', description: 'HH:MM 24 jam, harus setelah start_time.' }
     Error:
       type: object
       properties:

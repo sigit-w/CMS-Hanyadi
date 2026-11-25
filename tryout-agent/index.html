@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tryout Bank Soal</title>
-  <link rel="stylesheet" href="/styles.css?v=14">
+  <link rel="stylesheet" href="/styles.css?v=15">
 </head>
 <body>
   <div id="loginGate" class="login-gate">
@@ -52,7 +52,7 @@
   </header>
 
   <main id="appMain" class="layout" hidden>
-    <section class="panel">
+    <section class="panel" hidden>
       <div class="panel-header">
         <h2>Daftar Soal</h2>
         <p id="listStatus" class="muted">Memuat daftar soal…</p>
@@ -69,7 +69,7 @@
         <h2>Soal</h2>
       </div>
       <div class="panel-body">
-        <div id="questionBody" class="question-body empty">Pilih soal di sebelah kiri untuk mulai.</div>
+        <div id="questionBody" class="question-body empty">Memuat soal…</div>
         <div id="nav" class="nav"></div>
         <div id="completionPanel" class="nav" hidden>
           <p id="completionMessage" class="muted"></p>
@@ -81,6 +81,6 @@
   </main>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app.js?v=21" defer></script>
+  <script src="/app.js?v=23" defer></script>
 </body>
 </html>

@@ -198,7 +198,7 @@ test('A-09 viewer bisa baca soal tetapi tidak bisa menulis', async () => {
   const write = await call('/api/v1/questions', {
     method: 'POST',
     headers: { Cookie: viewerCookie },
-    body: JSON.stringify({ stem: 'Tidak boleh', mapel: 'MTKA', answer_text: 'x' })
+    body: JSON.stringify({ stem: 'Tidak boleh', jenjang: 'SD', mapel: 'MTKA', answer_text: 'x' })
   });
   assert.equal(write.status, 403);
   const escalate = await call('/api/v1/roles', {

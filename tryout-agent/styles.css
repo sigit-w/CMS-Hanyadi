@@ -49,8 +49,8 @@ button.flag-button.flagged { background: #fff7ed; color: #9a3412; border-color: 
 .login-card input:focus, textarea:focus { border-color: #94a3b8; box-shadow: 0 0 0 3px rgba(148,163,184,.2); }
 
 .layout {
-  display: grid; grid-template-columns: 340px minmax(0,1fr); gap: 20px;
-  padding: 24px; max-width: 1320px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0,1fr); gap: 20px;
+  padding: 24px; max-width: 900px; margin: 0 auto;
 }
 .panel {
   background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius);

@@ -4,6 +4,12 @@ import { validateQuestionCreate } from './validate.js';
 
 const OPTION_KEYS = ['a', 'b', 'c', 'd', 'e', 'f'];
 const TRUE_FALSE_VALUES = new Set(['1', 'true', 'ya', 'yes', 'benar', 'b', 'correct', '✓']);
+const REQUIRED_HEADERS = [
+  'stem', 'mapel', 'jenjang', 'type', 'difficulty', 'option_a', 'option_b',
+  'option_c', 'option_d', 'correct_key', 'correct_keys', 'answer_text',
+  'explanation', 'statement_1', 'statement_1_correct', 'statement_1_explanation',
+  'statement_2', 'statement_2_correct', 'statement_2_explanation'
+];
 
 function stripBom(text) {
   return String(text ?? '').replace(/^\uFEFF/, '');
@@ -55,8 +61,12 @@ function parseCsvLine(line) {
 }
 
 function requireHeaders(header, format) {
-  if (!header.includes('stem') || !header.includes('mapel')) {
-    throw new ApiError('INVALID_IMPORT', `Kolom ${format} wajib: stem, mapel`);
+  const missing = REQUIRED_HEADERS.filter((name) => !header.includes(name));
+  if (missing.length) {
+    throw new ApiError('VALIDATION_ERROR', `Kolom ${format} wajib: ${missing.join(', ')}`);
+  }
+  if (header.indexOf('jenjang') !== header.indexOf('mapel') + 1) {
+    throw new ApiError('VALIDATION_ERROR', `Kolom ${format} jenjang harus tepat setelah mapel`);
   }
 }
 
@@ -101,6 +111,7 @@ function normalizeImportedRow(row) {
   const result = {
     stem: cellText(row.stem),
     mapel: cellText(row.mapel),
+    jenjang: cellText(row.jenjang),
     question_type: questionType,
     difficulty: cellText(row.difficulty) || 'medium',
     answer_text: cellText(row.answer_text) || null,
@@ -152,7 +163,7 @@ export async function parseQuestions(content, filename = '') {
     try {
       return validateQuestionCreate(normalizeImportedRow(row));
     } catch (error) {
-      throw new ApiError('INVALID_IMPORT', `Soal ke-${index + 1}: ${error.message}`);
+      throw new ApiError('VALIDATION_ERROR', `Soal ke-${index + 1}: ${error.message}`);
     }
   });
 }

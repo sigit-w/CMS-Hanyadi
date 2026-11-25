@@ -6,7 +6,7 @@ import { query, pool } from '../../backend-agent/src/db.js';
 
 const BASE = API_BASE;
 const suffix = crypto.randomBytes(4).toString('hex');
-const prefix = suffix.slice(0, 6).toUpperCase();
+const prefix = suffix.slice(0, 4).toUpperCase();
 const mapelCode = `QA${suffix.slice(0, 2).toUpperCase()}`;
 const otherMapelCode = `QB${suffix.slice(2, 4).toUpperCase()}`;
 const inggrisMapelCode = `QC${suffix.slice(4, 6).toUpperCase()}`;
@@ -14,7 +14,7 @@ const roleCode = `qa6lrole_${suffix}`;
 const username = `qa6l_${suffix}`;
 const otherUsername = `qa6lx_${suffix}`;
 const password = crypto.randomBytes(18).toString('base64url');
-const codes = [`QA${prefix}A001`, `QA${prefix}B001`, `QA${prefix}C150`];
+const codes = [`LS-${prefix}-SD-1126`, `LS-${prefix}-SD-1127`, `LS-${prefix}-SMP-1128`];
 
 let mapelId;
 let otherMapelId;
@@ -51,7 +51,7 @@ async function createQuestion(stem, mapel) {
   const response = await api('/api/v1/questions', {
     method: 'POST',
     headers: await adminHeaders(),
-    body: JSON.stringify({ stem, mapel, question_type: 'essay', answer_text: 'Jawaban uji QA' })
+    body: JSON.stringify({ stem, jenjang: 'SD', mapel, question_type: 'essay', answer_text: 'Jawaban uji QA' })
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
   return response.body.data.question.id;
@@ -130,19 +130,19 @@ test('L-01 permission dan generator kode per mapel tersedia', async () => {
   assert.ok(permissions.body.data.permissions.some((item) => item.code === 'question_sheets.manage'));
 
   const cases = [
-    ['MTKA', 'MTKA'],
-    ['IPAS', 'IPAS'],
-    ['BIND', 'BIND'],
-    [inggrisMapelCode, inggrisMapelCode],
-    [mapelCode, mapelCode]
+    ['MTKA', 'MTKA', 'SD'],
+    ['IPAS', 'IPAS', 'SMA'],
+    ['BIND', 'BIND', 'SMP'],
+    [inggrisMapelCode, inggrisMapelCode, 'SD'],
+    [mapelCode, mapelCode, 'SD']
   ];
-  for (const [mapel, prefix] of cases) {
-    const generated = await api(`/api/v1/question-sheets/generate-code?mapel=${encodeURIComponent(mapel)}`, {
+  for (const [mapel, prefix, jenjang] of cases) {
+    const generated = await api(`/api/v1/question-sheets/generate-code?mapel=${encodeURIComponent(mapel)}&jenjang=${jenjang}`, {
       headers: await adminHeaders()
     });
     assert.equal(generated.status, 200, JSON.stringify(generated.body));
-    assert.match(generated.body.data.code, new RegExp(`^LS-${prefix}-\\d{4}$`));
-    assert.equal(generated.body.data.code.length, 12);
+    assert.match(generated.body.data.code, new RegExp(`^LS-${prefix}-(SD|SMP|SMA)-\\d{4}$`));
+    assert.equal(generated.body.data.code.length, jenjang.length === 3 ? 16 : 15);
   }
 
   const missing = await api('/api/v1/question-sheets/generate-code', { headers: await adminHeaders() });
@@ -155,6 +155,7 @@ test('L-02 create lembar soal dengan waktu angka bebas', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Lembar ${suffix}`,
+      jenjang: 'SD',
       mapel_code: mapelCode,
       code: codes[0],
       description: 'Lembar uji QA',
@@ -174,6 +175,7 @@ test('L-02 create lembar soal dengan waktu angka bebas', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA Lembar generated ${suffix}`,
+      jenjang: 'SD',
       mapel_code: mapelCode,
       duration_minutes: 20,
       question_ids: [questionIds[0]]
@@ -181,12 +183,12 @@ test('L-02 create lembar soal dengan waktu angka bebas', async () => {
   });
   assert.equal(generated.status, 201, JSON.stringify(generated.body));
   generatedSheetCode = generated.body.data.sheet.code;
-  assert.match(generatedSheetCode, new RegExp(`^LS-${mapelCode}-\\d{4}$`));
-  assert.equal(generatedSheetCode.length, 12);
+  assert.match(generatedSheetCode, new RegExp(`^LS-${mapelCode}-(SD|SMP|SMA)-\\d{4}$`));
+  assert.equal(generatedSheetCode.length, 15);
 });
 
 test('L-03 validasi kode, waktu, dan mapel ditolak', async () => {
-  const base = { name: 'QA Invalid', mapel_code: mapelCode, duration_minutes: 30, question_ids: [questionIds[0]] };
+  const base = { name: 'QA Invalid', jenjang: 'SD', mapel_code: mapelCode, duration_minutes: 30, question_ids: [questionIds[0]] };
   const shortCode = await api('/api/v1/question-sheets', {
     method: 'POST',
     headers: await adminHeaders(),
@@ -250,6 +252,7 @@ test('L-05 ubah kode menyebabkan flag soal ikut berubah', async () => {
     body: JSON.stringify({
       code: codes[1],
       name: `QA Lembar ubah ${suffix}`,
+      jenjang: 'SD',
       mapel_code: mapelCode,
       description: null,
       duration_minutes: 150,
@@ -266,7 +269,7 @@ test('L-05 ubah kode menyebabkan flag soal ikut berubah', async () => {
 });
 
 test('L-06 role dengan permission lembar soal bisa picker tanpa questions.read', async () => {
-  const picker = await api(`/api/v1/question-sheets/question-picker?mapel=${mapelCode}&limit=5`, { headers: limitedHeaders });
+  const picker = await api(`/api/v1/question-sheets/question-picker?jenjang=SD&mapel=${mapelCode}&limit=5`, { headers: limitedHeaders });
   assert.equal(picker.status, 200, JSON.stringify(picker.body));
   assert.ok(picker.body.data.questions.length > 0);
   assert.ok(picker.body.data.questions.every((item) => item.mapel_code === mapelCode));
@@ -279,20 +282,20 @@ test('L-06 role dengan permission lembar soal bisa picker tanpa questions.read',
 });
 
 test('L-06a picker lembar soal mendukung filter tipe soal', async () => {
-  const matching = await api(`/api/v1/question-sheets/question-picker?mapel=${mapelCode}&question_type=essay&limit=50`, {
+  const matching = await api(`/api/v1/question-sheets/question-picker?jenjang=SD&mapel=${mapelCode}&question_type=essay&limit=50`, {
     headers: await adminHeaders()
   });
   assert.equal(matching.status, 200, JSON.stringify(matching.body));
   assert.ok(matching.body.data.questions.some((item) => item.id === questionIds[0]));
   assert.ok(matching.body.data.questions.every((item) => item.question_type === 'essay'));
 
-  const mismatched = await api(`/api/v1/question-sheets/question-picker?mapel=${mapelCode}&question_type=multiple_choice&limit=50`, {
+  const mismatched = await api(`/api/v1/question-sheets/question-picker?jenjang=SD&mapel=${mapelCode}&question_type=multiple_choice&limit=50`, {
     headers: await adminHeaders()
   });
   assert.equal(mismatched.status, 200, JSON.stringify(mismatched.body));
   assert.ok(!mismatched.body.data.questions.some((item) => item.id === questionIds[0]));
 
-  const invalid = await api(`/api/v1/question-sheets/question-picker?mapel=${mapelCode}&question_type=invalid_type`, {
+  const invalid = await api(`/api/v1/question-sheets/question-picker?jenjang=SD&mapel=${mapelCode}&question_type=invalid_type`, {
     headers: await adminHeaders()
   });
   assert.equal(invalid.status, 400, JSON.stringify(invalid.body));

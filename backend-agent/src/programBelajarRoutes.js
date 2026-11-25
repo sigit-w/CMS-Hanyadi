@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { query, withTransaction } from './db.js';
 import { ApiError, asyncHandler } from './errors.js';
 import { authorize } from './authMiddleware.js';
-import { parseId, requireText } from './validate.js';
+import { parseId, requireJenjangCode, requireText } from './validate.js';
+import { resolveJenjangId } from './questions.js';
 
 export const programBelajarRouter = Router();
 
@@ -13,7 +14,9 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_SCHEDULES = 30;
 
 const PROGRAM_SELECT = `
-  SELECT p.id, p.name, p.kelas, p.description, p.biaya, p.created_at, p.updated_at,
+  SELECT p.id, p.name, p.kelas, p.description, p.biaya,
+         j.kode AS jenjang_kode, j.nama AS jenjang_nama,
+         p.created_at, p.updated_at,
          COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
               'id', s.id,
@@ -26,6 +29,7 @@ const PROGRAM_SELECT = `
            '[]'::jsonb
          ) AS schedules
   FROM program_belajar p
+  JOIN jenjang j ON j.id = p.jenjang_id
 `;
 
 function optionalDescription(value) {
@@ -93,6 +97,7 @@ function validatePayload(body) {
     throw new ApiError('VALIDATION_ERROR', 'Body harus berupa objek');
   }
   return {
+    jenjang: requireJenjangCode(body.jenjang ?? body.jenjang_kode),
     name: requireText(body.name, 'nama program', 128),
     kelas: requireKelas(body.kelas),
     description: optionalDescription(body.description),
@@ -132,10 +137,11 @@ programBelajarRouter.get('/program-belajar/:id', managePrograms, asyncHandler(as
 programBelajarRouter.post('/program-belajar', managePrograms, asyncHandler(async (req, res) => {
   const payload = validatePayload(req.body);
   const program = await withTransaction(async (client) => {
+    const jenjangId = await resolveJenjangId(client, payload.jenjang);
     const { rows } = await client.query(
-      `INSERT INTO program_belajar (name, kelas, description, biaya)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [payload.name, payload.kelas, payload.description, payload.biaya]
+      `INSERT INTO program_belajar (name, kelas, description, biaya, jenjang_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [payload.name, payload.kelas, payload.description, payload.biaya, jenjangId]
     );
     await replaceSchedules(client, rows[0].id, payload.schedules);
     return loadProgram(client, rows[0].id);
@@ -147,9 +153,12 @@ programBelajarRouter.put('/program-belajar/:id', managePrograms, asyncHandler(as
   const id = parseId(req.params.id);
   const payload = validatePayload(req.body);
   const program = await withTransaction(async (client) => {
+    const jenjangId = await resolveJenjangId(client, payload.jenjang);
     const result = await client.query(
-      `UPDATE program_belajar SET name = $2, kelas = $3, description = $4, biaya = $5 WHERE id = $1`,
-      [id, payload.name, payload.kelas, payload.description, payload.biaya]
+      `UPDATE program_belajar
+          SET name = $2, kelas = $3, description = $4, biaya = $5, jenjang_id = $6
+        WHERE id = $1`,
+      [id, payload.name, payload.kelas, payload.description, payload.biaya, jenjangId]
     );
     if (result.rowCount === 0) throw new ApiError('NOT_FOUND', 'Program belajar tidak ditemukan', 404);
     await replaceSchedules(client, id, payload.schedules);

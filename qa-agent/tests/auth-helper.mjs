@@ -29,26 +29,44 @@ export async function adminCookie() {
 }
 
 export async function activeTryoutContext(runQuery) {
-  const { rows } = await runQuery(
-    `SELECT id, slug FROM tryout_sessions
-     WHERE is_active AND slug IS NOT NULL
-     ORDER BY id DESC LIMIT 1`
-  );
-  if (!rows[0]) {
+  const activeWithQuestions = `
+    SELECT id, slug FROM tryout_sessions
+    WHERE is_active AND slug IS NOT NULL
+      AND EXISTS (SELECT 1 FROM tryout_session_questions q WHERE q.session_id = tryout_sessions.id)
+    ORDER BY id DESC LIMIT 1`;
+  const refreshWindow = async (id) => {
     await runQuery(
-      `UPDATE tryout_sessions SET is_active = true
-       WHERE id = (SELECT min(id) FROM tryout_sessions WHERE slug IS NOT NULL)
-         AND NOT EXISTS (SELECT 1 FROM tryout_sessions WHERE is_active)`
+      `UPDATE tryout_events
+       SET starts_at = now() - interval '1 hour', ends_at = now() + interval '2 hours'
+       WHERE id = (SELECT event_id FROM tryout_sessions WHERE id = $1)`,
+      [id]
     );
-    const restored = await runQuery(
-      `SELECT id, slug FROM tryout_sessions
-       WHERE is_active AND slug IS NOT NULL
-       ORDER BY id DESC LIMIT 1`
+    await runQuery(
+      `UPDATE tryout_sessions
+       SET start_at = now() - interval '1 hour', end_at = now() + interval '2 hours',
+           session_date = (now() AT TIME ZONE 'Asia/Jakarta')::date
+       WHERE id = $1`,
+      [id]
     );
-    if (!restored.rows[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
-    return { id: restored.rows[0].id, slug: restored.rows[0].slug };
+  };
+  const { rows } = await runQuery(activeWithQuestions);
+  if (rows[0]) {
+    await refreshWindow(rows[0].id);
+    return { id: rows[0].id, slug: rows[0].slug };
   }
-  return { id: rows[0].id, slug: rows[0].slug };
+  const { rows: candidates } = await runQuery(
+    `SELECT s.id, s.slug FROM tryout_sessions s
+     WHERE s.slug IS NOT NULL
+       AND EXISTS (SELECT 1 FROM tryout_session_questions q WHERE q.session_id = s.id)
+     ORDER BY s.id DESC LIMIT 1`
+  );
+  if (!candidates[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
+  await refreshWindow(candidates[0].id);
+  await runQuery('UPDATE tryout_sessions SET is_active = false WHERE is_active');
+  await runQuery('UPDATE tryout_sessions SET is_active = true WHERE id = $1', [candidates[0].id]);
+  const restored = await runQuery(activeWithQuestions);
+  if (!restored.rows[0]) throw new Error('Tidak ada tryout aktif untuk fixture QA Fase 6s');
+  return { id: restored.rows[0].id, slug: restored.rows[0].slug };
 }
 
 export async function attachQaParticipants(runQuery, tryoutId, participantIds) {

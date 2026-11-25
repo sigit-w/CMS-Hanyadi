@@ -53,6 +53,7 @@ test('P5-02 soal baru tersimpan sebagai approved', async () => {
     method: 'POST',
     body: JSON.stringify({
       stem: 'Soal inti Fase 6j',
+      jenjang: 'SD',
       mapel: 'IPAS',
       question_type: 'essay',
       answer_text: 'Jawaban inti'
@@ -88,6 +89,7 @@ test('P5-05 soal archived ditolak presentation service', async () => {
     method: 'POST',
     body: JSON.stringify({
       stem: 'Soal arsip Fase 6j',
+      jenjang: 'SD',
       mapel: 'IPAS',
       question_type: 'essay',
       answer_text: 'Jawaban arsip'
@@ -105,7 +107,7 @@ test('P5-05 soal archived ditolak presentation service', async () => {
 test('P5-06 perubahan stem di tabel inti langsung tampil di presentation', async () => {
   const updated = await call(MAIN, `/api/v1/questions/${questionId}`, {
     method: 'PUT',
-    body: JSON.stringify({ stem: 'Soal inti Fase 6j (edit)' })
+    body: JSON.stringify({ jenjang: 'SD', stem: 'Soal inti Fase 6j (edit)' })
   });
   assert.equal(updated.status, 200, JSON.stringify(updated.body));
   const presentation = await call(PRESENTATION, `/api/v1/presentation/questions/${questionId}`);
@@ -241,6 +243,7 @@ test('P5-13 soal baru langsung tampil tanpa pengaktifan readiness', async () => 
     method: 'POST',
     body: JSON.stringify({
       stem: 'Soal auto publish Fase 6j',
+      jenjang: 'SD',
       mapel: 'MTKA',
       question_type: 'essay',
       answer_text: 'Jawaban uji'

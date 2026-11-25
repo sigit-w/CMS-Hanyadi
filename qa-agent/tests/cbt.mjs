@@ -107,7 +107,8 @@ async function createSheet() {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `QA CBT Lembar ${suffix}`,
-      code: `QACBT${suffix.slice(0, 7).toUpperCase()}`,
+      code: `LS-MTKA-SD-${String(crypto.randomInt(0, 10000)).padStart(4, '0')}`,
+      jenjang: 'SD',
       mapel_code: 'MTKA',
       description: `Lembar uji CBT ${suffix}`,
       duration_minutes: 30,
@@ -146,6 +147,7 @@ before(async () => {
 
   await createQuestion({
     stem: `QA CBT pilihan ganda ${suffix}`,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'multiple_choice',
     difficulty: 'easy',
@@ -159,6 +161,7 @@ before(async () => {
   });
   await createQuestion({
     stem: `QA CBT multi jawaban ${suffix}`,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'multiple_answer',
     difficulty: 'medium',
@@ -171,6 +174,7 @@ before(async () => {
   });
   await createQuestion({
     stem: `QA CBT pernyataan ${suffix}`,
+    jenjang: 'SD',
     mapel: 'MTKA',
     question_type: 'true_false',
     difficulty: 'easy',
@@ -187,6 +191,7 @@ before(async () => {
     body: JSON.stringify({
       name: `QA CBT ${suffix}`,
       slug,
+      jenjang: 'SD',
       starts_at: startsAt,
       ends_at: endsAt,
       sessions: [{
@@ -409,6 +414,7 @@ test('CBT-06 satu perpindahan fokus hanya mencatat satu pelanggaran', async () =
     locked: false,
     lastFocusLossAt: 0,
     suppressFocusViolations: false,
+    suppressViolations: false,
     attempt: { status: 'in_progress' }
   };
   const sandbox = {
@@ -435,11 +441,17 @@ test('CBT-06 satu perpindahan fokus hanya mencatat satu pelanggaran', async () =
   await recordViolation('window_blur', {});
   assert.deepEqual(calls, ['tab_hidden']);
 
+  localState.suppressViolations = true;
+  await recordViolation('fullscreen_exit', {});
+  assert.deepEqual(calls, ['tab_hidden']);
+
   const confirmationBlock = js.match(/  function askConfirmation\(message\) \{[\s\S]*?\n  \}/)?.[0];
   const finishBlock = js.match(/  async function finishCbt\(\) \{[\s\S]*?\n  \}/)?.[0];
   assert.ok(confirmationBlock, 'blok askConfirmation tidak ditemukan');
   assert.ok(finishBlock, 'blok finishCbt tidak ditemukan');
   assert.match(finishBlock, /askConfirmation\(/);
+  assert.match(finishBlock, /state\.suppressViolations = true/);
+  assert.match(finishBlock, /finally \{[\s\S]*state\.suppressViolations = previousSuppress/);
 });
 
 test('CBT-07 dialog konfirmasi submit tidak mencatat pelanggaran fokus', async () => {
@@ -455,6 +467,7 @@ test('CBT-07 dialog konfirmasi submit tidak mencatat pelanggaran fokus', async (
     locked: false,
     lastFocusLossAt: 0,
     suppressFocusViolations: false,
+    suppressViolations: false,
     attempt: { status: 'in_progress' }
   };
   const windowStub = { confirm: () => true };

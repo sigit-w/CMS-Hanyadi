@@ -26,6 +26,7 @@ const prospekPin = String(crypto.randomInt(0, 1_000_000_000)).padStart(9, '0');
 
 let sheetId;
 let mapelCode;
+let sheetJenjang;
 let siswaId;
 let umumId;
 let prospekId;
@@ -84,9 +85,10 @@ after(async () => {
 
 test('QP-01 kontrak ADR-009 dan endpoint attach terpasang', async () => {
   const sheets = await query(
-    `SELECT sh.id, m.code AS mapel_code
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
      FROM question_sheets sh
      JOIN mapels m ON m.id = sh.mapel_id
+     JOIN jenjang j ON j.id = sh.jenjang_id
      WHERE sh.archived = false
        AND EXISTS (
          SELECT 1 FROM question_sheet_questions qsq
@@ -98,6 +100,7 @@ test('QP-01 kontrak ADR-009 dan endpoint attach terpasang', async () => {
   assert.ok(sheets.rows[0], 'Harus ada lembar soal aktif berisi soal untuk fixture QA');
   sheetId = sheets.rows[0].id;
   mapelCode = sheets.rows[0].mapel_code;
+  sheetJenjang = sheets.rows[0].jenjang_kode;
 
   const openapi = readFileSync(OPENAPI, 'utf8');
   for (const marker of ['/api/v1/tryouts/{id}/participants:', 'participant_ids', 'added_ids']) {
@@ -155,6 +158,7 @@ test('QP-03 lampir siswa existing ke tryout tersimpan secara idempoten', async (
     method: 'POST',
     body: JSON.stringify({
       name: `TO QA 6Q ${suffix}`,
+      jenjang: sheetJenjang,
       starts_at: jakartaInput(),
       ends_at: jakartaInput(2),
       sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],
@@ -166,20 +170,25 @@ test('QP-03 lampir siswa existing ke tryout tersimpan secara idempoten', async (
   tryoutId = created.body.data.tryout.id;
   tryoutSessionId = created.body.data.tryout.sessions[0].id;
 
+  const participantIds = [...new Set([
+    ...created.body.data.tryout.participant_ids.map(String),
+    String(siswaId)
+  ])].sort((left, right) => Number(left) - Number(right));
+
   const attached = await attach([siswaId]);
   assert.equal(attached.status, 200, JSON.stringify(attached.body));
   assert.deepEqual(attached.body.data.added_ids.map(String), [String(siswaId)]);
-  assert.deepEqual(attached.body.data.participant_ids.map(String), [String(siswaId)]);
+  assert.deepEqual(attached.body.data.participant_ids.map(String), participantIds);
 
   const repeated = await attach([siswaId]);
   assert.equal(repeated.status, 200, JSON.stringify(repeated.body));
   assert.deepEqual(repeated.body.data.added_ids, []);
-  assert.deepEqual(repeated.body.data.participant_ids.map(String), [String(siswaId)]);
+  assert.deepEqual(repeated.body.data.participant_ids.map(String), participantIds);
 
   const empty = await attach([]);
   assert.equal(empty.status, 200, JSON.stringify(empty.body));
   assert.deepEqual(empty.body.data.added_ids, []);
-  assert.deepEqual(empty.body.data.participant_ids.map(String), [String(siswaId)]);
+  assert.deepEqual(empty.body.data.participant_ids.map(String), participantIds);
   const missing = await attach([999999999]);
   assert.equal(missing.status, 400);
   const missingTryout = await attach([siswaId], 999999999);

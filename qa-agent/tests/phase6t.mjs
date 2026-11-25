@@ -17,6 +17,7 @@ const suffix = crypto.randomBytes(4).toString('hex');
 const participantEmail = `qa_6t_${suffix}@qa.test`;
 const participantPassword = crypto.randomBytes(18).toString('base64url');
 const sheetIds = {};
+let sheetJenjang = 'SD';
 const sessionIds = [];
 const eventIds = [];
 const slugs = {};
@@ -54,6 +55,7 @@ async function createTryout(definition) {
     body: JSON.stringify({
       name: `QA 6t ${definition.key} ${token}`,
       slug: `qa-6t-${definition.key}-${token}`,
+      jenjang: sheetJenjang,
       starts_at: '2026-11-25T08:00:00+07:00',
       ends_at: '2026-11-26T08:00:00+07:00',
       is_active: false,
@@ -76,10 +78,11 @@ before(async () => {
   }
 
   const sheets = await query(
-    `SELECT sh.id, m.code AS mapel_code
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
        FROM question_sheets sh
        JOIN mapels m ON m.id = sh.mapel_id
-      WHERE sh.archived = false AND m.code = ANY($1::text[])
+       JOIN jenjang j ON j.id = sh.jenjang_id
+       WHERE sh.archived = false AND m.code = ANY($1::text[])
         AND EXISTS (
           SELECT 1 FROM question_sheet_questions qsq
           JOIN questions q ON q.id = qsq.question_id
@@ -92,6 +95,9 @@ before(async () => {
     if (!sheetIds[row.mapel_code]) sheetIds[row.mapel_code] = Number(row.id);
   }
   assert.ok(sheetIds.MTKA && sheetIds.IPAS, 'Fixture QA memerlukan satu lembar aktif MTKA dan IPAS');
+  const mtkaSheet = sheets.rows.find((row) => row.mapel_code === 'MTKA');
+  sheetJenjang = mtkaSheet.jenjang_kode;
+  assert.ok(sheets.rows.every((row) => row.jenjang_kode === sheetJenjang));
 
   const createdParticipant = await request(BACKEND, '/api/v1/participants', {
     method: 'POST',

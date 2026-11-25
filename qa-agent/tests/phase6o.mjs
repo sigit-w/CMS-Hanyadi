@@ -24,6 +24,7 @@ const lockedPin = String(crypto.randomInt(0, 1_000_000_000)).padStart(9, '0');
 
 let sheetId;
 let mapelCode;
+let sheetJenjang;
 let questionIds = [];
 let umumId;
 let lockedId;
@@ -59,9 +60,10 @@ before(async () => {
   }
   qaTryout = await activeTryoutContext(query);
   const sheets = await query(
-    `SELECT sh.id, m.code AS mapel_code
+    `SELECT sh.id, m.code AS mapel_code, j.kode AS jenjang_kode
      FROM question_sheets sh
      JOIN mapels m ON m.id = sh.mapel_id
+     JOIN jenjang j ON j.id = sh.jenjang_id
      WHERE sh.archived = false
        AND EXISTS (
          SELECT 1 FROM question_sheet_questions qsq
@@ -73,6 +75,7 @@ before(async () => {
   assert.ok(sheets.rows[0], 'Harus ada lembar soal aktif berisi soal untuk fixture QA');
   sheetId = sheets.rows[0].id;
   mapelCode = sheets.rows[0].mapel_code;
+  sheetJenjang = sheets.rows[0].jenjang_kode;
   const questions = await query(
     `SELECT qsq.question_id
      FROM question_sheet_questions qsq
@@ -226,7 +229,9 @@ test('U-05 PIN salah 5 kali mengunci akun Umum', async () => {
 test('U-06 marker form Buat Tryout sesuai ADR-007', () => {
   const source = readFileSync(CMS_FILE, 'utf8');
   for (const marker of [
-    'Nama Tryout', 'Tanggal &amp; Jam Mulai', 'Tanggal &amp; Jam Selesai',
+    'Nama Tryout', 'Jenjang', 'Slug Grup Tryout (otomatis, bukan URL peserta)',
+    'readOnly value={slugPreview(form.name)}', 'Slug dihasilkan backend saat tryout disimpan dan tidak dikirim manual.',
+    'Tanggal &amp; Jam Mulai', 'Tanggal &amp; Jam Selesai',
     'Lembar Soal (', 'getQuestionSheets', 'sheet_ids', 'start_at', 'end_at',
     'Tambah Peserta Umum', 'A. Peserta Didik', 'B. Peserta Umum',
     "jenis: 'umum'", 'Nomor WA Orang Tua', 'wa_orang_tua', 'participant_ids: selectedParticipants.map(Number)'
@@ -244,6 +249,7 @@ test('U-07 tryout tanpa peserta tetap tersimpan dari lembar soal', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA 6O Tanpa Peserta ${suffix}`,
+      jenjang: sheetJenjang,
       starts_at: startAt,
       ends_at: endAt,
       sessions: [{ mapel_code: mapelCode, sheet_ids: [sheetId] }],
@@ -277,6 +283,7 @@ test('U-08 payload lama question_ids ditolak Fase 6y', async () => {
     headers: await adminHeaders(),
     body: JSON.stringify({
       name: `TO QA 6O Legacy ${suffix}`,
+      jenjang: sheetJenjang,
       session_date: '2026-11-25',
       mapel_code: mapelCode,
       question_ids: questionIds.slice(0, 2),
