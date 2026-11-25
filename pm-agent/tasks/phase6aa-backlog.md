@@ -102,4 +102,4 @@ Handoff development dicatat lewat ADR-023, backlog ini, dan file berikut:
 - QA dilarang memakai helper cleanup berbasis `created_at` yang bisa menghapus data operasional baru; pakai fixture dengan prefix uji dan cleanup eksplisit.
 - QA memakai kredensial admin dari `backend-agent/.env` tanpa mencetak secret; jangan commit `.env`, backup DB, atau file `/tmp/opencode/*`.
 - Gate `REL-33` memakai rollback `REL-32`; tidak membuka ulang gate sebelumnya dan tidak mengubah format laporan tryout.
-- Final 2026-11-25: migrasi `034` terpasang setelah backup `/tmp/opencode/bank_soal_db-pre034-2026-11-25.dump`; regresi penuh 216/216 lolos, 0 fail; build frontend sukses menghasilkan `index-BZ3-GR1U.js`; health API OK; gate `REL-33` **GO**. Perubahan masih berada di working tree dan belum di-commit.
+- Final 2026-11-25: migrasi `034` terpasang setelah backup `/tmp/opencode/bank_soal_db-pre034-2026-11-25.dump`; regresi penuh 216/216 lolos, 0 fail; build frontend sukses menghasilkan `index-H1JcLzJU.js`; health API OK; gate `REL-33` **GO**. Perubahan masih berada di working tree dan belum di-commit.

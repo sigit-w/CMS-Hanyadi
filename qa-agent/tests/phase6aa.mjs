@@ -183,6 +183,11 @@ test('Q6AA-06 daftar tryout menampilkan Jenjang dan tanpa Atur CBT', () => {
     'className="w-full sm:w-36"',
     'sm:ml-auto'
   ], 'filter jenjang daftar peserta');
+  hasAll(read('frontend-agent/src/pages/ProspektusManagement.jsx'), [
+    'aria-label="Filter jenjang peserta umum"',
+    'className="w-full sm:w-36"',
+    'sm:ml-auto'
+  ], 'filter jenjang peserta umum');
 });
 
 test('Q6AA-07 program belajar memakai jenjang pada form, tabel, dan API', () => {
