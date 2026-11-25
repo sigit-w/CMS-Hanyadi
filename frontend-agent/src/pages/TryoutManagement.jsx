@@ -9,14 +9,11 @@ import {
   getMapels,
   getParticipantDetail,
   getProspektus,
-  getQuestionSheet,
   getQuestionSheets,
   getSiswa,
-  getTryout,
   getTryouts,
   markParticipantProspek,
-  updateTryout,
-  updateTryoutCbt
+  updateTryout
 } from '../api.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Trash2 } from 'lucide-react';
+import { Copy, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -52,6 +49,17 @@ function tryoutMapelText(tryout) {
     : [mapelLabel(tryout.mapel_code, tryout.mapel_name ?? tryout.mapel_code)];
   if (mapels.length === 0 && !tryout.mapel_code && !tryout.mapel_name) return '—';
   return [...new Set(labels.filter(Boolean))].join(', ') || '—';
+}
+
+function tryoutHasCbt(tryout) {
+  const sessions = Array.isArray(tryout.sessions) ? tryout.sessions : [];
+  return sessions.length > 0
+    ? sessions.some((session) => Boolean(session.cbt_enabled))
+    : Boolean(tryout.cbt_enabled);
+}
+
+function tryoutModeText(tryout) {
+  return tryoutHasCbt(tryout) ? 'CBT' : 'Tryout';
 }
 
 function statusVariant(status) {
@@ -83,15 +91,6 @@ const emptyForm = () => ({
   starts_at: jakartaInputDate(),
   ends_at: jakartaInputDate(2),
   sessions: [emptySession()]
-});
-
-const cbtFormFromTryout = (tryout) => ({
-  cbt_enabled: Boolean(tryout.cbt_enabled),
-  cbt_duration_minutes: tryout.cbt_duration_minutes ?? 90,
-  cbt_shuffle_questions: Boolean(tryout.cbt_shuffle_questions),
-  cbt_shuffle_options: Boolean(tryout.cbt_shuffle_options),
-  cbt_require_fullscreen: Boolean(tryout.cbt_require_fullscreen),
-  cbt_max_violations: tryout.cbt_max_violations ?? 3
 });
 
 const emptyUmum = () => ({
@@ -199,6 +198,7 @@ export default function TryoutManagement() {
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [detailParticipant, setDetailParticipant] = useState(null);
   const [tryouts, setTryouts] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('berlangsung');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -209,13 +209,8 @@ export default function TryoutManagement() {
   const [umumForm, setUmumForm] = useState(emptyUmum);
   const [umumError, setUmumError] = useState('');
   const [savingPeserta, setSavingPeserta] = useState(false);
-  const [cbtTarget, setCbtTarget] = useState(null);
-  const [cbtForm, setCbtForm] = useState(cbtFormFromTryout({}));
-  const [savingCbt, setSavingCbt] = useState(false);
-  const [cbtError, setCbtError] = useState('');
   const [editTarget, setEditTarget] = useState(null);
   const [editForm, setEditForm] = useState(editFormFromTryout({}));
-  const [editSheets, setEditSheets] = useState([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
   const [downloadingId, setDownloadingId] = useState(null);
@@ -228,6 +223,9 @@ export default function TryoutManagement() {
   ).values());
   const usedMapelCodes = [...new Set(form.sessions.map((session) => session.mapel_code).filter(Boolean))];
   const sheetCodesKey = [...usedMapelCodes].sort().join('|');
+  const visibleTryouts = tryouts.filter((tryout) => (
+    statusFilter === 'semua' || tryout.status === statusFilter
+  ));
   const participantSource = pesertaDialog === 'siswa' || (pesertaDialog === 'umum' && umumTab === 'siswa')
     ? 'siswa'
     : pesertaDialog === 'umum' && umumTab === 'prospektus' ? 'prospektus' : null;
@@ -565,27 +563,11 @@ export default function TryoutManagement() {
     }
   }
 
-  async function openEditTryout(tryout) {
+  function openEditTryout(tryout) {
     setError('');
     setEditError('');
     setEditForm(editFormFromTryout(tryout));
-    setEditSheets([]);
     setEditTarget(tryout);
-    try {
-      const detail = await getTryout(tryout.id);
-      const sheetIds = [...new Set((detail.tryout.sessions ?? []).flatMap((session) => session.sheet_ids ?? []))];
-      const sheets = await Promise.all(sheetIds.map(async (id) => {
-        try {
-          const data = await getQuestionSheet(id);
-          return data.sheet;
-        } catch {
-          return null;
-        }
-      }));
-      setEditSheets(sheets.filter(Boolean));
-    } catch (err) {
-      setEditError(err.message);
-    }
   }
 
   async function handleSaveEdit() {
@@ -653,46 +635,16 @@ export default function TryoutManagement() {
     }
   }
 
-  function openCbtSettings(tryout) {
-    setCbtError('');
-    setCbtTarget(tryout);
-    setCbtForm(cbtFormFromTryout(tryout));
-  }
-
-  async function handleSaveCbt() {
-    if (!cbtTarget) return;
-    setCbtError('');
-    if (cbtForm.cbt_enabled && (!Number.isInteger(Number(cbtForm.cbt_duration_minutes))
-      || Number(cbtForm.cbt_duration_minutes) < 1 || Number(cbtForm.cbt_duration_minutes) > 600)) {
-      setCbtError('Durasi CBT harus antara 1 dan 600 menit.');
+  async function handleCopySessionUrls(tryout) {
+    const urls = tryoutSessionUrls(tryout);
+    if (urls.length === 0) {
+      setError('Tidak ada URL sesi untuk disalin.');
       return;
     }
-    setSavingCbt(true);
     try {
-      const updated = await updateTryoutCbt(cbtTarget.id, {
-        cbt_enabled: cbtForm.cbt_enabled,
-        cbt_duration_minutes: cbtForm.cbt_enabled ? Number(cbtForm.cbt_duration_minutes) : null,
-        cbt_shuffle_questions: cbtForm.cbt_shuffle_questions,
-        cbt_shuffle_options: cbtForm.cbt_shuffle_options,
-        cbt_require_fullscreen: cbtForm.cbt_require_fullscreen,
-        cbt_max_violations: Number(cbtForm.cbt_max_violations)
-      });
-      setNotice(`Pengaturan CBT "${updated.tryout.name}" tersimpan.`);
-      setCbtTarget(null);
-      await refreshTryouts();
-    } catch (err) {
-      setCbtError(err.message);
-    } finally {
-      setSavingCbt(false);
-    }
-  }
-
-  async function handleCopyUrl(session, tryoutName) {
-    const url = tryoutUrl(session.slug);
-    try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(urls.join('\n'));
       setError('');
-      setNotice(`URL sesi "${session.name || tryoutName}" disalin: ${url}`);
+      setNotice(`${urls.length} URL sesi "${tryout.name}" disalin ke clipboard.`);
     } catch (err) {
       setError(`Gagal menyalin URL: ${err.message}`);
     }
@@ -1086,17 +1038,6 @@ export default function TryoutManagement() {
                 <p className="text-sm text-muted-foreground">Tidak ada sesi.</p>
               )}
             </fieldset>
-            <fieldset className="space-y-2 rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Lembar Soal yang Dipakai</legend>
-              {editSheets.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Tidak ada lembar soal terlampir.</p>
-              ) : editSheets.map((sheet) => (
-                <div key={sheet.id} className="flex flex-wrap justify-between gap-2 text-sm">
-                  <span>{sheet.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{sheet.code}</span>
-                </div>
-              ))}
-            </fieldset>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setEditTarget(null)}>Batal</Button>
               <Button type="button" onClick={handleSaveEdit} disabled={savingEdit}>
@@ -1107,62 +1048,23 @@ export default function TryoutManagement() {
         )}
       </Dialog>
 
-      <Dialog open={Boolean(cbtTarget)} onClose={() => setCbtTarget(null)} title="Pengaturan CBT Tryout">
-        {cbtError && <Alert variant="destructive">{cbtError}</Alert>}
-        <div className="mt-3 space-y-4">
-          <p className="text-sm text-muted-foreground">{cbtTarget?.name}</p>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={cbtForm.cbt_enabled}
-              onChange={(event) => setCbtForm({ ...cbtForm, cbt_enabled: event.target.checked })} />
-            Aktifkan mode CBT
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Durasi (menit)</Label>
-              <Input type="number" min={1} max={600} disabled={!cbtForm.cbt_enabled}
-                value={cbtForm.cbt_duration_minutes}
-                onChange={(event) => setCbtForm({ ...cbtForm, cbt_duration_minutes: event.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Batas Pelanggaran</Label>
-              <Input type="number" min={0} max={100} value={cbtForm.cbt_max_violations}
-                onChange={(event) => setCbtForm({ ...cbtForm, cbt_max_violations: event.target.value })} />
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={cbtForm.cbt_shuffle_questions}
-                onChange={(event) => setCbtForm({ ...cbtForm, cbt_shuffle_questions: event.target.checked })} />
-              Acak soal
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={cbtForm.cbt_shuffle_options}
-                onChange={(event) => setCbtForm({ ...cbtForm, cbt_shuffle_options: event.target.checked })} />
-              Acak opsi
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={cbtForm.cbt_require_fullscreen}
-                onChange={(event) => setCbtForm({ ...cbtForm, cbt_require_fullscreen: event.target.checked })} />
-              Wajib fullscreen
-            </label>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setCbtTarget(null)}>Batal</Button>
-            <Button type="button" onClick={handleSaveCbt} disabled={savingCbt}>
-              {savingCbt ? 'Menyimpan…' : 'Simpan Pengaturan'}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">
           <CardTitle className="text-base">Daftar Tryout</CardTitle>
-          <Badge variant="secondary">{tryouts.length} tryout</Badge>
+          <Badge variant="secondary">{visibleTryouts.length} tryout</Badge>
+          <SelectNative aria-label="Filter status tryout" className="ml-auto w-36"
+            value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="berlangsung">Berlangsung</option>
+            <option value="terjadwal">Terjadwal</option>
+            <option value="selesai">Selesai</option>
+            <option value="semua">Semua status</option>
+          </SelectNative>
         </CardHeader>
         <CardContent>
-          {tryouts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada tryout.</p>
+          {visibleTryouts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {statusFilter === 'semua' ? 'Belum ada tryout.' : `Tidak ada tryout berstatus ${statusFilter}.`}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -1180,21 +1082,23 @@ export default function TryoutManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tryouts.map((tryout) => (
+                {visibleTryouts.map((tryout) => (
                   <TableRow key={tryout.id}>
                     <TableCell>#{tryout.id} {tryout.name}</TableCell>
                     <TableCell>
                       <div className="space-y-2">
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                          aria-label="Salin semua URL sesi" title="Salin semua URL sesi"
+                          onClick={() => handleCopySessionUrls(tryout)}
+                          disabled={tryoutSessionUrls(tryout).length === 0}>
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
                         {(tryout.sessions ?? []).length === 0 && (
                           <span className="text-xs text-muted-foreground">Tidak ada sesi</span>
                         )}
                         {(tryout.sessions ?? []).map((session) => (
-                          <div key={session.id} className="flex items-center gap-2">
-                            <Input aria-label={`URL sesi ${session.name || tryout.name}`} value={tryoutUrl(session.slug)} readOnly className="h-8 w-56 text-xs" />
-                            <Button type="button" variant="outline" size="sm" onClick={() => handleCopyUrl(session, tryout.name)}>
-                              Salin
-                            </Button>
-                          </div>
+                          <Input key={session.id} aria-label={`URL sesi ${session.name || tryout.name}`}
+                            value={tryoutUrl(session.slug)} readOnly className="h-8 w-56 text-xs" />
                         ))}
                       </div>
                     </TableCell>
@@ -1204,8 +1108,8 @@ export default function TryoutManagement() {
                     <TableCell>{tryout.question_count}</TableCell>
                     <TableCell>{tryout.participant_count}</TableCell>
                     <TableCell>
-                      <Badge variant={tryout.cbt_enabled ? 'default' : 'secondary'}>
-                        {tryout.cbt_enabled ? `CBT ${tryout.cbt_duration_minutes}m` : 'Tryout'}
+                      <Badge variant={tryoutHasCbt(tryout) ? 'default' : 'secondary'}>
+                        {tryoutModeText(tryout)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -1229,9 +1133,6 @@ export default function TryoutManagement() {
                         <Button type="button" variant="outline" size="sm"
                           onClick={() => { window.location.hash = `#/tryouts/${tryout.id}/peserta`; }}>
                           Kelola Peserta
-                        </Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => openCbtSettings(tryout)}>
-                          Atur CBT
                         </Button>
                         <Button type="button" variant="destructive" size="sm" onClick={() => handleDelete(tryout)}>
                           Hapus
