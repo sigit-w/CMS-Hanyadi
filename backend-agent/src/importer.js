@@ -1,112 +1,156 @@
+import ExcelJS from 'exceljs';
 import { ApiError } from './errors.js';
 import { validateQuestionCreate } from './validate.js';
 
+const OPTION_KEYS = ['a', 'b', 'c', 'd', 'e', 'f'];
+const TRUE_FALSE_VALUES = new Set(['1', 'true', 'ya', 'yes', 'benar', 'b', 'correct', '✓']);
+
 function stripBom(text) {
-  return String(text).replace(/^\uFEFF/, '');
+  return String(text ?? '').replace(/^\uFEFF/, '');
+}
+
+function normalizeHeader(value) {
+  return stripBom(value).trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function cellText(value) {
+  if (value === undefined || value === null) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) return value.richText.map((part) => part.text ?? '').join('');
+    if (value.text !== undefined) return String(value.text);
+    if (value.result !== undefined) return String(value.result);
+    if (value.hyperlink !== undefined) return String(value.text ?? value.hyperlink);
+    return '';
+  }
+  return String(value).trim();
+}
+
+function isTrue(value) {
+  return TRUE_FALSE_VALUES.has(cellText(value).toLowerCase());
+}
+
+function parseCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === ',' && !quoted) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function requireHeaders(header, format) {
+  if (!header.includes('stem') || !header.includes('mapel')) {
+    throw new ApiError('INVALID_IMPORT', `Kolom ${format} wajib: stem, mapel`);
+  }
 }
 
 function parseCsv(content) {
-  const lines = stripBom(content).split(/\r?\n/).filter((line) => line.trim());
+  const text = stripBom(Buffer.isBuffer(content) ? content.toString('utf8') : content);
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) {
     throw new ApiError('INVALID_IMPORT', 'CSV minimal header dan satu baris data');
   }
-  const header = lines[0].split(',').map((cell) => cell.trim().toLowerCase());
-  if (!header.includes('stem') || !header.includes('mapel')) {
-    throw new ApiError('INVALID_IMPORT', 'Kolom CSV wajib: stem, mapel');
-  }
+  const header = parseCsvLine(lines[0]).map(normalizeHeader);
+  requireHeaders(header, 'CSV');
 
   return lines.slice(1).map((line) => {
-    const cells = line.split(',');
-    const row = Object.fromEntries(header.map((name, index) => [name, (cells[index] ?? '').trim()]));
-    const rawKeys = row.correct_keys ?? row.correct_key ?? '';
-    const correctKeys = String(rawKeys).toUpperCase().split(/[^A-F]+/).filter((key) => /^[A-F]$/.test(key));
-    const options = [];
-    for (const key of ['a', 'b', 'c', 'd']) {
-      const content = row[`option_${key}`];
-      if (content) {
-        options.push({
-          key: key.toUpperCase(),
-          content,
-          is_correct: correctKeys.includes(key.toUpperCase())
-        });
-      }
-    }
-    return {
-      stem: row.stem,
-      mapel: row.mapel,
-      question_type: row.type || 'multiple_choice',
-      difficulty: row.difficulty || 'medium',
-      options,
-      answer_text: row.answer_text || null,
-      explanation: row.explanation || null
-    };
+    const cells = parseCsvLine(line);
+    return Object.fromEntries(header.map((name, index) => [name, cells[index] ?? '']));
   });
 }
 
-function parseTxt(content) {
-  const blocks = stripBom(content).split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
-  return blocks.map((block) => {
-    const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const get = (prefix) => {
-      const line = lines.find((item) => item.toLowerCase().startsWith(prefix));
-      return line ? line.slice(prefix.length).trim() : null;
-    };
-    const options = [];
-    for (const line of lines) {
-      const match = line.match(/^([A-F])[.)]\s+(.+)$/i);
-      if (match) {
-        options.push({ key: match[1].toUpperCase(), content: match[2], is_correct: false });
-      }
-    }
-    const correct = get('jawaban:') || get('answer:');
-    if (correct) {
-      const correctKeys = String(correct).toUpperCase().split(/[^A-F]+/).filter((key) => /^[A-F]$/.test(key));
-      for (const key of correctKeys) {
-        const option = options.find((item) => item.key === key);
-        if (option) option.is_correct = true;
-      }
-    }
-    return {
-      stem: get('soal:') || get('stem:'),
-      mapel: get('mapel:'),
-      question_type: get('tipe:') || 'multiple_choice',
-      difficulty: get('kesulitan:') || 'medium',
-      options,
-      answer_text: get('jawaban_teks:') || null,
-      explanation: get('pembahasan:') || null
-    };
-  });
-}
-
-export function parseQuestions(format, content, filename = '') {
-  const name = filename.toLowerCase();
-  const kind = format || (name.endsWith('.json') ? 'json' : name.endsWith('.csv') ? 'csv' : 'txt');
-
-  let raw;
-  if (kind === 'json') {
-    try {
-      raw = JSON.parse(stripBom(content));
-    } catch {
-      throw new ApiError('INVALID_IMPORT', 'JSON tidak valid');
-    }
-    if (!Array.isArray(raw)) {
-      raw = raw?.questions ?? (raw?.stem ? [raw] : []);
-    }
-  } else if (kind === 'csv') {
-    raw = parseCsv(content);
-  } else if (kind === 'txt') {
-    raw = parseTxt(content);
-  } else {
-    throw new ApiError('UNSUPPORTED_FORMAT', `Format ${kind} tidak didukung`);
+async function parseXlsx(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new ApiError('INVALID_IMPORT', 'XLSX tidak memiliki lembar kerja');
+  const header = (sheet.getRow(1).values ?? []).slice(1).map(cellText).map(normalizeHeader);
+  requireHeaders(header, 'XLSX');
+  if (sheet.rowCount < 2) {
+    throw new ApiError('INVALID_IMPORT', 'XLSX minimal header dan satu baris data');
   }
 
-  if (!Array.isArray(raw) || raw.length === 0) {
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const values = (row.values ?? []).slice(1).map(cellText);
+    if (!values.some((value) => value)) return;
+    rows.push(Object.fromEntries(header.map((name, index) => [name, values[index] ?? ''])));
+  });
+  return rows;
+}
+
+function normalizeImportedRow(row) {
+  const questionType = cellText(row.type ?? row.question_type) || 'multiple_choice';
+  const result = {
+    stem: cellText(row.stem),
+    mapel: cellText(row.mapel),
+    question_type: questionType,
+    difficulty: cellText(row.difficulty) || 'medium',
+    answer_text: cellText(row.answer_text) || null,
+    explanation: cellText(row.explanation) || null
+  };
+
+  if (questionType === 'true_false') {
+    const statements = [];
+    for (let index = 1; index <= 5; index += 1) {
+      const text = cellText(row[`statement_${index}`]);
+      if (!text) continue;
+      statements.push({
+        text,
+        is_correct: isTrue(row[`statement_${index}_correct`]),
+        explanation: cellText(row[`statement_${index}_explanation`]) || null
+      });
+    }
+    result.statements = statements;
+    return result;
+  }
+
+  const options = [];
+  for (const key of OPTION_KEYS) {
+    const content = cellText(row[`option_${key}`]);
+    if (content) options.push({ key: key.toUpperCase(), content });
+  }
+  result.options = options;
+  const rawKeys = cellText(row.correct_keys) || cellText(row.correct_key);
+  result.correct_keys = rawKeys.toUpperCase().split(/[^A-F]+/).filter((key) => /^[A-F]$/.test(key));
+  return result;
+}
+
+export async function parseQuestions(content, filename = '') {
+  const name = String(filename ?? '').toLowerCase();
+  let rows;
+  if (name.endsWith('.csv')) {
+    rows = parseCsv(content);
+  } else if (name.endsWith('.xlsx')) {
+    rows = await parseXlsx(content);
+  } else {
+    throw new ApiError('VALIDATION_ERROR', 'Impor soal hanya menerima file CSV atau XLSX');
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
     throw new ApiError('EMPTY_IMPORT', 'Tidak ada soal yang dapat diimpor');
   }
 
-  return raw.map((item, index) => {
+  return rows.map((row, index) => {
     try {
-      return validateQuestionCreate(item);
+      return validateQuestionCreate(normalizeImportedRow(row));
     } catch (error) {
       throw new ApiError('INVALID_IMPORT', `Soal ke-${index + 1}: ${error.message}`);
     }

@@ -8,7 +8,7 @@
 | ADR | `ADR-021` |
 | Status | BE/FE/TRY/DOC/QA selesai; regresi penuh 199/199; `REL-31` **GO** 2026-11-25 |
 | Pemilik | PM |
-| Melanjutkan | Fase 6x / `REL-30` (GO); `REL-01…REL-30` tidak dibuka ulang; Fase 7 dibatalkan |
+| Melanjutkan | Fase 6z / `REL-32` (GO); `REL-01…REL-31` tidak dibuka ulang; Fase 7 dibatalkan |
 
 ## Konteks / Masukan Pemilik
 

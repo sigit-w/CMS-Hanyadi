@@ -18,6 +18,7 @@ import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import CredentialCopy from '@/components/CredentialCopy';
 
 const EMPTY_FORM = {
   nama: '', email: '', kelas: '', sekolah: '',
@@ -278,7 +279,7 @@ export default function PesertaManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama Siswa</TableHead>
-                  <TableHead>Username</TableHead>
+                  <TableHead>Username / Password</TableHead>
                   <TableHead>Jenjang</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Program Belajar</TableHead>
@@ -298,7 +299,9 @@ export default function PesertaManagement() {
                           onChange={(e) => setEditValues({ ...editValues, nama: e.target.value })} />
                       ) : participant.nama}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{participant.username || '-'}</TableCell>
+                    <TableCell>
+                      <CredentialCopy name={participant.nama} username={participant.username} secret={participant.password_plain || participant.pin_plain} label="Password" />
+                    </TableCell>
                     <TableCell>
                       {editingId === participant.id ? (
                         <SelectNative value={editValues.jenjang_id}
@@ -428,14 +431,13 @@ export default function PesertaManagement() {
         {detailParticipant && (
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detailParticipant.nama}</strong></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detailParticipant.username || '-'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username / Password</span><CredentialCopy name={detailParticipant.nama} username={detailParticipant.username} secret={detailParticipant.password_plain || detailParticipant.pin_plain} label="Password" /></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{detailParticipant.jenjang_kode ? `${detailParticipant.jenjang_kode} — ${detailParticipant.jenjang_nama || ''}`.trim() : '-'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span>{detailParticipant.email || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Kelas</span><span>{detailParticipant.kelas || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detailParticipant.sekolah || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Program Belajar</span><span>{detailParticipant.program_belajar_name || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detailParticipant.wa_orang_tua || '—'}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Password</span><strong>{detailParticipant.password_plain || '—'}</strong></div>
           </div>
         )}
       </Dialog>

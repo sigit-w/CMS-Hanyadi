@@ -512,8 +512,8 @@ tryoutRouter.get('/tryouts/:id/participants', adminOnly, asyncHandler(async (req
   const sessionIds = await sessionIdsFor(query, id);
   if (sessionIds.length === 0) throw new ApiError('NOT_FOUND', 'Tryout tidak ditemukan', 404);
   const { rows } = await query(
-    `SELECT DISTINCT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah, p.is_active,
-            p.created_at, p.updated_at,
+    `SELECT DISTINCT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah, p.username,
+             p.password_plain, p.pin_plain, p.is_active, p.created_at, p.updated_at,
             (SELECT count(*)::int FROM tryout_submissions ts
              WHERE ts.participant_id = p.id AND ts.session_id = ANY($1::bigint[])) AS submission_count
      FROM tryout_session_participants sp

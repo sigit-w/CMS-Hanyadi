@@ -38,7 +38,7 @@ test('N-03 item dipindah dari grup lama', () => {
   const tryout = blockFor('manajemen-tryout');
   assert.ok(tryout.includes("label: 'Manajemen Tryout'"));
   assert.ok(!tryout.includes('Kelola Siswa'));
-  assert.ok(!tryout.includes('/tryouts/peserta'));
+  assert.ok(!tryout.includes("'/tryouts/peserta'"));
 
   const setting = blockFor('setting');
   assert.ok(setting.includes("label: 'Setting'"));

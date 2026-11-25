@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import CredentialCopy from '@/components/CredentialCopy';
 
 const EMPTY_FORM = {
   email: '', kelas: '', program_belajar_id: '', jenjang_id: '', wa_orang_tua: '', password: ''
@@ -125,19 +126,19 @@ export default function ProspektusManagement() {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Peserta Tryout</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Peserta Umum</h1>
         <p className="text-sm text-muted-foreground">
           Klik baris untuk melihat detail dan mendaftarkannya sebagai siswa.
         </p>
       </div>
       {error && <Alert variant="destructive">Error: {error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
-      {loading && <Alert>Memuat peserta tryout…</Alert>}
+      {loading && <Alert>Memuat peserta umum…</Alert>}
 
       <Card>
         <CardContent className="pt-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama, username, atau sekolah" aria-label="Cari peserta tryout" onChange={(event) => setSearch(event.target.value)} />
+            <Input className="w-full max-w-sm" value={search} placeholder="Cari nama, username, atau sekolah" aria-label="Cari peserta umum" onChange={(event) => setSearch(event.target.value)} />
             <Label htmlFor="prospektus-filter-jenjang">Jenjang</Label>
             <SelectNative id="prospektus-filter-jenjang" value={jenjangFilter}
               onChange={(event) => setJenjangFilter(event.target.value)}>
@@ -149,13 +150,13 @@ export default function ProspektusManagement() {
             <Badge variant="secondary" className="h-9 px-3">{visible.length} data</Badge>
           </div>
           {visible.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada peserta tryout.</p>
+            <p className="text-sm text-muted-foreground">Belum ada peserta umum.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
-                  <TableHead>Username</TableHead>
+                  <TableHead>Username / PIN</TableHead>
                   <TableHead>Jenjang</TableHead>
                   <TableHead>Sekolah</TableHead>
                   <TableHead>WA Orang Tua</TableHead>
@@ -176,7 +177,9 @@ export default function ProspektusManagement() {
                       }
                     }}>
                     <TableCell className="font-medium">{item.nama}</TableCell>
-                    <TableCell className="font-mono text-xs">{item.username || '-'}</TableCell>
+                    <TableCell>
+                      <CredentialCopy name={item.nama} username={item.username} secret={item.pin_plain || item.password_plain} label="PIN" />
+                    </TableCell>
                     <TableCell>{jenjangLabel(item)}</TableCell>
                     <TableCell>{item.sekolah || '—'}</TableCell>
                     <TableCell>{item.wa_orang_tua || '—'}</TableCell>
@@ -195,16 +198,15 @@ export default function ProspektusManagement() {
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} title="Detail Peserta Tryout">
+      <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} title="Detail Peserta Umum">
         {detail && (
           <div className="space-y-4 text-sm">
             <div className="space-y-2">
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detail.nama}</strong></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detail.username || '-'}</strong></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username / PIN</span><CredentialCopy name={detail.nama} username={detail.username} secret={detail.pin_plain || detail.password_plain} label="PIN" /></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{jenjangLabel(detail)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detail.sekolah || '—'}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detail.wa_orang_tua || '—'}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">PIN</span><strong>{detail.pin_plain || '—'}</strong></div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Status</span>
                 <Badge variant={detail.bergabung ? 'default' : 'secondary'}>

@@ -19,6 +19,7 @@ const STATUS_BOARD = `${ROOT}/pm-agent/progress/status-board.md`;
 const QA_REPORT = `${ROOT}/qa-agent/reports/phase6s-report.md`;
 const QA_GATE = `${ROOT}/qa-agent/reports/phase6s-release-gate.md`;
 const TRYOUT_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutManagement.jsx`;
+const PARTICIPANTS_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutParticipantsPage.jsx`;
 const SISWA_PAGE = `${ROOT}/frontend-agent/src/pages/PesertaManagement.jsx`;
 const PROSPEKTUS_PAGE = `${ROOT}/frontend-agent/src/pages/ProspektusManagement.jsx`;
 const TRYOUT_AGENT = `${ROOT}/tryout-agent/app.js`;
@@ -177,7 +178,7 @@ test('QS-03 daftar siswa dan peserta tryout terpisah', async () => {
   assert.equal(attachedIds.includes(Number(outsiderId)), false);
 });
 
-test('QS-04 peserta tryout tetap di prospektus sampai dikonversi eksplisit', async () => {
+test('QS-04 Peserta Umum tetap di prospektus sampai dikonversi eksplisit', async () => {
   const beforeConversion = await query(
     `SELECT EXISTS (SELECT 1 FROM prospektus WHERE id = $1) AS in_prospektus,
             EXISTS (SELECT 1 FROM siswa WHERE id = $1) AS in_siswa`,
@@ -243,9 +244,15 @@ test('QS-06 marker UI Fase 6s tersedia di source dan bundle produksi', () => {
   const tryoutPage = readFileSync(TRYOUT_PAGE, 'utf8');
   for (const marker of [
     'TRYOUT_BASE_URL', 'tryoutUrl(', 'URL Peserta per Sesi', 'Salin', 'getSiswa',
-    'getTryoutParticipants', 'A. Peserta Didik', 'Kelola Peserta'
+    'A. Peserta Didik', 'Kelola Peserta', 'Peserta Umum'
   ]) {
     assert.ok(tryoutPage.includes(marker), `Marker ${marker} tidak ditemukan di TryoutManagement`);
+  }
+  const participantsPage = readFileSync(PARTICIPANTS_PAGE, 'utf8');
+  for (const marker of [
+    'getTryoutParticipants', 'Tambah Peserta ke Tryout Ini', 'A. Peserta Didik', 'Peserta Umum'
+  ]) {
+    assert.ok(participantsPage.includes(marker), `Marker ${marker} tidak ditemukan di TryoutParticipantsPage`);
   }
   const siswaPage = readFileSync(SISWA_PAGE, 'utf8');
   assert.ok(siswaPage.includes('getSiswa'), 'Kelola Siswa belum memakai getSiswa');

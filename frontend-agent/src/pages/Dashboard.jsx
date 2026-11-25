@@ -363,7 +363,7 @@ export default function Dashboard({ can, refreshKey = 0 }) {
                         </div>
                         <p className="text-sm leading-snug line-clamp-2">{question.stem}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {QUESTION_TYPE_LABELS[question.question_type] ?? question.question_type} · {question.difficulty} · kunci: {question.has_answer_key ? 'ada' : 'belum'} · sumber: {question.source_type ?? 'manual'}
+                          {QUESTION_TYPE_LABELS[question.question_type] ?? question.question_type} · {question.difficulty} · kunci: {question.has_answer_key ? 'ada' : 'belum'} · sumber: {question.source_type ?? 'manual'} · pemakaian: {question.usage_count ?? 0} lembar aktif
                         </p>
                         {(question.sheets ?? []).length > 0 && (
                           <p className="mt-1 text-xs text-muted-foreground">

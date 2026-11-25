@@ -49,9 +49,22 @@ router.use(participantRouter);
 router.use(tryoutReportRouter);
 router.use(tryoutRouter);
 
-const upload = multer({
+const IMPORT_MIME_BY_EXTENSION = {
+  '.csv': new Set(['text/csv', 'application/csv', 'application/vnd.ms-excel', 'text/plain']),
+  '.xlsx': new Set(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+};
+
+const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: config.maxUploadBytes, files: 1 }
+  limits: { fileSize: config.maxUploadBytes, files: 1 },
+  fileFilter: (req, file, callback) => {
+    const extension = path.extname(file.originalname ?? '').toLowerCase();
+    const mime = String(file.mimetype ?? '').toLowerCase();
+    if (!IMPORT_MIME_BY_EXTENSION[extension]?.has(mime)) {
+      return callback(new ApiError('VALIDATION_ERROR', 'Impor soal hanya menerima file CSV atau XLSX'));
+    }
+    callback(null, true);
+  }
 });
 
 const imageUpload = multer({
@@ -499,42 +512,35 @@ router.get('/sources', authorize('questions.read'), asyncHandler(async (req, res
   res.json({ ok: true, data: { sources: rows }, meta: nowMeta() });
 }));
 
-router.post('/import', authorize('questions.write'), upload.single('file'), asyncHandler(async (req, res) => {
+router.post('/import', authorize('questions.write'), importUpload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError('VALIDATION_ERROR', 'Impor soal wajib berupa file CSV atau XLSX');
+  }
+  const forbiddenFields = ['content', 'questions', 'format', 'filename', 'mime_type'];
+  if (forbiddenFields.some((field) => req.body?.[field] !== undefined)) {
+    throw new ApiError('VALIDATION_ERROR', 'Payload impor tidak diterima; gunakan file CSV atau XLSX');
+  }
+
   const sourceInput = req.body?.source ?? {
-    type: req.body?.type,
     label: req.body?.label,
     external_ref: req.body?.external_ref,
     collected_from: req.body?.collected_from,
     metadata: req.body?.metadata
   };
-  let content = req.file ? req.file.buffer.toString('utf8') : req.body?.content;
-  const hasQuestionArray = Array.isArray(req.body?.questions);
-  if (!content && hasQuestionArray) {
-    content = JSON.stringify({ questions: req.body.questions });
-  }
-  const filename = req.file?.originalname ?? req.body?.filename ?? '';
-  const mimeType = req.file?.mimetype ?? req.body?.mime_type ?? '';
-
-  if (!content) throw new ApiError('VALIDATION_ERROR', 'File atau konten import wajib diisi');
-
-  const format = req.body?.format ?? (hasQuestionArray ? 'json' : undefined);
-  const questions = parseQuestions(format, content, filename);
-  const sourceType = req.file ? 'file_upload' : (sourceInput.type ?? 'external_collection');
-  if (!['manual', 'file_upload', 'external_collection'].includes(sourceType)) {
-    throw new ApiError('VALIDATION_ERROR', 'Jenis sumber tidak valid');
-  }
+  const filename = req.file.originalname;
+  const mimeType = req.file.mimetype;
+  const questions = await parseQuestions(req.file.buffer, filename);
 
   const result = await withTransaction(async (client) => {
     const source = await client.query(
       `INSERT INTO question_sources
          (type_id, label, original_filename, mime_type, external_ref, collected_from, collected_at, metadata)
-       VALUES ((SELECT id FROM source_types WHERE code = $1), $2, $3, $4, $5, $6,
-               CASE WHEN $1 = 'external_collection' THEN now() ELSE NULL END, $7::jsonb)
+       VALUES ((SELECT id FROM source_types WHERE code = $1), $2, $3, $4, $5, $6, NULL, $7::jsonb)
        RETURNING id`,
-      [sourceType,
-        sourceInput.label ?? (req.file ? filename : 'Pengumpulan Eksternal'),
-        filename || null,
-        mimeType || null,
+      ['file_upload',
+        sourceInput.label ?? filename,
+        filename,
+        mimeType,
         sourceInput.external_ref ?? null,
         sourceInput.collected_from ?? null,
         JSON.stringify(sourceInput.metadata ?? {})]

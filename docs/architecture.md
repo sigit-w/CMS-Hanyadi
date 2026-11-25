@@ -197,6 +197,14 @@ Desain multi-versi Fase 5 sudah disederhanakan ADR-004 / Fase 6j. Tabel `present
 - **Ekspor ZIP.** `GET /api/v1/tryouts/{id}/questions.zip` memakai `tryouts.manage`; `GET /api/v1/tryouts/{id}/questions-with-keys.zip` memakai `tryout_questions.key_export` dari migrasi `032`. Satu klik menghasilkan satu ZIP berisi satu PDF per sesi. PDF memuat `nama lembar soal`, `kode lembar soal`, `mapel`, dan `keterangan`; kunci diambil dari `question_options.is_correct`, bukan kolom `correct_keys`.
 - **Gate.** Permission baru tidak otomatis melekat pada role lama, termasuk `admin`, dan diberikan lewat Kelola Role. Generator `backend-agent/src/tryoutExport.js` dibangun internal tanpa dependency PDF/ZIP baru. Migrasi `032` dijalankan setelah backup yang sama seperti Fase 6w; regresi penuh 194/194 dan Fase 6x final dengan `REL-30` **GO**. Fase 7 tetap dibatalkan.
 
+## 8z. Fase 6z — Daftar Soal, Impor Terbatas, dan Peserta Umum (ADR-022)
+
+- **Pemakaian soal.** `GET /api/v1/questions` dan detail soal mengembalikan `usage_count` dari jumlah lembar soal aktif yang memuat soal. `question_sheets.archived = true` tidak dihitung; Dashboard menampilkan angka tersebut per baris.
+- **Impor.** UI dan API hanya menerima file `.csv`/`.xlsx`. Body `content`, `questions[]`, JSON, dan TXT ditolak `400 VALIDATION_ERROR`. Dua template (`template-soal.csv` dan `template-soal.xlsx`) memuat contoh lengkap empat tipe soal dan keduanya lolos import tanpa perubahan.
+- **Kredensial.** Daftar/detail Siswa, Peserta Umum, dan peserta tryout menampilkan `username` berdekatan dengan `password_plain`/`pin_plain` serta satu tombol copy yang menyalin `Nama`, `username`, dan PIN/password sekaligus. Endpoint publik/user CMS tidak mengirim plaintext atau hash.
+- **Kelola Peserta per tryout.** Tombol `Kelola Peserta` pada tryout tersimpan mengarah ke `#/tryouts/{id}/peserta`, bukan popup. Halaman `TryoutParticipantsPage.jsx` memakai komponen UI dan gaya tabel Peserta Umum, menggabungkan Peserta Didik dan Peserta Umum dalam satu tabel, serta menyediakan detail, hapus, dan form tambah inline A/B dengan API yang sama seperti alur draft.
+- **Rename dan gate.** Label, judul, hash, dan marker QA memakai `Peserta Umum`; `#/tryouts/prospektus` tetap redirect ke `#/tryouts/peserta-umum`. Tanpa migrasi skema, regresi penuh 206/206, build frontend sukses, services sehat, backup `/tmp/opencode/bank_soal_db-pre032-2026-11-25.dump`, dan `REL-32` **GO**. `REL-01…REL-31` tidak dibuka ulang.
+
 ## 9. Non-Fungsional dan Keamanan
 
 - Pool koneksi kecil dan `statement_timeout` untuk melindungi RAM 2GB.

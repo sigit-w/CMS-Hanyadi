@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  addTryoutParticipants,
   createParticipant,
   createTryout,
   deleteTryout,
@@ -14,10 +13,8 @@ import {
   getQuestionSheets,
   getSiswa,
   getTryout,
-  getTryoutParticipants,
   getTryouts,
   markParticipantProspek,
-  removeTryoutParticipant,
   updateTryout,
   updateTryoutCbt
 } from '../api.js';
@@ -32,6 +29,7 @@ import { Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { SelectNative } from '@/components/ui/select-native';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import CredentialCopy from '@/components/CredentialCopy';
 
 const MAPEL_LABELS = {
   MTKA: 'Matematika',
@@ -169,6 +167,11 @@ function ParticipantRows({ rows, onDetail, onRemove, emptyText }) {
             <span className="block truncate text-xs text-muted-foreground">
               {participantSubtitle(participant, participant.source)}
             </span>
+            {(participant.username || participant.pin_plain || participant.password_plain) && (
+              <span className="mt-1 block">
+                <CredentialCopy name={participant.nama} username={participant.username} secret={participant.pin_plain || participant.password_plain} label="PIN/password" />
+              </span>
+            )}
           </span>
           <Button
             type="button"
@@ -200,8 +203,6 @@ export default function TryoutManagement() {
   const [draftParticipants, setDraftParticipants] = useState([]);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [detailParticipant, setDetailParticipant] = useState(null);
-  const [managedTryoutId, setManagedTryoutId] = useState(null);
-  const [managedParticipants, setManagedParticipants] = useState([]);
   const [tryouts, setTryouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -209,7 +210,6 @@ export default function TryoutManagement() {
   const [notice, setNotice] = useState('');
   const [pesertaDialog, setPesertaDialog] = useState(null);
   const [umumTab, setUmumTab] = useState('manual');
-  const [participantTarget, setParticipantTarget] = useState('draft');
   const [participantSearch, setParticipantSearch] = useState('');
   const [umumForm, setUmumForm] = useState(emptyUmum);
   const [umumError, setUmumError] = useState('');
@@ -395,20 +395,18 @@ export default function TryoutManagement() {
     }));
   }
 
-  function openPesertaUmum(target = 'draft') {
+  function openPesertaUmum() {
     setUmumForm(emptyUmum());
     setUmumError('');
     setUmumTab('manual');
     setParticipantSearch('');
     setParticipantJenjangFilter('');
-    setParticipantTarget(target);
     setPesertaDialog('umum');
   }
 
-  function openPesertaSiswa(target = 'draft') {
+  function openPesertaSiswa() {
     setParticipantSearch('');
     setParticipantJenjangFilter('');
-    setParticipantTarget(target);
     setPesertaDialog('siswa');
   }
 
@@ -425,21 +423,6 @@ export default function TryoutManagement() {
   async function handlePickParticipant(participant, sourceLabel) {
     setError('');
     setNotice('');
-    if (participantTarget === 'manage') {
-      try {
-        setSavingPeserta(true);
-        await addTryoutParticipants(managedTryoutId, [participant.id]);
-        await loadManagedParticipants(managedTryoutId);
-        await refreshTryouts();
-        setNotice(`${sourceLabel} "${participant.nama}" ditambahkan ke tryout ini.`);
-        setPesertaDialog('manage');
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setSavingPeserta(false);
-      }
-      return;
-    }
     setSelectedParticipants((current) => (
       current.some((id) => String(id) === String(participant.id))
         ? current : [...current, String(participant.id)]
@@ -474,54 +457,12 @@ export default function TryoutManagement() {
     }
   }
 
-  async function loadManagedParticipants(tryoutId) {
-    const [detail, participantData] = await Promise.all([
-      getTryout(tryoutId),
-      getTryoutParticipants(tryoutId)
-    ]);
-    setManagedTryoutId(detail.tryout.id);
-    setManagedParticipants(participantData.participants);
-  }
-
   function isAlreadySelected(participant) {
-    const source = participantTarget === 'manage' ? managedParticipants : selectedParticipants;
-    return source.some((item) => String(item.id ?? item) === String(participant.id));
+    return selectedParticipants.some((item) => String(item.id ?? item) === String(participant.id));
   }
 
   function closePesertaFlow() {
-    setPesertaDialog(participantTarget === 'manage' ? 'manage' : null);
-  }
-
-  async function openManageParticipants(tryout) {
-    setError('');
-    setNotice('');
-    try {
-      await loadManagedParticipants(tryout.id);
-      setParticipantTarget('manage');
-      setPesertaDialog('manage');
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function handleRemoveManagedParticipant(participant) {
-    const isUmum = participant.jenis === 'umum';
-    const message = isUmum
-      ? `Keluarkan Peserta Umum "${participant.nama}" dari tryout ini? Datanya akan disimpan di Prospektus.`
-      : `Keluarkan Siswa "${participant.nama}" dari tryout ini? Data siswa tidak akan dihapus.`;
-    if (!window.confirm(message)) return;
-    setError('');
-    setNotice('');
-    try {
-      await removeTryoutParticipant(managedTryoutId, participant.id);
-      setManagedParticipants((current) => current.filter((item) => item.id !== participant.id));
-      setNotice(isUmum
-        ? `Peserta Umum "${participant.nama}" dipindahkan ke Prospektus.`
-        : `Siswa "${participant.nama}" dikeluarkan dari tryout. Data siswa tetap tersimpan.`);
-      await refreshTryouts();
-    } catch (err) {
-      setError(err.message);
-    }
+    setPesertaDialog(null);
   }
 
   async function handleCreateUmum(event) {
@@ -546,18 +487,11 @@ export default function TryoutManagement() {
         { ...participant, source: 'Peserta Umum' },
         ...current.filter((item) => item.id !== participant.id)
       ]);
-      if (participantTarget === 'manage') {
-        await addTryoutParticipants(managedTryoutId, [participant.id]);
-        await loadManagedParticipants(managedTryoutId);
-        await refreshTryouts();
-        setPesertaDialog('manage');
-      } else {
-        setSelectedParticipants((current) => (
-          current.some((id) => String(id) === String(participant.id))
-            ? current : [...current, String(participant.id)]
-        ));
-        setPesertaDialog(null);
-      }
+      setSelectedParticipants((current) => (
+        current.some((id) => String(id) === String(participant.id))
+          ? current : [...current, String(participant.id)]
+      ));
+      setPesertaDialog(null);
       setNotice(`Peserta Umum "${participant.nama}" ditambahkan. PIN: ${participant.pin_plain || waDigits(umumForm.wa_orang_tua)}`);
     } catch (err) {
       setUmumError(err.message);
@@ -986,7 +920,7 @@ export default function TryoutManagement() {
             </div>
 
             <fieldset className="rounded-lg border p-4">
-              <legend className="px-1 text-sm font-semibold">Peserta Tryout ({selectedParticipants.length} dipilih, opsional)</legend>
+              <legend className="px-1 text-sm font-semibold">Peserta Umum ({selectedParticipants.length} dipilih, opsional)</legend>
               <ParticipantRows
                 rows={draftParticipantRows}
                 onDetail={openParticipantDetail}
@@ -995,7 +929,7 @@ export default function TryoutManagement() {
               />
               <div className="mt-3">
                 <Button type="button" variant="outline" size="sm" onClick={() => setPesertaDialog('choice')}>
-                  Tambah Peserta Tryout
+                  Tambah Peserta Umum
                 </Button>
               </div>
             </fieldset>
@@ -1010,7 +944,7 @@ export default function TryoutManagement() {
         </CardContent>
       </Card>
 
-      <Dialog open={pesertaDialog === 'choice'} onClose={() => setPesertaDialog(null)} title="Tambah Peserta Tryout">
+      <Dialog open={pesertaDialog === 'choice'} onClose={() => setPesertaDialog(null)} title="Tambah Peserta Umum">
         <p className="mb-4 text-sm text-muted-foreground">Pilih jenis peserta yang akan ditambahkan ke tryout ini.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left" onClick={openPesertaSiswa}>
@@ -1101,11 +1035,11 @@ export default function TryoutManagement() {
         )}
       </Dialog>
 
-      <Dialog open={Boolean(detailParticipant)} onClose={() => setDetailParticipant(null)} title="Detail Peserta Tryout">
+      <Dialog open={Boolean(detailParticipant)} onClose={() => setDetailParticipant(null)} title="Detail Peserta Umum">
         {detailParticipant && (
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Nama</span><strong>{detailParticipant.nama}</strong></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Username</span><strong>{detailParticipant.username || '-'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Kredensial</span><CredentialCopy name={detailParticipant.nama} username={detailParticipant.username} secret={detailParticipant.pin_plain || detailParticipant.password_plain} label="PIN/password" /></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenjang</span><span>{detailParticipant.jenjang_kode ? `${detailParticipant.jenjang_kode} — ${detailParticipant.jenjang_nama || ''}`.trim() : '-'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Jenis</span><span>{detailParticipant.jenis === 'umum' ? 'Peserta Umum' : 'Peserta Didik'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Sekolah</span><span>{detailParticipant.sekolah || '—'}</span></div>
@@ -1114,36 +1048,8 @@ export default function TryoutManagement() {
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span>{detailParticipant.email || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">WA Orang Tua</span><span>{detailParticipant.wa_orang_tua || '—'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Submission</span><span>{detailParticipant.submission_count ?? 0}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Password / PIN</span><strong>{detailParticipant.pin_plain || detailParticipant.password_plain || '—'}</strong></div>
           </div>
         )}
-      </Dialog>
-
-      <Dialog open={pesertaDialog === 'manage'} onClose={() => setPesertaDialog(null)} title="Kelola Peserta Tryout">
-        <p className="mb-3 text-sm text-muted-foreground">
-          {tryouts.find((tryout) => tryout.id === managedTryoutId)?.name ?? `Tryout #${managedTryoutId ?? '—'}`}
-        </p>
-        <ParticipantRows
-          rows={managedParticipants}
-          onDetail={(participant) => {
-            setPesertaDialog(null);
-            openParticipantDetail(participant);
-          }}
-          onRemove={handleRemoveManagedParticipant}
-          emptyText="Tidak ada peserta pada tryout ini."
-        />
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left"
-            onClick={() => openPesertaSiswa('manage')}>
-            <span className="font-semibold">A. Peserta Didik</span>
-            <span className="text-xs text-muted-foreground">Pilih siswa untuk ditambahkan ke tryout ini</span>
-          </Button>
-          <Button type="button" variant="outline" className="h-auto flex-col items-start p-4 text-left"
-            onClick={() => openPesertaUmum('manage')}>
-            <span className="font-semibold">B. Peserta Umum</span>
-            <span className="text-xs text-muted-foreground">Form manual atau pilih siswa/prospektus</span>
-          </Button>
-        </div>
       </Dialog>
 
       <Dialog open={Boolean(editTarget)} onClose={() => setEditTarget(null)} title="Ubah Tryout">
@@ -1325,7 +1231,8 @@ export default function TryoutManagement() {
                           onClick={() => handleDownloadQuestions(tryout, true)}>
                           {downloadingId === `${tryout.id}-keys` ? 'Mengunduh…' : 'Unduh Soal + Kunci'}
                         </Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => openManageParticipants(tryout)}>
+                        <Button type="button" variant="outline" size="sm"
+                          onClick={() => { window.location.hash = `#/tryouts/${tryout.id}/peserta`; }}>
                           Kelola Peserta
                         </Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => openCbtSettings(tryout)}>

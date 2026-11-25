@@ -23,6 +23,11 @@ const PARTICIPANT_SELECT = `
   LEFT JOIN jenjang j ON j.id = p.jenjang_id
 `;
 
+const PARTICIPANT_LIST_SELECT = PARTICIPANT_SELECT.replace(
+  'p.username,',
+  'p.username, p.password_plain, p.pin_plain,'
+);
+
 const SISWA_SELECT = `
   SELECT s.id, s.nama, s.email, s.kelas, s.sekolah,
          s.program_belajar_id, pb.name AS program_belajar_name, s.wa_orang_tua,
@@ -33,6 +38,11 @@ const SISWA_SELECT = `
   LEFT JOIN program_belajar pb ON pb.id = s.program_belajar_id
   LEFT JOIN jenjang j ON j.id = s.jenjang_id
  `;
+
+const SISWA_LIST_SELECT = SISWA_SELECT.replace(
+  's.username,',
+  's.username, s.password_plain, s.pin_plain,'
+);
 
 const PARTICIPANT_DETAIL_SELECT = `
   SELECT p.id, p.nama, p.jenis, p.email, p.kelas, p.sekolah,
@@ -237,7 +247,7 @@ participantRouter.get('/siswa', manageParticipants, asyncHandler(async (req, res
                 OR coalesce(s.sekolah, '') ILIKE $${params.length})`);
   }
   const { rows } = await query(
-    `${SISWA_SELECT} WHERE ${where.join(' AND ')} ORDER BY s.id DESC`,
+    `${SISWA_LIST_SELECT} WHERE ${where.join(' AND ')} ORDER BY s.id DESC`,
     params
   );
   res.json({ ok: true, data: { siswa: rows }, meta: nowMeta() });
@@ -260,7 +270,7 @@ participantRouter.get('/participants', manageParticipants, asyncHandler(async (r
   }
   appendSearch(conditions, params, req.query.search ?? req.query.q);
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const { rows } = await query(`${PARTICIPANT_SELECT} ${where} ORDER BY p.id DESC`, params);
+  const { rows } = await query(`${PARTICIPANT_LIST_SELECT} ${where} ORDER BY p.id DESC`, params);
   res.json({ ok: true, data: { participants: rows }, meta: nowMeta() });
 }));
 
@@ -280,7 +290,7 @@ participantRouter.get('/prospektus', manageParticipants, asyncHandler(async (req
   }
   appendSearch(conditions, params, req.query.search ?? req.query.q);
   const { rows } = await query(
-    `${PARTICIPANT_SELECT}
+    `${PARTICIPANT_LIST_SELECT}
      WHERE ${conditions.join(' AND ')}
      ORDER BY p.bergabung, p.prospek_at DESC NULLS LAST, p.id DESC`,
     params

@@ -243,10 +243,6 @@ export const assignRole = (id, code) =>
 export const revokeRole = (id, roleId) =>
   request(`/users/${id}/roles/${roleId}`, { method: 'DELETE' });
 
-export function importPayload(payload) {
-  return request('/import', { method: 'POST', body: JSON.stringify(payload) });
-}
-
 export async function importFile(file, type) {
   const form = new FormData();
   form.append('file', file);

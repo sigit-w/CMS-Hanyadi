@@ -9,6 +9,7 @@ import { query, pool } from '../../backend-agent/src/db.js';
 
 const ROOT = '/opt/virtual-office-bank-soal';
 const TRYOUT_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutManagement.jsx`;
+const PARTICIPANTS_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutParticipantsPage.jsx`;
 const PROSPEKTUS_PAGE = `${ROOT}/frontend-agent/src/pages/ProspektusManagement.jsx`;
 const APP = `${ROOT}/frontend-agent/src/App.jsx`;
 const SISWA_PAGE = `${ROOT}/frontend-agent/src/pages/PesertaManagement.jsx`;
@@ -158,21 +159,34 @@ test('PR-02 siswa tidak tampil default di daftar peserta tryout', () => {
 
 test('PR-03 picker, detail baris, dan trash icon tersedia', () => {
   const source = readFileSync(TRYOUT_PAGE, 'utf8');
+  const participantsPage = readFileSync(PARTICIPANTS_PAGE, 'utf8');
   for (const marker of [
     'A. Peserta Didik',
     'B. Peserta Umum',
     'ParticipantRows',
     'Trash2',
-    'Detail Peserta Tryout',
-    'Hapus ${participant.nama} dari tryout',
+    'Detail Peserta Umum',
     'Kelola Peserta',
-    'removeTryoutParticipant',
     'markParticipantProspek'
   ]) {
     assert.ok(source.includes(marker), `Marker ${marker} tidak ditemukan di TryoutManagement`);
   }
+  for (const marker of [
+    'Kelola Peserta',
+    'Daftar Peserta',
+    'Tambah Peserta ke Tryout Ini',
+    'Trash2',
+    'Detail Peserta Umum',
+    'Hapus ${row.nama} dari tryout',
+    'removeTryoutParticipant(tryoutId, row.id)'
+  ]) {
+    assert.ok(participantsPage.includes(marker), `Marker ${marker} tidak ditemukan di TryoutParticipantsPage`);
+  }
   const bundle = readFileSync(`${DIST}/${readdirSync(DIST).find((file) => file.endsWith('.js'))}`, 'utf8');
-  for (const marker of ['Prospektus', '#/tryouts/prospektus', 'A. Peserta Didik', 'Kelola Peserta']) {
+  for (const marker of [
+    'Prospektus', '#/tryouts/peserta-umum', '/tryouts/prospektus', 'A. Peserta Didik', 'Kelola Peserta',
+    'Tambah Peserta ke Tryout Ini', 'Daftar Peserta'
+  ]) {
     assert.ok(bundle.includes(marker), `Marker ${marker} tidak ditemukan di bundle CMS`);
   }
 });
@@ -276,8 +290,9 @@ test('PR-06 prospek draft Umum dan menu Prospektus benar', async () => {
   assert.equal(rejected.status, 400);
 
   const app = readFileSync(APP, 'utf8');
-  assert.ok(app.includes("path: '/tryouts/prospektus'"));
-  assert.ok(app.includes("label: 'Peserta Tryout'"));
+  assert.ok(app.includes("path: '/tryouts/peserta-umum'"));
+  assert.ok(app.includes("label: 'Peserta Umum'"));
+  assert.ok(app.includes("'/tryouts/prospektus': '/tryouts/peserta-umum'"));
   assert.ok(app.includes('ProspektusManagement'));
 
   const prospektusPage = readFileSync(PROSPEKTUS_PAGE, 'utf8');

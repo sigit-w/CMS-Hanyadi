@@ -185,7 +185,7 @@ paths:
   /api/v1/siswa:
     get:
       summary: Daftar Siswa murni dari public.siswa (tryouts.manage)
-      description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus. Fase 6u: pencarian server-side dipakai picker peserta.'
+      description: 'Dipakai Kelola Siswa dan picker A. Peserta Didik; tidak menggabungkan prospektus. Fase 6u: pencarian server-side dipakai picker peserta. Fase 6z: username dan password plaintext ikut dikembalikan hanya untuk tryouts.manage agar bisa disalin berpasangan.'
       parameters:
         - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
         - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang peserta.' }
@@ -252,7 +252,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: integer } }
     get:
       summary: Detail peserta beserta password/PIN plaintext (tryouts.manage)
-      description: 'Kredensial hanya tersedia di endpoint detail; endpoint list tidak mengembalikan hash maupun plaintext.'
+      description: 'Fase 6z: username dan plaintext tersedia pada detail dan pada endpoint list yang dilindungi tryouts.manage; hash tetap tidak pernah dikembalikan.'
       responses:
         '200': { description: Detail peserta }
         '404': { description: Peserta tidak ditemukan }
@@ -260,7 +260,7 @@ paths:
   /api/v1/prospektus:
     get:
       summary: Daftar Peserta Umum di tabel prospektus, termasuk status bergabung (tryouts.manage)
-      description: 'Fase 6u: picker Peserta Umum memakai endpoint ini dengan search server-side; prospektus aktif boleh dilampirkan langsung, sedangkan yang bergabung=true dipetakan ke ID siswa hasil konversi.'
+      description: 'Fase 6u: picker Peserta Umum memakai endpoint ini dengan search server-side; prospektus aktif boleh dilampirkan langsung, sedangkan yang bergabung=true dipetakan ke ID siswa hasil konversi. Fase 6z: username dan PIN plaintext ikut dikembalikan hanya untuk tryouts.manage.'
       parameters:
         - { name: search, in: query, required: false, schema: { type: string }, description: 'Cari nama, email, kelas, atau sekolah (case-insensitive); alias q diterima.' }
         - { name: jenjang_id, in: query, required: false, schema: { type: integer }, description: 'Fase 6w: filter jenjang prospektus.' }
@@ -845,7 +845,7 @@ paths:
         '409': { description: Mapel masih dipakai soal atau tryout }
   /api/v1/questions:
     get:
-      summary: Daftar soal dengan filter; field sheets berisi kode lembar aktif yang memakai soal (soal archived tersembunyi kecuali status=archived)
+      summary: 'Daftar soal dengan filter; sheets berisi lembar aktif dan usage_count menghitung jumlah lembar aktif yang memakai soal (arsip tidak dihitung)'
       parameters:
         - { name: mapel, in: query, schema: { type: string } }
         - name: status
@@ -989,12 +989,39 @@ paths:
         '404': { description: Tidak ditemukan }
   /api/v1/import:
     post:
-      summary: Impor soal JSON/CSV/TXT atau payload sumber
+      summary: 'Impor soal dari file CSV atau XLSX saja (questions.write); payload tidak diterima'
+      description: 'Fase 6z: format ditentukan dari ekstensi file. Template valid tersedia di /templates/template-soal.csv dan /templates/template-soal.xlsx.'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 'File .csv atau .xlsx; header wajib stem dan mapel.'
+                label:
+                  type: string
+                  description: 'Label sumber opsional.'
+                external_ref:
+                  type: string
+                  nullable: true
+                collected_from:
+                  type: string
+                  nullable: true
+                metadata:
+                  type: string
+                  description: 'JSON string metadata opsional.'
       responses:
         '201':
           description: Soal berhasil diimpor
         '400':
-          description: Format/validasi gagal
+          description: 'VALIDATION_ERROR untuk payload/format selain CSV/XLSX; INVALID_IMPORT/EMPTY_IMPORT untuk isi file tidak valid'
+        '403':
+          description: Tidak memiliki permission questions.write
         '413':
           description: File terlalu besar
   /api/v1/sources:

@@ -228,7 +228,7 @@ test('U-06 marker form Buat Tryout sesuai ADR-007', () => {
   for (const marker of [
     'Nama Tryout', 'Tanggal &amp; Jam Mulai', 'Tanggal &amp; Jam Selesai',
     'Lembar Soal (', 'getQuestionSheets', 'sheet_ids', 'start_at', 'end_at',
-    'Tambah Peserta Tryout', 'A. Peserta Didik', 'B. Peserta Umum',
+    'Tambah Peserta Umum', 'A. Peserta Didik', 'B. Peserta Umum',
     "jenis: 'umum'", 'Nomor WA Orang Tua', 'wa_orang_tua', 'participant_ids: selectedParticipants.map(Number)'
   ]) {
     assert.ok(source.includes(marker), `Marker CMS "${marker}" tidak ditemukan`);

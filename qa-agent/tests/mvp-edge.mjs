@@ -13,6 +13,19 @@ async function api(path, options = {}) {
   return { status: response.status, body };
 }
 
+async function importFile(filename, content, mimeType, fields = {}) {
+  const form = new FormData();
+  form.append('file', new Blob([content], { type: mimeType }), filename);
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  const response = await fetch(`${BASE}/api/v1/import`, {
+    method: 'POST',
+    headers: await adminHeaders(),
+    body: form
+  });
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status, body };
+}
+
 function essay(mapel, stem) {
   return { stem, mapel, question_type: 'essay', answer_text: 'Jawaban uji QA' };
 }
@@ -49,32 +62,27 @@ test('S-23 format upload tidak didukung ditolak 400', async () => {
     method: 'POST', body: JSON.stringify({ format: 'xml', content: '<soal/>' })
   });
   assert.equal(status, 400);
-  assert.equal(body.error.code, 'UNSUPPORTED_FORMAT');
+  assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
-test('S-24 JSON rusak pada import ditolak 400', async () => {
+test('S-24 payload JSON pada import ditolak 400', async () => {
   const { status, body } = await api('/api/v1/import', {
     method: 'POST', body: JSON.stringify({ format: 'json', content: '{rusak' })
   });
   assert.equal(status, 400);
-  assert.equal(body.error.code, 'INVALID_IMPORT');
+  assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
 test('S-25 CSV hanya header ditolak 400', async () => {
-  const { status, body } = await api('/api/v1/import', {
-    method: 'POST', body: JSON.stringify({ format: 'csv', content: 'stem,mapel\n' })
-  });
-  assert.equal(status, 400);
+  const { status, body } = await importFile('header-saja.csv', 'stem,mapel\n', 'text/csv');
+  assert.equal(status, 400, JSON.stringify(body));
   assert.equal(body.error.code, 'INVALID_IMPORT');
 });
 
 test('S-26 file biner acak tidak menyebabkan 500', async () => {
-  const form = new FormData();
-  form.append('file', new Blob(['\u0000\u0001bukan soal'], { type: 'application/octet-stream' }), 'data.bin');
-  const response = await fetch(`${BASE}/api/v1/import`, { method: 'POST', headers: await adminHeaders(), body: form });
-  const body = await response.json().catch(() => ({}));
-  assert.equal(response.status, 400);
-  assert.equal(body.error.code, 'INVALID_IMPORT');
+  const { status, body } = await importFile('data.bin', '\u0000\u0001bukan soal', 'application/octet-stream');
+  assert.equal(status, 400);
+  assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
 test('S-27 body JSON malformed ditolak 400 INVALID_JSON', async () => {
@@ -123,21 +131,23 @@ test('S-31 filter tiga mapel wajib konsisten', async () => {
   }
 });
 
-test('S-32 sumber impor tercatat di PostgreSQL', async () => {
+test('S-32 sumber impor CSV tercatat di PostgreSQL', async () => {
   const label = `QA-EDGE-${Date.now()}`;
-  const imported = await api('/api/v1/import', {
-    method: 'POST',
-    body: JSON.stringify({
-      source: { type: 'external_collection', label, external_ref: 'EDGE-01' },
-      content: JSON.stringify({ questions: [essay('IPAS', 'Soal sumber edge QA')] }),
-      format: 'json'
-    })
+  const csv = [
+    'stem,mapel,type,answer_text',
+    `"Soal sumber edge QA",IPAS,essay,"Jawaban uji QA"`
+  ].join('\n');
+  const imported = await importFile('sumber-edge.csv', csv, 'text/csv', {
+    label,
+    external_ref: 'EDGE-01'
   });
   assert.equal(imported.status, 201, JSON.stringify(imported.body));
+  assert.equal(imported.body.data.created, 1);
   const { body } = await api('/api/v1/sources');
   const source = body.data.sources.find((item) => item.label === label);
   assert.ok(source, 'sumber harus tercatat');
-  assert.equal(source.type, 'external_collection');
+  assert.equal(source.type, 'file_upload');
+  assert.equal(source.original_filename, 'sumber-edge.csv');
   assert.equal(Number(source.question_count), 1);
 });
 

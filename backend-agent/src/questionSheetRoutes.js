@@ -178,15 +178,26 @@ export async function attachQuestionSheets(rows) {
   const ids = rows.map((row) => row.id);
   const { rows: flags } = await query(
     `SELECT qsq.question_id,
-            jsonb_agg(jsonb_build_object('id', sh.id, 'code', sh.code, 'name', sh.name) ORDER BY sh.code) AS sheets
+            jsonb_agg(jsonb_build_object('id', sh.id, 'code', sh.code, 'name', sh.name) ORDER BY sh.code) AS sheets,
+            count(DISTINCT sh.id)::int AS usage_count
      FROM question_sheet_questions qsq
      JOIN question_sheets sh ON sh.id = qsq.sheet_id AND sh.archived = false
      WHERE qsq.question_id = ANY($1::bigint[])
      GROUP BY qsq.question_id`,
     [ids]
   );
-  const byQuestion = new Map(flags.map((row) => [String(row.question_id), row.sheets]));
-  return rows.map((row) => ({ ...row, sheets: byQuestion.get(String(row.id)) ?? [] }));
+  const byQuestion = new Map(flags.map((row) => [String(row.question_id), {
+    sheets: row.sheets,
+    usage_count: row.usage_count
+  }]));
+  return rows.map((row) => {
+    const attached = byQuestion.get(String(row.id));
+    return {
+      ...row,
+      sheets: attached?.sheets ?? [],
+      usage_count: attached?.usage_count ?? 0
+    };
+  });
 }
 
 questionSheetRouter.get('/question-sheets/generate-code', manageSheets, asyncHandler(async (req, res) => {

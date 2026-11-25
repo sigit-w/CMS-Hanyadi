@@ -15,6 +15,7 @@ const ADR = `${ROOT}/pm-agent/decisions/ADR-010-siswa-prospektus-kredensial.md`;
 const PROSPEKTUS_PAGE = `${ROOT}/frontend-agent/src/pages/ProspektusManagement.jsx`;
 const SISWA_PAGE = `${ROOT}/frontend-agent/src/pages/PesertaManagement.jsx`;
 const TRYOUT_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutManagement.jsx`;
+const APP = `${ROOT}/frontend-agent/src/App.jsx`;
 
 const suffix = crypto.randomBytes(4).toString('hex');
 const umumNama = `QA 6R Umum ${suffix}`;
@@ -30,6 +31,8 @@ let siswaId;
 let daftarId;
 let daftarSiswaId;
 let qaTryout;
+let tryoutEventId;
+let jenjangId;
 
 async function api(pathname, options = {}) {
   const response = await fetch(`${API_BASE}${pathname}`, {
@@ -58,6 +61,11 @@ before(async () => {
   const response = await fetch(`${API_BASE}/health`);
   assert.equal(response.status, 200);
   qaTryout = await activeTryoutContext(query);
+  const event = await query('SELECT event_id FROM tryout_sessions WHERE id = $1', [qaTryout.id]);
+  tryoutEventId = Number(event.rows[0].event_id);
+  const jenjang = await query("SELECT id FROM jenjang WHERE kode = 'SD' LIMIT 1");
+  assert.equal(jenjang.rows.length, 1, 'jenjang SD harus tersedia');
+  jenjangId = Number(jenjang.rows[0].id);
 });
 
 after(async () => {
@@ -73,6 +81,7 @@ test('PS-01 Peserta Umum dari form tryout tersimpan di prospektus dan tetap logi
     jenis: 'umum',
     nama: umumNama,
     sekolah: 'Sekolah QA 6R',
+    jenjang_id: jenjangId,
     pin: umumPin,
     wa_orang_tua: '081234567890'
   });
@@ -88,19 +97,39 @@ test('PS-01 Peserta Umum dari form tryout tersimpan di prospektus dan tetap logi
 
   const detail = await api(`/api/v1/participants/${umumId}/detail`);
   assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.ok(detail.body.data.participant.username, 'username harus tampil di detail');
   assert.equal(detail.body.data.participant.pin_plain, umumPin);
 
   await attachQaParticipants(query, qaTryout.id, [umumId]);
   const accepted = await login(umumNama, umumPin);
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+
+  const prospektusList = await api('/api/v1/prospektus');
+  assert.equal(prospektusList.status, 200, JSON.stringify(prospektusList.body));
+  const prospekRow = prospektusList.body.data.prospektus.find((item) => item.id === umumId);
+  assert.ok(prospekRow, 'Peserta Umum harus ada di daftar prospektus');
+  assert.ok(prospekRow.username, 'username harus tampil di daftar prospektus');
+  assert.equal(prospekRow.pin_plain, umumPin);
+
+  const tryoutList = await api(`/api/v1/tryouts/${tryoutEventId}/participants`);
+  assert.equal(tryoutList.status, 200, JSON.stringify(tryoutList.body));
+  const tryoutRow = tryoutList.body.data.participants.find((item) => item.id === umumId);
+  assert.ok(tryoutRow, 'Peserta Umum harus ada di daftar peserta tryout');
+  assert.ok(tryoutRow.username, 'username harus tampil di daftar peserta tryout');
+  assert.equal(tryoutRow.pin_plain, umumPin);
+  assert.equal(Object.hasOwn(tryoutRow, 'password_plain'), true);
+  for (const field of ['password_hash', 'pin_hash']) {
+    assert.equal(Object.hasOwn(tryoutRow, field), false, `${field} bocor di daftar peserta tryout`);
+  }
 });
 
-test('PS-02 detail siswa menampilkan password dan list tidak membocorkan kredensial', async () => {
+test('PS-02 detail dan list siswa menampilkan username serta password plaintext', async () => {
   const participant = await createParticipant({
     nama: siswaNama,
     email: siswaEmail,
     kelas: 7,
     sekolah: 'SMA QA 6R',
+    jenjang_id: jenjangId,
     password: siswaPassword,
     wa_orang_tua: '081234567891'
   });
@@ -111,13 +140,27 @@ test('PS-02 detail siswa menampilkan password dan list tidak membocorkan kredens
 
   const detail = await api(`/api/v1/participants/${siswaId}/detail`);
   assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.ok(detail.body.data.participant.username, 'username harus tampil di detail');
   assert.equal(detail.body.data.participant.password_plain, siswaPassword);
 
   const list = await api('/api/v1/participants');
   const row = list.body.data.participants.find((item) => item.id === siswaId);
   assert.ok(row);
-  for (const field of ['password_plain', 'pin_plain', 'password_hash', 'pin_hash']) {
+  assert.ok(row.username, 'username harus tampil di daftar participants');
+  assert.equal(row.password_plain, siswaPassword);
+  assert.equal(Object.hasOwn(row, 'pin_plain'), true);
+  for (const field of ['password_hash', 'pin_hash']) {
     assert.equal(Object.hasOwn(row, field), false, `${field} bocor di list participants`);
+  }
+
+  const siswaList = await api('/api/v1/siswa');
+  const siswaRow = siswaList.body.data.siswa.find((item) => item.id === siswaId);
+  assert.ok(siswaRow, 'siswa harus ada di daftar kelola siswa');
+  assert.ok(siswaRow.username, 'username harus tampil di daftar kelola siswa');
+  assert.equal(siswaRow.password_plain, siswaPassword);
+  assert.equal(Object.hasOwn(siswaRow, 'pin_plain'), true);
+  for (const field of ['password_hash', 'pin_hash']) {
+    assert.equal(Object.hasOwn(siswaRow, field), false, `${field} bocor di list siswa`);
   }
 });
 
@@ -202,7 +245,10 @@ test('PS-05 trigger integritas menolak participant_id tidak ditemukan', async ()
 
 test('PS-06 marker UI kredensial dan pendaftaran tersedia di bundle', () => {
   const bundle = readFileSync(`${DIST}/${readdirSync(DIST).find((file) => file.endsWith('.js'))}`, 'utf8');
-  for (const marker of ['Daftarkan sebagai Siswa', 'Bergabung', 'Password / PIN', '#/tryouts/prospektus']) {
+  for (const marker of [
+    'Daftarkan sebagai Siswa', 'Bergabung', 'Salin kredensial',
+    '#/tryouts/peserta-umum', '/tryouts/prospektus', 'Peserta Umum'
+  ]) {
     assert.ok(bundle.includes(marker), `Marker bundle ${marker} tidak ditemukan`);
   }
   for (const [path, marker] of [
@@ -212,6 +258,18 @@ test('PS-06 marker UI kredensial dan pendaftaran tersedia di bundle', () => {
   ]) {
     assert.ok(readFileSync(path, 'utf8').includes(marker), `Marker ${marker} tidak ditemukan di ${path}`);
   }
+  for (const path of [PROSPEKTUS_PAGE, SISWA_PAGE, TRYOUT_PAGE]) {
+    assert.ok(readFileSync(path, 'utf8').includes('CredentialCopy'), `CredentialCopy tidak dipakai di ${path}`);
+  }
+  const copySource = readFileSync(`${ROOT}/frontend-agent/src/components/CredentialCopy.jsx`, 'utf8');
+  assert.ok(copySource.includes('Salin kredensial'));
+  assert.ok(copySource.includes('Nama: ${name'));
+  assert.ok(copySource.includes('username: ${username'));
+
+  const app = readFileSync(APP, 'utf8');
+  assert.ok(app.includes("label: 'Peserta Umum'"));
+  assert.ok(app.includes("path: '/tryouts/peserta-umum'"));
+  assert.ok(app.includes("'/tryouts/prospektus': '/tryouts/peserta-umum'"));
 });
 
 test('PS-07 kontrak dan dokumentasi Fase 6r lengkap', () => {

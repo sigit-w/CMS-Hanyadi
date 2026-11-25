@@ -5,7 +5,7 @@
 | ID | ADR-021 |
 | Tanggal | 2026-11-25 |
 | Pemilik | PM |
-| Status | accepted — Q1–Q5 dijawab pemilik 2026-11-25; implementasi belum dimulai |
+| Status | accepted — Q1–Q5 dijawab pemilik 2026-11-25; implementasi/QA selesai; `REL-31` GO dan di-commit sebagai `38af84a` 2026-11-25 |
 | Terkait task | PM-29, BE-44, FE-41, TRY-22, QA-41, DOC-12, REL-31 |
 | Melanjutkan | Fase 6x / `REL-30` (GO); `REL-01…REL-30` tidak dibuka ulang; Fase 7 tetap dibatalkan |
 

@@ -13,6 +13,7 @@ let mapelId;
 let sessionId;
 let eventId;
 let manualId;
+let importSourceId;
 let activeSessionIds = [];
 
 async function api(path, options = {}) {
@@ -92,6 +93,7 @@ after(async () => {
   if (questionIds.length) {
     await query('DELETE FROM questions WHERE id = ANY($1::bigint[])', [questionIds]);
   }
+  if (importSourceId) await query('DELETE FROM question_sources WHERE id = $1', [importSourceId]);
   if (mapelId) {
     await api(`/api/v1/mapels/${mapelId}`, { method: 'DELETE', headers: await adminHeaders() });
   }
@@ -107,19 +109,27 @@ test('J-01 create soal manual langsung approved', async () => {
   assert.equal(detail.body.data.status, 'approved');
 });
 
-test('J-02 import soal langsung approved', async () => {
-  const response = await api('/api/v1/import', {
+test('J-02 impor CSV langsung approved', async () => {
+  const csv = [
+    'stem,mapel,type,difficulty,answer_text',
+    `"QA6J impor 1 ${suffix}",${mapelCode},essay,medium,"Jawaban uji QA"`,
+    `"QA6J impor 2 ${suffix}",${mapelCode},essay,medium,"Jawaban uji QA"`
+  ].join('\n');
+  const form = new FormData();
+  form.append('file', new Blob([csv], { type: 'text/csv' }), 'qa6j.csv');
+  form.append('label', `QA6J import ${suffix}`);
+  form.append('external_ref', `6J-${suffix}`);
+  const response = await fetch(`${API_BASE}/api/v1/import`, {
     method: 'POST',
     headers: await adminHeaders(),
-    body: JSON.stringify({
-      source: { type: 'external_collection', label: `QA6J import ${suffix}`, external_ref: `6J-${suffix}` },
-      questions: [essay(`QA6J impor 1 ${suffix}`), essay(`QA6J impor 2 ${suffix}`)]
-    })
+    body: form
   });
-  assert.equal(response.status, 201, JSON.stringify(response.body));
-  assert.equal(response.body.data.created, 2);
-  questionIds.push(...response.body.data.question_ids);
-  for (const id of response.body.data.question_ids) {
+  const body = await response.json().catch(() => ({}));
+  assert.equal(response.status, 201, JSON.stringify(body));
+  assert.equal(body.data.created, 2);
+  importSourceId = body.data.source_id;
+  questionIds.push(...body.data.question_ids);
+  for (const id of body.data.question_ids) {
     const detail = await api(`/api/v1/questions/${id}`, { headers: await adminHeaders() });
     assert.equal(detail.body.data.status, 'approved');
   }

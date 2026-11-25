@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createQuestion, getMapels, importFile, importPayload } from '../api.js';
+import { createQuestion, getMapels, importFile } from '../api.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,8 +25,6 @@ const MAPEL_LABELS = { MTKA: 'Matematika', BIND: 'Bahasa Indonesia', IPAS: 'IPAS
 export default function QuestionInput({ onCreated }) {
   const [mapels, setMapels] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [importMode, setImportMode] = useState('file');
-  const [importText, setImportText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
@@ -120,12 +118,15 @@ export default function QuestionInput({ onCreated }) {
 
   async function handleImport(event) {
     event.preventDefault(); setError(''); setNotice('');
-    if (importMode === 'file' && !selectedFile) { setError('Pilih file terlebih dahulu'); return; }
-    if (importMode === 'payload' && !importText.trim()) { setError('Konten impor wajib diisi'); return; }
+    if (!selectedFile) { setError('Pilih file CSV atau XLSX terlebih dahulu'); return; }
+    if (!/\.(csv|xlsx)$/i.test(selectedFile.name)) {
+      setError('Impor soal hanya menerima file CSV atau XLSX');
+      return;
+    }
     try {
-      const data = importMode === 'file' ? await importFile(selectedFile, sourceType) : await importPayload({ content: importText, source: { type: sourceType, label: 'Payload Manual' } });
+      const data = await importFile(selectedFile, sourceType);
       setNotice(`Import berhasil: ${data.created} soal dari sumber #${data.source_id}`);
-      setImportText(''); setSelectedFile(null);
+      setSelectedFile(null);
       onCreated?.();
     } catch (err) { setError(err.message); }
   }
@@ -134,7 +135,7 @@ export default function QuestionInput({ onCreated }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Buat Soal</h1>
-        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file/payload. Daftar soal diperbarui otomatis di bawah halaman ini.</p>
+        <p className="text-sm text-muted-foreground">Tambah soal manual atau impor dari file CSV/XLSX. Daftar soal diperbarui otomatis di bawah halaman ini.</p>
       </div>
       {error && <Alert variant="destructive">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
@@ -242,24 +243,23 @@ export default function QuestionInput({ onCreated }) {
         </Card>
 
         <Card className="h-fit">
-          <CardHeader><CardTitle>Impor Soal</CardTitle><CardDescription>Upload file atau tempel payload terstruktur.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Impor Soal</CardTitle><CardDescription>Unggah file CSV atau XLSX. Payload tidak diterima.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant={importMode === 'file' ? 'default' : 'outline'} onClick={() => setImportMode('file')}>File</Button>
-              <Button type="button" variant={importMode === 'payload' ? 'default' : 'outline'} onClick={() => setImportMode('payload')}>Payload</Button>
+            <div className="rounded-md border p-3 text-xs">
+              <p className="font-medium">Template impor</p>
+              <div className="mt-1 flex flex-wrap gap-3">
+                <a className="text-primary underline" href="/templates/template-soal.csv" download>Unduh template CSV</a>
+                <a className="text-primary underline" href="/templates/template-soal.xlsx" download>Unduh template XLSX</a>
+              </div>
             </div>
             <form className="space-y-4" onSubmit={handleImport}>
               <div className="space-y-2"><Label>Jenis sumber</Label>
                 <SelectNative value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
                   <option value="file_upload">Upload file</option><option value="external_collection">Pengumpulan eksternal</option><option value="manual">Input manual</option>
                 </SelectNative></div>
-              {importMode === 'file' ? (
-                <div className="space-y-2"><Label>File JSON / CSV / TXT</Label>
-                  <Input type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} /></div>
-              ) : (
-                <div className="space-y-2"><Label>Konten soal</Label>
-                  <Textarea required rows="10" value={importText} placeholder={'Mapel: MTKA\nSoal: 2 + 2 = ?\nA. 3\nB. 4\nJawaban: B\n\n# Multi-jawaban: Jawaban: B,D'} onChange={(e) => setImportText(e.target.value)} /></div>
-              )}
+              <div className="space-y-2"><Label>File CSV / XLSX</Label>
+                <Input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} /></div>
               <Button type="submit" className="w-full">Impor Soal</Button>
             </form>
           </CardContent>

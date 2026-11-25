@@ -7,6 +7,8 @@ import { query, pool } from '../../backend-agent/src/db.js';
 
 const ROOT = '/opt/virtual-office-bank-soal';
 const TRYOUT_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutManagement.jsx`;
+const PARTICIPANTS_PAGE = `${ROOT}/frontend-agent/src/pages/TryoutParticipantsPage.jsx`;
+const APP_FILE = `${ROOT}/frontend-agent/src/App.jsx`;
 const API_FILE = `${ROOT}/frontend-agent/src/api.js`;
 const DIST = `${ROOT}/frontend-agent/dist/assets`;
 const OPENAPI = `${ROOT}/backend-agent/openapi/openapi.yaml`;
@@ -105,22 +107,37 @@ test('QP-01 kontrak ADR-009 dan endpoint attach terpasang', async () => {
   assert.ok(readFileSync(ADR, 'utf8').includes('ADR-009'));
 });
 
-test('QP-02 helper text hilang dan popup Kelola Peserta punya alur A/B', () => {
+test('QP-02 helper text hilang dan Kelola Peserta membuka halaman per tryout', () => {
   const source = readFileSync(TRYOUT_PAGE, 'utf8');
+  const participantsPage = readFileSync(PARTICIPANTS_PAGE, 'utf8');
+  const app = readFileSync(APP_FILE, 'utf8');
   const apiSource = readFileSync(API_FILE, 'utf8');
   assert.ok(!source.includes(HELPER_TEXT), 'Helper text larangan masih ada di TryoutManagement');
   for (const marker of [
-    "openPesertaSiswa('manage')",
-    "openPesertaUmum('manage')",
-    'participantTarget',
-    'loadManagedParticipants',
-    'closePesertaFlow',
-    'isAlreadySelected',
-    "if (participantTarget === 'manage')",
-    'await addTryoutParticipants(managedTryoutId, [participant.id])'
+    'Kelola Peserta',
+    'window.location.hash = `#/tryouts/${tryout.id}/peserta`'
   ]) {
     assert.ok(source.includes(marker), `Marker ${marker} tidak ditemukan di TryoutManagement`);
   }
+  for (const marker of [
+    'participantsMatch',
+    'TryoutParticipantsPage',
+    'tryoutId={participantsMatch[1]}'
+  ]) {
+    assert.ok(app.includes(marker), `Marker ${marker} tidak ditemukan di App.jsx`);
+  }
+  for (const marker of [
+    'A. Peserta Didik',
+    'B. Peserta Umum',
+    'getTryoutParticipants(tryoutId)',
+    'isAlreadySelected',
+    'addTryoutParticipants(tryoutId, [row.id])',
+    'removeTryoutParticipant(tryoutId, row.id)',
+    'Hapus ${row.nama} dari tryout'
+  ]) {
+    assert.ok(participantsPage.includes(marker), `Marker ${marker} tidak ditemukan di TryoutParticipantsPage`);
+  }
+  assert.ok(!source.includes('participantTarget'), 'Alur popup manage masih ada di TryoutManagement');
   assert.ok(apiSource.includes('export const addTryoutParticipants'));
   assert.ok(apiSource.includes('/tryouts/${tryoutId}/participants'));
 });
@@ -219,7 +236,7 @@ test('QP-05 peserta prospek ditolak dan bundle produksi bersih', async () => {
 
   const files = readdirSync(DIST);
   const js = readFileSync(`${DIST}/${files.find((file) => file.endsWith('.js'))}`, 'utf8');
-  for (const marker of ['Kelola Peserta Tryout', 'A. Peserta Didik', 'B. Peserta Umum', 'Pilih siswa untuk ditambahkan ke tryout ini']) {
+  for (const marker of ['Kelola Peserta', 'Tambah Peserta ke Tryout Ini', 'A. Peserta Didik', 'B. Peserta Umum', 'Pilih siswa dari data Kelola Siswa']) {
     assert.ok(js.includes(marker), `Marker bundle ${marker} tidak ditemukan`);
   }
   assert.ok(!js.includes(HELPER_TEXT), 'Helper text lama masih ada di bundle produksi');

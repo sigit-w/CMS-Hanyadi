@@ -137,9 +137,17 @@ Satu worksheet bernama `Laporan Tryout`:
 - `GET /api/v1/tryouts/{id}/questions.zip` memakai permission `tryouts.manage`; `GET /api/v1/tryouts/{id}/questions-with-keys.zip` memakai permission baru `tryout_questions.key_export` dari migrasi `032`. Keduanya mengembalikan satu `application/zip` per klik, berisi satu PDF per sesi tryout.
 - PDF dibangkitkan internal oleh `backend-agent/src/tryoutExport.js` tanpa dependency baru. Setiap PDF memuat `nama lembar soal`, `kode lembar soal`, `mapel`, dan `keterangan`; varian kunci juga menyertakan kunci jawaban dari `question_options.is_correct`. File tidak pernah membocorkan kunci pada varian `questions.zip`.
 
+## Kontrak Fase 6z (ADR-022) — Daftar Soal, Impor CSV/XLSX, dan Peserta Umum
+
+- `GET /api/v1/questions` dan `GET /api/v1/questions/{id}` mengembalikan `usage_count` berupa jumlah lembar soal aktif yang memuat soal tersebut. Lembar terarsip atau dihapus tidak dihitung.
+- `POST /api/v1/import` hanya menerima multipart `file` dengan ekstensi/MIME `.csv` atau `.xlsx`. Payload `content`, `questions[]`, JSON, TXT, dan MIME lain ditolak `400 VALIDATION_ERROR`. Parser memakai `exceljs` untuk XLSX dan normalisasi header yang sama untuk kedua format.
+- Template unduhan tersedia dalam dua file valid: `templates/template-soal.csv` dan `templates/template-soal.xlsx`; keduanya berisi contoh `multiple_choice`, `multiple_answer`, `true_false`, dan `short_answer`.
+- Endpoint daftar/detail `siswa`, `participants`, `prospektus`, dan `/tryouts/{id}/participants` yang dilindungi `tryouts.manage` menyertakan `username` berdampingan dengan `password_plain` atau `pin_plain`; UI menyediakan satu tombol copy yang ikut menyalin `nama`. Hash tidak pernah dikirim, kredensial tidak muncul di endpoint peserta/publik, dan user CMS tidak terpengaruh.
+- Menu dan halaman CMS memakai label `Peserta Umum` pada `#/tryouts/peserta-umum`; rute lama `#/tryouts/prospektus` tetap menjadi alias redirect. Tidak ada migrasi database pada Fase 6z.
+
 ## Jenis Soal
 
-`question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/TXT juga menerima `Jawaban: B,D`.
+`question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/XLSX juga menerima `Jawaban: B,D`.
 
 Untuk `true_false`, kirim `statements: [{ "text": "...", "is_correct": true|false, "explanation": "..." }]` dengan 1–5 pernyataan; `stem`/`image_url` adalah cerita bersama. Tidak pakai `options`/`correct_keys`. Semua pernyataan benar membuat soal bernilai benar. Endpoint peserta tidak mengirim `is_correct`; submit memakai `answers: [{ "statement_id": 123, "value": true|false }]`. Laporan tryout menyertakan `statement_details` per submission.
 

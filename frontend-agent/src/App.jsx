@@ -13,6 +13,7 @@ import SystemReport from './pages/SystemReport.jsx';
 import TryoutReport from './pages/TryoutReport.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import TryoutManagement from './pages/TryoutManagement.jsx';
+import TryoutParticipantsPage from './pages/TryoutParticipantsPage.jsx';
 import ProspektusManagement from './pages/ProspektusManagement.jsx';
 import PesertaManagement from './pages/PesertaManagement.jsx';
 import { getMe, logout } from './api.js';
@@ -47,7 +48,7 @@ const NAV_GROUPS = [
     label: 'Manajemen Tryout',
     items: [
       { path: '/tryouts', hash: '#/tryouts', label: 'Buat/Daftar Tryout', permission: 'tryouts.manage', icon: ClipboardList },
-      { path: '/tryouts/prospektus', hash: '#/tryouts/prospektus', label: 'Peserta Tryout', permission: 'tryouts.manage', icon: Users },
+      { path: '/tryouts/peserta-umum', hash: '#/tryouts/peserta-umum', label: 'Peserta Umum', permission: 'tryouts.manage', icon: Users },
       { path: '/reports/tryout', hash: '#/reports/tryout', label: 'Laporan Tryout', permission: 'tryout_reports.read', icon: BarChart3 }
     ]
   },
@@ -75,7 +76,14 @@ const NAV_STANDALONE = [
 ];
 
 const NAV_ITEMS = [...NAV_GROUPS.flatMap((group) => group.items), ...NAV_STANDALONE];
-const ROUTE_ALIASES = { '/': '/questions', '/questions/new': '/questions', '/tryouts/peserta': '/bimbel/siswa', '/program-belajar': '/bimbel/program-belajar' };
+const ROUTE_ALIASES = {
+  '/': '/questions',
+  '/questions/new': '/questions',
+  '/tryouts/peserta': '/bimbel/siswa',
+  '/tryouts/prospektus': '/tryouts/peserta-umum',
+  '/program-belajar': '/bimbel/program-belajar'
+};
+const HASH_REDIRECT_ALIASES = { '/tryouts/prospektus': '/tryouts/peserta-umum' };
 
 function NavLink({ item, active, onNavigate }) {
   const Icon = item.icon;
@@ -100,7 +108,8 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [questionsRefresh, setQuestionsRefresh] = useState(0);
   const route = useHashRoute();
-  const activePath = ROUTE_ALIASES[route] ?? route;
+  const participantsMatch = route.match(/^\/tryouts\/(\d+)\/peserta$/);
+  const activePath = participantsMatch ? '/tryouts' : (ROUTE_ALIASES[route] ?? route);
 
   useEffect(() => {
     let active = true;
@@ -112,6 +121,11 @@ export default function App() {
   }, []);
 
   useEffect(() => { setMobileOpen(false); }, [route]);
+
+  useEffect(() => {
+    const redirect = HASH_REDIRECT_ALIASES[route];
+    if (redirect) window.location.hash = `#${redirect}`;
+  }, [route]);
 
   const can = (permission) => Boolean(session?.permissions?.includes(permission));
 
@@ -145,6 +159,13 @@ export default function App() {
   } else if (!can(current.permission)) {
     page = <div className="rounded-xl border bg-card p-6"><h2 className="text-lg font-semibold">Akses ditolak</h2>
       <p className="mt-2 text-sm text-muted-foreground">Akun Anda tidak memiliki permission {current.permission}.</p></div>;
+  } else if (participantsMatch) {
+    page = (
+      <TryoutParticipantsPage
+        tryoutId={participantsMatch[1]}
+        onBack={() => { window.location.hash = '#/tryouts'; }}
+      />
+    );
   } else if (activePath === '/questions') {
     page = (
       <div className="space-y-6">
@@ -158,7 +179,7 @@ export default function App() {
     page = <UserManagement can={can} />;
   } else if (activePath === '/tryouts') {
     page = <TryoutManagement />;
-  } else if (activePath === '/tryouts/prospektus') {
+  } else if (activePath === '/tryouts/peserta-umum') {
     page = <ProspektusManagement />;
   } else if (activePath === '/bimbel/siswa') {
     page = <PesertaManagement />;

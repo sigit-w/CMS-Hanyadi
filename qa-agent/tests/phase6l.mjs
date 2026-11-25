@@ -232,10 +232,15 @@ test('L-04 flag kode tampil di daftar dan detail soal', async () => {
   const other = list.body.data.questions.find((item) => item.id === questionIds[2]);
   assert.ok(first.sheets.some((sheet) => sheet.code === codes[0]));
   assert.ok(!other.sheets.some((sheet) => sheet.code === codes[0]));
+  assert.equal(typeof first.usage_count, 'number');
+  assert.equal(first.usage_count, 2);
+  assert.equal(other.usage_count, 0);
 
   const detail = await api(`/api/v1/questions/${questionIds[0]}`, { headers: await adminHeaders() });
   assert.equal(detail.status, 200);
   assert.ok(detail.body.data.sheets.some((sheet) => sheet.code === codes[0]));
+  assert.equal(typeof detail.body.data.usage_count, 'number');
+  assert.equal(detail.body.data.usage_count, 2);
 });
 
 test('L-05 ubah kode menyebabkan flag soal ikut berubah', async () => {
@@ -314,6 +319,12 @@ test('L-07 hapus lembar melakukan soft delete dan relasi tetap ada', async () =>
 
   const detail = await api(`/api/v1/questions/${questionIds[0]}`, { headers: await adminHeaders() });
   assert.ok(!detail.body.data.sheets.some((sheet) => sheet.code === codes[1]));
+  assert.equal(detail.body.data.usage_count, 1, 'lembar aktif hasil generate masih dihitung');
+
+  const archivedOnly = await api(`/api/v1/questions/${questionIds[1]}`, { headers: await adminHeaders() });
+  assert.equal(archivedOnly.status, 200, JSON.stringify(archivedOnly.body));
+  assert.deepEqual(archivedOnly.body.data.sheets, []);
+  assert.equal(archivedOnly.body.data.usage_count, 0, 'lembar terarsip tidak boleh dihitung');
 });
 
 test('L-08 daftar soal tidak menampilkan error pada pagination besar', async () => {

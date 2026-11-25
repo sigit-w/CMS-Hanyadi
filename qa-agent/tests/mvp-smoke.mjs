@@ -143,7 +143,7 @@ test('S-09b tipe soal filter tidak valid ditolak', async () => {
   assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
-test('S-10 impor JSON', async () => {
+test('S-10 impor payload JSON ditolak 400 VALIDATION_ERROR', async () => {
   const { status, body } = await api('/api/v1/import', {
     method: 'POST',
     body: JSON.stringify({
@@ -154,12 +154,8 @@ test('S-10 impor JSON', async () => {
       ]
     })
   });
-  assert.equal(status, 201, JSON.stringify(body));
-  assert.equal(body.data.created, 2);
-  for (const id of body.data.question_ids) {
-    const detail = await api(`/api/v1/questions/${id}`);
-    assert.equal(detail.body.data.status, 'approved');
-  }
+  assert.equal(status, 400, JSON.stringify(body));
+  assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
 test('S-11 impor CSV dari file', async () => {
@@ -181,7 +177,7 @@ test('S-11 impor CSV dari file', async () => {
   }
 });
 
-test('S-12 impor TXT terstruktur', async () => {
+test('S-12 impor TXT ditolak 400 VALIDATION_ERROR', async () => {
   const txt = [
     'Mapel: BIND',
     'Soal: Sinonim kata "cepat" adalah?',
@@ -201,12 +197,8 @@ test('S-12 impor TXT terstruktur', async () => {
   form.append('file', new Blob([txt], { type: 'text/plain' }), 'soal.txt');
   const response = await fetch(`${BASE}/api/v1/import`, { method: 'POST', headers: await adminHeaders(), body: form });
   const body = await response.json().catch(() => ({}));
-  assert.equal(response.status, 201, JSON.stringify(body));
-  assert.equal(body.data.created, 2);
-  for (const id of body.data.question_ids) {
-    const detail = await api(`/api/v1/questions/${id}`);
-    assert.equal(detail.body.data.status, 'approved');
-  }
+  assert.equal(response.status, 400, JSON.stringify(body));
+  assert.equal(body.error.code, 'VALIDATION_ERROR');
 });
 
 test('S-13 mapel invalid ditolak', async () => {
@@ -232,7 +224,7 @@ test('S-14 pilihan ganda tanpa opsi benar ditolak', async () => {
 
 test('S-15 file lebih dari 5MB ditolak', async () => {
   const form = new FormData();
-  form.append('file', new Blob(['x'.repeat(6 * 1024 * 1024)], { type: 'text/plain' }), 'besar.txt');
+  form.append('file', new Blob(['x'.repeat(6 * 1024 * 1024)], { type: 'text/csv' }), 'besar.csv');
   const response = await fetch(`${BASE}/api/v1/import`, { method: 'POST', headers: await adminHeaders(), body: form });
   const body = await response.json().catch(() => ({}));
   assert.equal(response.status, 413, JSON.stringify(body));
