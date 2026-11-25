@@ -567,7 +567,7 @@ test('Q6U-11 sesi target dan login ulang sebelum ends_at, gate menolak sesi baru
   const js = readFileSync(TRYOUT_JS, 'utf8');
   assert.match(html, /id="nextSessionButton"/);
   assert.match(html, /id="exitSessionButton"/);
-  assert.match(html, /app\.js\?v=20/);
+  assert.match(html, /app\.js\?v=21/);
   assert.match(html, /Lanjut sesi berikutnya/);
   assert.match(js, /continueNextSession/);
 

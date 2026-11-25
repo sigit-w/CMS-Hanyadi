@@ -294,7 +294,7 @@ test('U-09 aturan login halaman tryout diperbarui', () => {
   assert.match(html, /Username peserta/);
   assert.match(html, /Password atau PIN/);
   assert.match(html, /styles\.css\?v=14/);
-  assert.match(html, /app\.js\?v=20/);
+  assert.match(html, /app\.js\?v=21/);
   assert.doesNotMatch(html, /type="email"/);
   assert.match(js, /Nama\/email atau PIN\/password salah/);
   assert.match(js, /username: elements\.loginUsername\.value/);

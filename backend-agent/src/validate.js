@@ -56,6 +56,11 @@ export function parseId(value, field = 'id') {
   return id;
 }
 
+function hasContent(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== undefined && value !== null && value !== '';
+}
+
 export function normalizeCorrectKeys(value, field) {
   if (value === undefined || value === null) return [];
   const raw = Array.isArray(value) ? value : [value];
@@ -135,7 +140,7 @@ export function validateQuestionCreate(body, hasImage = false) {
   const questionType = requireEnum(body.question_type ?? 'multiple_choice', QUESTION_TYPES, 'question_type');
   const difficulty = requireEnum(body.difficulty ?? 'medium', DIFFICULTIES, 'difficulty');
   const isTrueFalse = questionType === 'true_false';
-  if (isTrueFalse && (body.options !== undefined || body.correct_keys !== undefined || body.correct_key !== undefined)) {
+  if (isTrueFalse && (hasContent(body.options) || hasContent(body.correct_keys) || hasContent(body.correct_key))) {
     throw new ApiError('VALIDATION_ERROR', 'Soal Benar/Salah memakai field statements, bukan options/correct_key');
   }
   const statements = normalizeStatements(body.statements, questionType);
@@ -206,10 +211,10 @@ export function validateQuestionUpdate(body, currentQuestionType = 'multiple_cho
 
   const questionType = result.question_type ?? currentQuestionType;
   const isTrueFalse = questionType === 'true_false';
-  if (isTrueFalse && (body.options !== undefined || body.correct_keys !== undefined || body.correct_key !== undefined)) {
+  if (isTrueFalse && (hasContent(body.options) || hasContent(body.correct_keys) || hasContent(body.correct_key))) {
     throw new ApiError('VALIDATION_ERROR', 'Soal Benar/Salah memakai field statements, bukan options/correct_key');
   }
-  if (!isTrueFalse && body.statements !== undefined) {
+  if (!isTrueFalse && hasContent(body.statements)) {
     throw new ApiError('VALIDATION_ERROR', 'Field statements hanya untuk soal Benar/Salah');
   }
   if (result.question_type === 'true_false' && currentQuestionType !== 'true_false' && body.statements === undefined) {

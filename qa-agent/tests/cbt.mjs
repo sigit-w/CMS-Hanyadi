@@ -404,7 +404,13 @@ test('CBT-06 satu perpindahan fokus hanya mencatat satu pelanggaran', async () =
   const block = js.match(/  async function recordViolation\(type, detail = \{\}\) \{[\s\S]*?\n  \}/)?.[0];
   assert.ok(block, 'blok recordViolation tidak ditemukan');
   const calls = [];
-  const localState = { cbtMode: true, locked: false, lastFocusLossAt: 0, attempt: { status: 'in_progress' } };
+  const localState = {
+    cbtMode: true,
+    locked: false,
+    lastFocusLossAt: 0,
+    suppressFocusViolations: false,
+    attempt: { status: 'in_progress' }
+  };
   const sandbox = {
     state: localState,
     isCbt: () => localState.cbtMode,
@@ -423,4 +429,60 @@ test('CBT-06 satu perpindahan fokus hanya mencatat satu pelanggaran', async () =
   await recordViolation('tab_hidden', { hidden: true });
   await recordViolation('window_blur', {});
   assert.deepEqual(calls, ['tab_hidden']);
+
+  localState.lastFocusLossAt = 0;
+  localState.suppressFocusViolations = true;
+  await recordViolation('window_blur', {});
+  assert.deepEqual(calls, ['tab_hidden']);
+
+  const confirmationBlock = js.match(/  function askConfirmation\(message\) \{[\s\S]*?\n  \}/)?.[0];
+  const finishBlock = js.match(/  async function finishCbt\(\) \{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(confirmationBlock, 'blok askConfirmation tidak ditemukan');
+  assert.ok(finishBlock, 'blok finishCbt tidak ditemukan');
+  assert.match(finishBlock, /askConfirmation\(/);
+});
+
+test('CBT-07 dialog konfirmasi submit tidak mencatat pelanggaran fokus', async () => {
+  const js = readFileSync(`${DIR}/app.js`, 'utf8');
+  const confirmationBlock = js.match(/  function askConfirmation\(message\) \{[\s\S]*?\n  \}/)?.[0];
+  const violationBlock = js.match(/  async function recordViolation\(type, detail = \{\}\) \{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(confirmationBlock, 'blok askConfirmation tidak ditemukan');
+  assert.ok(violationBlock, 'blok recordViolation tidak ditemukan');
+
+  const calls = [];
+  const localState = {
+    cbtMode: true,
+    locked: false,
+    lastFocusLossAt: 0,
+    suppressFocusViolations: false,
+    attempt: { status: 'in_progress' }
+  };
+  const windowStub = { confirm: () => true };
+  const sandbox = {
+    state: localState,
+    window: windowStub,
+    isCbt: () => localState.cbtMode,
+    api: async (_path, options) => {
+      calls.push(JSON.parse(options.body).violation_type);
+      return { status: 'in_progress' };
+    },
+    showLogin: () => {},
+    lockCbt: () => {},
+    toast: () => {},
+    SessionError: class SessionError extends Error {}
+  };
+  const { askConfirmation, recordViolation } = new Function(
+    ...Object.keys(sandbox), `${confirmationBlock}\n${violationBlock}\nreturn { askConfirmation, recordViolation };`
+  )(...Object.values(sandbox));
+
+  windowStub.confirm = () => {
+    void recordViolation('window_blur', {});
+    return true;
+  };
+  askConfirmation('Kumpulkan jawaban sekarang?');
+  assert.deepEqual(calls, []);
+  assert.equal(localState.suppressFocusViolations, false);
+
+  await recordViolation('window_blur', {});
+  assert.deepEqual(calls, ['window_blur']);
 });

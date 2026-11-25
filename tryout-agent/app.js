@@ -23,7 +23,8 @@
     timerId: null,
     fullscreenArmed: false,
     pendingSaves: new Set(),
-    lastFocusLossAt: 0
+    lastFocusLossAt: 0,
+    suppressFocusViolations: false
   };
 
   const elements = {
@@ -75,6 +76,16 @@
     elements.toast.hidden = false;
     window.clearTimeout(toast.timer);
     toast.timer = window.setTimeout(() => { elements.toast.hidden = true; }, 3500);
+  }
+
+  function askConfirmation(message) {
+    const previous = state.suppressFocusViolations;
+    state.suppressFocusViolations = true;
+    try {
+      return window.confirm(message);
+    } finally {
+      state.suppressFocusViolations = previous;
+    }
   }
 
   function renderFinalizeButton() {
@@ -722,7 +733,7 @@
 
   async function finishCbt() {
     if (state.locked) return;
-    if (!window.confirm('Kumpulkan jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
+    if (!askConfirmation('Kumpulkan jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
     try {
       await flushDrafts();
       const result = await api('/presentation/cbt/attempt/finalize', {
@@ -773,7 +784,7 @@
 
   async function submitAllAnswers() {
     if (state.locked || isCbt()) return;
-    if (!window.confirm('Kirim semua jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
+    if (!askConfirmation('Kirim semua jawaban sekarang? Hasil hanya dapat dilihat oleh administrator.')) return;
     captureActiveAnswer();
     const answers = collectAllAnswers();
     elements.finalizeButton.disabled = true;
@@ -804,6 +815,7 @@
 
   async function recordViolation(type, detail = {}) {
     if (!isCbt() || state.locked) return;
+    if ((type === 'tab_hidden' || type === 'window_blur') && state.suppressFocusViolations) return;
     if (type === 'tab_hidden' || type === 'window_blur') {
       if (Date.now() - state.lastFocusLossAt < 750) return;
       state.lastFocusLossAt = Date.now();

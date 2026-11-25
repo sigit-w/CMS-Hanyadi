@@ -102,14 +102,24 @@ export default function QuestionInput({ onCreated }) {
           correctKeys = correctKeys.length ? correctKeys.slice(0, 1) : [availableKeys[0]];
         }
       }
-      await createQuestion({
-        stem: form.stem, mapel: form.mapel, question_type: form.question_type, difficulty: form.difficulty,
-        options: withOptions ? options.map((o) => ({ key: o.key, content: o.content, is_correct: correctKeys.includes(o.key) })) : [],
-        statements,
-        correct_keys: correctKeys, correct_key: correctKeys[0] ?? null,
-        answer_text: isTrueFalse || withOptions ? null : (form.answer_text || null),
-        explanation: form.explanation || null
-      }, imageFile);
+      const payload = {
+        stem: form.stem,
+        mapel: form.mapel,
+        question_type: form.question_type,
+        difficulty: form.difficulty
+      };
+      if (withOptions) {
+        payload.options = options.map((o) => ({ key: o.key, content: o.content, is_correct: correctKeys.includes(o.key) }));
+        payload.correct_keys = correctKeys;
+        payload.correct_key = correctKeys[0] ?? null;
+        payload.answer_text = null;
+        payload.explanation = form.explanation || null;
+      } else if (!isTrueFalse) {
+        payload.answer_text = form.answer_text || null;
+        payload.explanation = form.explanation || null;
+      }
+      if (isTrueFalse) payload.statements = statements;
+      await createQuestion(payload, imageFile);
       event.target.reset(); setForm(EMPTY_FORM); setImageFile(null);
       onCreated?.();
       setNotice('Soal berhasil disimpan. Lihat daftar di bawah halaman ini.');

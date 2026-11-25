@@ -336,5 +336,5 @@ test('Q6T-06 marker frontend bersesi, toast, dan asset terbaru', () => {
   assert.match(js, /Pelanggaran tercatat:/);
 
   const html = readFileSync(TRYOUT_HTML, 'utf8');
-  assert.match(html, /app\.js\?v=20/);
+  assert.match(html, /app\.js\?v=21/);
 });

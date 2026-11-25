@@ -360,8 +360,9 @@ router.put('/questions/:id', authorize('questions.write'), imageUpload.single('i
         await client.query('DELETE FROM question_statements WHERE question_id = $1', [id]);
       }
 
-      if (changes.options !== undefined || changes.correct_keys !== undefined
-        || changes.answer_text !== undefined || changes.explanation !== undefined) {
+      if (effectiveQuestionType !== 'true_false'
+        && (changes.options !== undefined || changes.correct_keys !== undefined
+          || changes.answer_text !== undefined || changes.explanation !== undefined)) {
         const previousKey = await client.query(
           'SELECT correct_option_id, answer_text, explanation FROM answer_keys WHERE question_id = $1', [id]
         );

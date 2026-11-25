@@ -226,7 +226,7 @@ test('Q6Y-05 marker implementasi Fase 6y tersedia', () => {
   assert.ok(page.includes('tryoutSessionUrls('));
   assert.ok(app.includes('Tautan tryout lama tidak berlaku'));
   assert.ok(app.includes('nextSessionButton.hidden = true'));
-  assert.match(html, /app\.js\?v=20/);
+  assert.match(html, /app\.js\?v=21/);
   assert.ok(auth.includes('TRYOUT_EVENT_SLUG'));
   assert.ok(routes.includes('question_ids tidak didukung'));
   assert.ok(presentation.includes('hanya membuka sesi yang dituju'));

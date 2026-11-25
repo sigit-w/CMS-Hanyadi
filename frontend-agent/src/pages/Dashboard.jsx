@@ -241,19 +241,29 @@ export default function Dashboard({ can, refreshKey = 0 }) {
           correctKeys = correctKeys.length ? correctKeys.slice(0, 1) : [availableKeys[0]];
         }
       }
-      await updateQuestion(detail.id, {
+      const payload = {
         stem: editForm.stem,
         mapel: editForm.mapel,
         question_type: editForm.question_type,
-        difficulty: editForm.difficulty,
-        options: isChoice
-          ? options.map((option) => ({ key: option.key, content: option.content, is_correct: correctKeys.includes(option.key) }))
-          : [],
-        statements,
-        correct_keys: correctKeys,
-        answer_text: isChoice || isTrueFalse ? null : editForm.answer_text || null,
-        explanation: editForm.explanation || null
-      }, editImage);
+        difficulty: editForm.difficulty
+      };
+      if (isChoice) {
+        payload.options = options.map((option) => ({
+          key: option.key,
+          content: option.content,
+          is_correct: correctKeys.includes(option.key)
+        }));
+        payload.correct_keys = correctKeys;
+        payload.answer_text = null;
+        payload.explanation = editForm.explanation || null;
+      }
+      if (isTrueFalse) {
+        payload.statements = statements;
+      } else if (!isChoice) {
+        payload.answer_text = editForm.answer_text || null;
+        payload.explanation = editForm.explanation || null;
+      }
+      await updateQuestion(detail.id, payload, editImage);
       const data = await getQuestion(detail.id);
       setDetail(data);
       setEditForm(toEditForm(data));
