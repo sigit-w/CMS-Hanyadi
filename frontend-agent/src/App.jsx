@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, ClipboardList, BarChart3, Users, Shield, FileText, BookOpen, GraduationCap, LogOut, Menu, X, ChevronRight
+  LayoutDashboard, ClipboardList, BarChart3, Users, Shield, FileText, BookOpen, GraduationCap, Settings, LogOut, Menu, X, ChevronRight
 } from 'lucide-react';
 import LoginView from './components/LoginView.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import QuestionInput from './pages/QuestionInput.jsx';
 import QuestionSheets from './pages/QuestionSheets.jsx';
+import NeedReview from './pages/NeedReview.jsx';
+import ResearchQueryConfig from './pages/ResearchQueryConfig.jsx';
 import RoleManagement from './pages/RoleManagement.jsx';
 import MapelManagement from './pages/MapelManagement.jsx';
 import ProgramBelajarManagement from './pages/ProgramBelajarManagement.jsx';
@@ -40,6 +42,7 @@ const NAV_GROUPS = [
     label: 'Manajemen Soal',
     items: [
       { path: '/questions', hash: '#/questions', label: 'Daftar & Buat Soal', permission: 'questions.read', icon: LayoutDashboard },
+      { path: '/questions/need-review', hash: '#/questions/need-review', label: 'Need Review', permission: 'questions.review', icon: ClipboardList },
       { path: '/question-sheets', hash: '#/question-sheets', label: 'Lembar Soal', permission: 'question_sheets.manage', icon: FileText }
     ]
   },
@@ -65,6 +68,7 @@ const NAV_GROUPS = [
     label: 'Setting',
     items: [
       { path: '/mapels', hash: '#/mapels', label: 'Kelola Mapel & Jenjang', permission: 'mapels.manage', icon: BookOpen },
+      { path: '/research-query-config', hash: '#/research-query-config', label: 'Query Research Agent', permission: 'research_queries.manage', icon: Settings },
       { path: '/roles', hash: '#/roles', label: 'Kelola Role', permission: 'roles.manage', icon: Shield },
       { path: '/reports/system', hash: '#/reports/system', label: 'Laporan Sistem', permission: 'reports.read', icon: FileText }
     ]
@@ -173,6 +177,8 @@ export default function App() {
         <Dashboard can={can} refreshKey={questionsRefresh} />
       </div>
     );
+  } else if (activePath === '/questions/need-review') {
+    page = <NeedReview />;
   } else if (activePath === '/question-sheets') {
     page = <QuestionSheets />;
   } else if (activePath === '/users/new') {
@@ -187,6 +193,8 @@ export default function App() {
     page = <MapelManagement />;
   } else if (activePath === '/bimbel/program-belajar') {
     page = <ProgramBelajarManagement />;
+  } else if (activePath === '/research-query-config') {
+    page = <ResearchQueryConfig />;
   } else if (activePath === '/roles') {
     page = <RoleManagement />;
   } else if (activePath === '/reports/system') {

@@ -4,7 +4,7 @@
 
 Skema ditujukan untuk database `bank_soal_db` dengan user `bank_soal_user` pada PostgreSQL 16 lokal.
 
-Sumber kebenaran skema aktif adalah rangkaian `db/migrations/` yang dijalankan berurutan sampai `034`. `db/schema.sql` adalah arsip Fase 3 yang sudah stale dan **bukan** sumber kebenaran untuk struktur saat ini; hanya definisi kode lembar soal yang disamakan dengan format `034`.
+Sumber kebenaran skema aktif adalah rangkaian `db/migrations/` yang dijalankan berurutan sampai `037`. `db/schema.sql` adalah arsip Fase 3 yang sudah stale dan **bukan** sumber kebenaran untuk struktur saat ini; hanya definisi kode lembar soal yang disamakan dengan format `034`.
 
 Inisialisasi baseline arsip Fase 3 (opsional, bukan langkah untuk mendapatkan skema aktif):
 
@@ -278,6 +278,36 @@ PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
 
 `034` menambah `jenjang_id BIGINT NOT NULL` dengan FK `ON DELETE RESTRICT` ke `public.jenjang` pada `questions`, `question_sheets`, `tryout_events`, dan `program_belajar`. Seluruh baris lama di-backfill ke kode `SD` dari seed `031` sebelum kolom menjadi `NOT NULL`; tidak ada seed jenjang baru. Index dibuat pada keempat kolom tersebut. Kolom `question_sheets.code` diperlebar menjadi `VARCHAR(16)` dan kode lama ditulis ulang ke format baru sebelum constraint `question_sheets_code_format` diberlakukan: `^LS-[A-Z0-9]{4}-(SD|SMP|SMA)-[0-9]{4}$` dengan panjang 15 atau 16 karakter. View `v_question_catalog` dibangun ulang dengan `jenjang_kode` dan `jenjang_nama` dari join ke `jenjang`.
 
+Antrean review soal hasil riset agent (Fase 6ab; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/035_research_submission_review.sql
+```
+
+`035` membuat `public.research_submissions` dengan status `need_review`/`approved`/`rejected`, `payload JSONB` hasil validasi soal, `metadata JSONB` (run id, URL sumber, model, confidence), jejak review (`reviewed_by`, `reviewed_at`, `decision_note`) dan `question_id` unik yang diisi saat soal dipromosikan. Index unik parsial `(source_system, external_ref)` mencegah duplikat kiriman agent. Draft sengaja **tidak** disimpan di `questions` agar gate publik tetap hanya melihat `approved`. Permission baru `research_submissions.create` diberikan ke role sistem `research_agent` dan `admin` (untuk uji manual); reviewer memakai `questions.review` yang sudah ada. Total permission aktif menjadi 48.
+
+Konfigurasi query riset agent yang dapat diubah dari CMS (Fase 6c; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/036_research_query_config.sql
+```
+
+`036` membuat tabel singleton `public.research_query_config` (`id = 1`) berisi daftar query yang dipisah `|`, kode mapel/jenjang aktif, dan `max_questions` (1–10). Permission `research_queries.read` diberikan ke `research_agent` dan `admin` agar n8n bisa mengambil konfigurasi memakai akun service yang sudah ada; `research_queries.manage` hanya diberikan ke `admin` untuk halaman Setting di CMS. Nilai di `/etc/n8n.env` kini hanya fallback bila endpoint CMS tidak tersedia. Backup sebelum migrasi ini: `/tmp/opencode/bank_soal_db-pre036-20261126-103524.dump`. Total permission aktif menjadi 50.
+
+Soft limit pemakaian Tavily/OpenAI (Fase 6d; idempotent, backup wajib lebih dulu):
+
+```bash
+PGPASSWORD='<password>' psql -h 127.0.0.1 -p 5432 \
+  -U bank_soal_user -d bank_soal_db \
+  -f /opt/virtual-office-bank-soal/db/migrations/037_research_agent_soft_limits.sql
+```
+
+`037` menambah kolom pada `research_query_config`: `is_enabled`, `max_searches` (1–5, default 2), `max_results_per_query` (1–10, default 3), `max_output_tokens` (300–4000, default 1200), dan `max_runs_per_month` (1–100, default 25). Tabel `research_agent_usage` mencatat `runs`, `searches`, dan `questions` per bulan (primary key tanggal awal bulan). Endpoint start/finish memakai permission `research_submissions.create`; admin melihat pemakaian lewat `research_queries.manage`. Backup sebelum migrasi ini: `/tmp/opencode/bank_soal_db-pre037-20261126-111320.dump`. Total permission tetap 50.
+
 Backup sebelum `031`/`032`: `/tmp/opencode/bank_soal_db-pre6wx-2026-11-24.dump`. Rollback ke `REL-28` memakai dump tersebut, lalu `REL-29` memakai dump yang sama sebelum menjalankan `032`. `REL-01…REL-28` tidak dibuka ulang; Fase 7 tetap dibatalkan.
 
 Kredensial tersimpan di
@@ -339,7 +369,7 @@ Seluruh `INSERT` memakai `ON CONFLICT DO NOTHING`, sehingga aman dijalankan ulan
 - Semua sesi `tryout_sessions` kini memiliki pengaturan CBT: `cbt_enabled`, `cbt_duration_minutes` (1–600 saat aktif), `cbt_shuffle_questions`, `cbt_shuffle_options`, `cbt_require_fullscreen`, dan `cbt_max_violations` (0 = tanpa batas, maksimal 100). Sesi lama tetap `cbt_enabled=false` dan memakai alur tryout sebelumnya.
 - `tryout_attempts` menyimpan satu attempt per `(session_id, participant_id)` dengan `seed` deterministik, `started_at`, `deadline_at`, `status` (`in_progress`/`submitted`/`expired`), dan `violation_count`. `tryout_cbt_drafts` menyimpan autosave jawaban, `tryout_cbt_flags` menyimpan tanda ragu-ragu, dan `tryout_cbt_violations` menyimpan log pelanggaran fullscreen/tab.
 - Acak soal dan opsi memakai `seed` attempt. Opsi tetap menyimpan `key` asli di database dan dikirim bersama `label` tampilan yang sudah diacak; peserta mengirim `key` asli sehingga penilaian tidak berubah. Skor tidak pernah dikembalikan ke peserta; `v_cbt_attempt_report` dipakai laporan admin.
-- Migrasi `028` menambah 30 permission CRUD untuk `questions`, `question_sheets`, `tryouts`, `participants`, `mapels`, `roles`, `users`, dan `program_belajar`. Total permission saat itu 46 dengan 76 pemetaan role-permission; migrasi `032` menambah `tryout_questions.key_export` sehingga total aktif sekarang 47, tanpa pemetaan role baru. Permission `*.manage` lama tetap dipakai guard backend; `admin` mendapat semua permission dari `028`, `editor` mendapat CRUD soal/lembar soal/program belajar, role lain tidak berubah.
+- Migrasi `028` menambah 30 permission CRUD untuk `questions`, `question_sheets`, `tryouts`, `participants`, `mapels`, `roles`, `users`, dan `program_belajar`. Total permission saat itu 46 dengan 76 pemetaan role-permission; migrasi `032` menambah `tryout_questions.key_export` sehingga total menjadi 47, lalu `035` menambah `research_submissions.create` sehingga total aktif 48, dan `036` menambah `research_queries.read` serta `research_queries.manage` sehingga total aktif sekarang 50. Permission `*.manage` lama tetap dipakai guard backend; `admin` mendapat semua permission dari `028`, `editor` mendapat CRUD soal/lembar soal/program belajar, role lain tidak berubah.
 - Purge operasional 2026-11-24 menghapus soal, opsi, kunci, pernyataan, varian, sumber soal, lembar soal, sesi/relasi/submission/draft/flag/violation tryout, `siswa`, `prospektus`, dan sesi peserta. User admin, 5 role, 46 permission (sebelum `032`), 3 mapel, 3 `source_types`, dan 3 `presentation_versions` dipertahankan. Backup: `/tmp/opencode/bank_soal_db-pre-purge-20261124-140728.dump` dan `/tmp/opencode/uploads-pre-purge-20261124-140728.tar.gz`.
 
 ## Perubahan Schema

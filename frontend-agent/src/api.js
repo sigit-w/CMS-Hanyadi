@@ -138,6 +138,19 @@ export function updateQuestion(id, payload, imageFile = null) {
 }
 export const deleteQuestion = (id) =>
   request(`/questions/${id}`, { method: 'DELETE' });
+export const getResearchSubmissions = (params) =>
+  request(withQuery('/research-submissions', params ?? {}));
+export const getResearchSubmission = (id) => request(`/research-submissions/${id}`);
+export const approveResearchSubmission = (id, decisionNote = '') =>
+  request(`/research-submissions/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ decision_note: decisionNote })
+  });
+export const rejectResearchSubmission = (id, decisionNote = '') =>
+  request(`/research-submissions/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ decision_note: decisionNote })
+  });
 export const getQuestionSheets = (params) => {
   const query = new URLSearchParams(params).toString();
   return request(`/question-sheets${query ? `?${query}` : ''}`);
@@ -217,6 +230,10 @@ export const downloadTryoutQuestions = (tryoutId) =>
   blobRequest(`/tryouts/${tryoutId}/questions.zip`);
 export const downloadTryoutQuestionsWithKeys = (tryoutId) =>
   blobRequest(`/tryouts/${tryoutId}/questions-with-keys.zip`);
+export const getResearchQueryConfig = () => request('/research-query-config');
+export const updateResearchQueryConfig = (payload) =>
+  request('/research-query-config', { method: 'PUT', body: JSON.stringify(payload) });
+export const getResearchAgentUsage = () => request('/research-agent-usage');
 export const getRoles = () => request('/roles');
 export const getPermissions = () => request('/permissions');
 export const updateRolePermissions = (id, permissions) =>

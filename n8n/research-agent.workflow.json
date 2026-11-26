@@ -1,0 +1,53 @@
+{
+  "id": "researchAgentNeedReview",
+  "name": "Research Agent - Soal ke CMS Need Review",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "b1f0a3c1-6f6a-4f0b-9a11-000000000001",
+      "name": "Jadwal Harian",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const NL = String.fromCharCode(10);\nlet queries = String($env.RESEARCH_QUERY || 'soal pilihan ganda kurikulum SD kelas 4 IPAS').split('|').map((q) => q.trim()).filter(Boolean);\nlet mapel = $env.DEFAULT_MAPEL || 'IPAS';\nlet jenjang = $env.DEFAULT_JENJANG || 'SD';\nlet maxQuestions = Number($env.MAX_QUESTIONS || 3);\nlet maxSearches = Number($env.MAX_SEARCHES_PER_RUN || 2);\nlet maxResults = Number($env.MAX_RESULTS_PER_QUERY || 3);\nlet maxTokens = Number($env.MAX_OUTPUT_TOKENS || 1200);\n\nfor (const key of ['SEARCH_API_KEY', 'LLM_API_KEY', 'CMS_USERNAME', 'CMS_PASSWORD']) {\n  if (!$env[key]) throw new Error(key + ' belum diisi di /etc/n8n.env');\n}\n\nconst login = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://cms.hanyadi.web.id/api/v1/auth/login',\n  body: { username: $env.CMS_USERNAME, password: $env.CMS_PASSWORD },\n  json: true,\n  returnFullResponse: true\n});\nconst rawCookies = login.headers?.['set-cookie'];\nconst cookie = Array.isArray(rawCookies)\n  ? rawCookies.map((c) => c.split(';')[0]).join('; ')\n  : (rawCookies ? String(rawCookies).split(';')[0] : '');\nif (!cookie) throw new Error('Login CMS tidak menghasilkan cookie');\n\nlet started = null;\ntry {\n  const startedResponse = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://cms.hanyadi.web.id/api/v1/research-agent-usage/start',\n    headers: { Cookie: cookie },\n    body: {},\n    json: true\n  });\n  started = startedResponse?.data ?? {};\n  const cfg = started.config;\n  if (cfg?.queries?.length) queries = cfg.queries.map((q) => String(q).trim()).filter(Boolean);\n  if (cfg?.mapel) mapel = cfg.mapel;\n  if (cfg?.jenjang) jenjang = cfg.jenjang;\n  if (cfg?.max_questions) maxQuestions = Number(cfg.max_questions);\n  if (cfg?.max_searches) maxSearches = Number(cfg.max_searches);\n  if (cfg?.max_results_per_query) maxResults = Number(cfg.max_results_per_query);\n  if (cfg?.max_output_tokens) maxTokens = Number(cfg.max_output_tokens);\n  if (started.allowed === false) {\n    return [{ json: { ok: false, skipped: true, reason: started.reason, remaining: started.remaining } }];\n  }\n} catch (error) {\n  if (!$env.RESEARCH_QUERY) throw new Error('Gagal membaca konfigurasi query dari CMS: ' + error.message);\n}\n\nmaxQuestions = Math.min(Math.max(1, maxQuestions), 10);\nmaxSearches = Math.min(Math.max(1, maxSearches), 5);\nmaxResults = Math.min(Math.max(1, maxResults), 10);\nmaxTokens = Math.min(Math.max(300, maxTokens), 4000);\n\nconst sources = [];\nlet searchedCount = 0;\nfor (const query of queries.slice(0, maxSearches)) {\n  const search = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.tavily.com/search',\n    headers: { Authorization: 'Bearer ' + $env.SEARCH_API_KEY },\n    body: { query, max_results: maxResults, search_depth: 'basic' },\n    json: true\n  });\n  searchedCount += 1;\n  for (const r of (search.results || [])) {\n    if (!sources.some((s) => s.url === r.url)) sources.push({ url: r.url, title: r.title, content: r.content });\n  }\n}\nconst context = sources.map((s) => 'SUMBER: ' + s.url + NL + 'JUDUL: ' + s.title + NL + 'ISI: ' + s.content).join(NL + NL);\n\nconst rawBase = $env.LLM_BASE_URL || 'https://api.openai.com/v1';\nconst baseUrl = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;\nconst completion = await this.helpers.httpRequest({\n  method: 'POST',\n  url: baseUrl + '/chat/completions',\n  headers: { Authorization: 'Bearer ' + $env.LLM_API_KEY },\n  body: {\n    model: $env.LLM_MODEL || 'gpt-4o-mini',\n    temperature: 0.2,\n    max_tokens: maxTokens,\n    response_format: { type: 'json_object' },\n    messages: [\n      { role: 'system', content: 'Kamu pembuat soal jenjang ' + jenjang + ' mapel ' + mapel + '. Kembalikan HANYA JSON object dengan kunci questions berisi array soal. Setiap soal punya stem, question_type, difficulty, options [{key,content,is_correct}], correct_keys, answer_text, explanation, confidence. Jika true_false gunakan statements [{text,is_correct}] dan jangan options.' },\n      { role: 'user', content: 'Buat ' + maxQuestions + ' soal yang akurat berdasarkan sumber berikut. Sertakan confidence 0 sampai 1.' + NL + NL + context }\n    ]\n  },\n  json: true\n});\n\nconst raw = completion.choices?.[0]?.message?.content || '{}';\nconst parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst questions = Array.isArray(parsed.questions) ? parsed.questions : [];\nif (!questions.length) return [{ json: { ok: false, reason: 'LLM tidak mengembalikan soal' } }];\n\nconst runId = 'n8n-' + Date.now();\nconst results = [];\nfor (let i = 0; i < Math.min(maxQuestions, questions.length); i += 1) {\n  const q = questions[i];\n  const payload = {\n    stem: q.stem,\n    jenjang,\n    mapel,\n    question_type: q.question_type || 'multiple_choice',\n    difficulty: q.difficulty || 'medium',\n    options: q.options || [],\n    correct_keys: q.correct_keys || [],\n    statements: q.statements || [],\n    answer_text: q.answer_text || null,\n    explanation: q.explanation || null,\n    external_ref: runId + '-' + (i + 1),\n    source_url: sources[0]?.url || null,\n    metadata: {\n      run_id: runId,\n      model: $env.LLM_MODEL || 'gpt-4o-mini',\n      query: queries,\n      confidence: q.confidence ?? null,\n      sources: sources.map((s) => s.url)\n    }\n  };\n  try {\n    const saved = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://cms.hanyadi.web.id/api/v1/research-submissions',\n      headers: { Cookie: cookie },\n      body: payload,\n      json: true\n    });\n    results.push({ json: { ok: true, id: saved.submission?.id, status: saved.submission?.status, external_ref: payload.external_ref } });\n  } catch (error) {\n    results.push({ json: { ok: false, external_ref: payload.external_ref, error: error.message } });\n  }\n}\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://cms.hanyadi.web.id/api/v1/research-agent-usage/finish',\n    headers: { Cookie: cookie },\n    body: {\n      searches: searchedCount,\n      questions: results.filter((item) => item.json.ok).length\n    },\n    json: true\n  });\n} catch (error) {\n  results.push({ json: { ok: false, error: 'Gagal mencatat pemakaian: ' + error.message } });\n}\nreturn results;"
+      },
+      "id": "b1f0a3c1-6f6a-4f0b-9a11-000000000002",
+      "name": "Riset, Susun Soal, Kirim ke CMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {},
+      "id": "b1f0a3c1-6f6a-4f0b-9a11-000000000003",
+      "name": "Selesai",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "Jadwal Harian": {
+      "main": [[{ "node": "Riset, Susun Soal, Kirim ke CMS", "type": "main", "index": 0 }]]
+    },
+    "Riset, Susun Soal, Kirim ke CMS": {
+      "main": [[{ "node": "Selesai", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

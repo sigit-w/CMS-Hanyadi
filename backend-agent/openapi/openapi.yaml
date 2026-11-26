@@ -1083,6 +1083,138 @@ paths:
       responses:
         '200':
           description: Daftar sumber
+  /api/v1/research-submissions:
+    get:
+      summary: 'Antrean draft soal hasil riset agent; default need_review (permission questions.review)'
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ResearchSubmissionStatus' }
+        - { name: mapel, in: query, schema: { type: string } }
+        - { name: jenjang, in: query, schema: { $ref: '#/components/schemas/JenjangKode' } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Daftar draft + pagination
+        '400':
+          description: Status, tipe soal, jenjang, atau pagination tidak valid
+    post:
+      summary: 'Kirim draft soal hasil riset ke antrean review (permission research_submissions.create; belum publish)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResearchSubmissionCreate'
+      responses:
+        '201':
+          description: Draft tersimpan dengan status need_review
+        '400':
+          description: Validasi soal gagal
+        '409':
+          description: external_ref dari source_system yang sama sudah ada
+  /api/v1/research-submissions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: 'Detail draft beserta payload soal, opsi, dan pernyataan (permission questions.review)'
+      responses:
+        '200':
+          description: Detail draft
+        '404':
+          description: Tidak ditemukan
+  /api/v1/research-submissions/{id}/approve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: 'Setujui draft: soal dibuat dengan status approved dalam satu transaksi (permission questions.review)'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision_note: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Draft menjadi approved dan question_id diisi
+        '404':
+          description: Tidak ditemukan
+        '409':
+          description: Draft sudah diproses
+  /api/v1/research-submissions/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: 'Tolak draft; tidak ada soal yang dibuat (permission questions.review)'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision_note: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Draft menjadi rejected
+        '404':
+          description: Tidak ditemukan
+        '409':
+          description: Draft sudah diproses
+  /api/v1/research-query-config:
+    get:
+      summary: 'Baca konfigurasi query riset agent (permission research_queries.read; dipakai n8n)'
+      responses:
+        '200':
+          description: Konfigurasi aktif
+        '404':
+          description: Konfigurasi tidak ditemukan
+    put:
+      summary: 'Ubah query, mapel, jenjang, dan jumlah soal riset (permission research_queries.manage)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResearchQueryConfigWrite'
+      responses:
+        '200':
+          description: Konfigurasi tersimpan
+        '400':
+          description: Validasi query, mapel, jenjang, atau batas gagal
+  /api/v1/research-agent-usage:
+    get:
+      summary: 'Pemakaian research agent bulan berjalan (permission research_queries.manage)'
+      responses:
+        '200':
+          description: Jumlah siklus, search, soal, sisa kuota bulan ini
+  /api/v1/research-agent-usage/start:
+    post:
+      summary: 'Reserve satu siklus riset; menolak bila agent dimatikan atau kuota bulanan habis (permission research_submissions.create)'
+      responses:
+        '200':
+          description: 'allowed=true beserta konfigurasi aktif, atau allowed=false beserta reason'
+  /api/v1/research-agent-usage/finish:
+    post:
+      summary: 'Catat jumlah search dan soal yang benar-benar dipakai (permission research_submissions.create)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [searches, questions]
+              properties:
+                searches: { type: integer, minimum: 0, maximum: 100 }
+                questions: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        '200':
+          description: Pemakaian bulan berjalan diperbarui
+        '400':
+          description: Jumlah tidak valid
   /api/v1/presentation/sessions:
     get:
       summary: Daftar sesi tryout yang tersedia untuk peserta (presentation-service :8083)
@@ -1216,7 +1348,105 @@ components:
     QuestionStatus:
       type: string
       enum: [approved, rejected, archived]
-      description: approved adalah status publish; draft dan review tidak digunakan
+      description: approved adalah status publish; draft dan review tidak digunakan pada tabel questions
+    ResearchSubmissionStatus:
+      type: string
+      enum: [need_review, approved, rejected]
+      description: 'Status draft di tabel research_submissions; need_review menunggu keputusan reviewer CMS.'
+    ResearchSubmissionCreate:
+      type: object
+      required: [stem, jenjang, mapel]
+      properties:
+        stem: { type: string, minLength: 1 }
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
+        mapel: { type: string, pattern: '^[A-Z0-9]{4}$' }
+        question_type: { type: string, enum: [multiple_choice, true_false, multiple_answer, short_answer, essay], default: multiple_choice }
+        difficulty: { type: string, enum: [easy, medium, hard], default: medium }
+        statements:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/TrueFalseStatement' }
+          description: 'Wajib untuk true_false'
+        options:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            required: [key, content]
+            properties:
+              key: { type: string, pattern: '^[A-F]$' }
+              content: { type: string }
+              is_correct: { type: boolean, default: false }
+        correct_keys:
+          type: array
+          minItems: 1
+          items: { type: string, pattern: '^[A-F]$' }
+        correct_key: { type: string, pattern: '^[A-F]$', deprecated: true }
+        answer_text: { type: string, nullable: true }
+        explanation: { type: string, nullable: true }
+        external_ref: { type: string, maxLength: 255, nullable: true, description: 'Id unik dari agent untuk dedupe' }
+        source_url: { type: string, nullable: true }
+        metadata: { type: object, description: 'run_id, model, confidence, dan provenance lain' }
+    ResearchSubmission:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { $ref: '#/components/schemas/ResearchSubmissionStatus' }
+        source_system: { type: string }
+        external_ref: { type: string, nullable: true }
+        source_url: { type: string, nullable: true }
+        stem: { type: string }
+        mapel_code: { type: string }
+        mapel_name: { type: string }
+        jenjang_kode: { $ref: '#/components/schemas/JenjangKode' }
+        jenjang_nama: { type: string }
+        question_type: { type: string }
+        payload: { type: object }
+        metadata: { type: object }
+        question_id: { type: integer, nullable: true }
+        decision_note: { type: string, nullable: true }
+        reviewed_by: { type: integer, nullable: true }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ResearchQueryConfigWrite:
+      type: object
+      required: [queries, mapel, jenjang]
+      properties:
+        queries:
+          oneOf:
+            - type: string
+              description: 'Dipisah dengan | atau baris baru'
+            - type: array
+              items: { type: string }
+              minItems: 1
+              maxItems: 10
+        mapel: { type: string, pattern: '^[A-Z0-9]{4}$' }
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
+        max_questions: { type: integer, minimum: 1, maximum: 10, default: 3 }
+        is_enabled: { type: boolean, default: true }
+        max_searches: { type: integer, minimum: 1, maximum: 5, default: 2 }
+        max_results_per_query: { type: integer, minimum: 1, maximum: 10, default: 3 }
+        max_output_tokens: { type: integer, minimum: 300, maximum: 4000, default: 1200 }
+        max_runs_per_month: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    ResearchQueryConfig:
+      type: object
+      properties:
+        queries:
+          type: array
+          items: { type: string }
+        mapel: { type: string }
+        jenjang: { $ref: '#/components/schemas/JenjangKode' }
+        max_questions: { type: integer }
+        is_enabled: { type: boolean }
+        max_searches: { type: integer }
+        max_results_per_query: { type: integer }
+        max_output_tokens: { type: integer }
+        max_runs_per_month: { type: integer }
+        updated_by: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     JenjangKode:
       type: string
       enum: [SD, SMP, SMA]

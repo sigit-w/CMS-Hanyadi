@@ -154,6 +154,24 @@ Satu worksheet bernama `Laporan Tryout`:
 - Endpoint daftar/detail `siswa`, `participants`, `prospektus`, dan `/tryouts/{id}/participants` yang dilindungi `tryouts.manage` menyertakan `username` berdampingan dengan `password_plain` atau `pin_plain`; UI menyediakan satu tombol copy yang ikut menyalin `nama`. Hash tidak pernah dikirim, kredensial tidak muncul di endpoint peserta/publik, dan user CMS tidak terpengaruh.
 - Menu dan halaman CMS memakai label `Peserta Umum` pada `#/tryouts/peserta-umum`; rute lama `#/tryouts/prospektus` tetap menjadi alias redirect. Tidak ada migrasi database pada Fase 6z.
 
+## Kontrak Fase 6ab — Antrean Review Soal Riset Agent
+
+- `POST /api/v1/research-submissions` memakai permission `research_submissions.create` dan menyimpan draft berstatus `need_review` di `public.research_submissions`. Body mengikuti validasi soal yang sama dengan `POST /questions`, plus `external_ref`, `source_url`, dan `metadata` opsional. `external_ref` unik per `source_system='n8n'` sehingga pengiriman ulang ditolak `409`.
+- `GET /research-submissions`, `GET /research-submissions/{id}`, `POST /{id}/approve`, dan `POST /{id}/reject` memakai permission `questions.review`. Approve membuat soal `approved` lewat `insertQuestion()` dalam satu transaksi lalu mengisi `question_id`; reject hanya mencatat keputusan dan tidak membuat soal.
+- Draft tidak pernah ditulis ke `questions` sebelum approve, sehingga picker lembar soal dan presentation-service tidak perlu diubah.
+
+## Kontrak Fase 6c — Konfigurasi Query Research Agent
+
+- `GET /api/v1/research-query-config` memakai permission `research_queries.read` dan mengembalikan `queries` sebagai array, `mapel`, `jenjang`, `max_questions`, serta jejak `updated_by`/`updated_at`. Endpoint ini dipakai n8n dengan akun service `research_agent` yang sudah ada.
+- `PUT /api/v1/research-query-config` memakai permission `research_queries.manage` (admin CMS). `queries` boleh array atau string yang dipisah `|`/baris baru; maksimal 10 query unik @300 karakter, total 4000 karakter. `mapel` dan `jenjang` divalidasi terhadap data aktif, `max_questions` 1–10.
+- Konfigurasi disimpan sebagai baris singleton `research_query_config.id = 1`. Nilai `RESEARCH_QUERY`, `DEFAULT_MAPEL`, `DEFAULT_JENJANG`, dan `MAX_QUESTIONS` di `/etc/n8n.env` tetap dipakai hanya sebagai fallback bila endpoint CMS gagal dihubungi.
+
+## Kontrak Fase 6d — Soft Limit Research Agent
+
+- `POST /api/v1/research-agent-usage/start` memesan satu siklus bulan berjalan dan mengembalikan konfigurasi aktif. Permintaan ditolak lewat `allowed=false` bila `is_enabled=false` atau `runs >= max_runs_per_month`; permission yang dipakai `research_submissions.create`.
+- `POST /api/v1/research-agent-usage/finish` menambah `searches` dan `questions` yang benar-benar terjadi ke ledger bulanan. `GET /api/v1/research-agent-usage` dipakai admin (`research_queries.manage`) untuk menampilkan sisa kuota di CMS.
+- Batas efektif per siklus: `max_searches` (1–5), `max_results_per_query` (1–10), `max_questions` (1–10), dan `max_output_tokens` (300–4000) untuk request OpenAI. Ini melengkapi hard limit yang diatur di dashboard Tavily dan OpenAI.
+
 ## Jenis Soal
 
 `question_type` yang didukung: `multiple_choice`, `true_false`, `multiple_answer`, `short_answer`, `essay`. Untuk `multiple_answer`, kirim `correct_keys` berisi minimal satu kunci opsi (boleh lebih dari satu), misalnya `["B"]` atau `["B", "D"]`; `correct_key` tetap diisi otomatis dengan kunci pertama untuk kompatibilitas lama. Kunci yang sama tidak boleh duplikat dan harus cocok dengan opsi yang tersedia. Importer CSV/XLSX juga menerima `Jawaban: B,D`.

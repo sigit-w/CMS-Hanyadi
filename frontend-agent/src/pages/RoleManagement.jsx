@@ -22,7 +22,9 @@ const GROUP_LABELS = {
   users: 'Pengguna',
   reports: 'Laporan',
   tryout_reports: 'Laporan Tryout',
-  program_belajar: 'Program Belajar'
+  program_belajar: 'Program Belajar',
+  research_submissions: 'Review Riset',
+  research_queries: 'Query Riset'
 };
 const permissionCodes = (role) => role?.permissions ?? [];
 const removedRoleCodes = new Set(['editor', 'validator', 'viewer']);
